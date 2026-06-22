@@ -1,19 +1,20 @@
 """
-Performance and cloud provider scenario tests for blob storage.
+Functional scenario tests for blob storage.
 
 These tests validate:
-- Performance characteristics under various load conditions
-- Scalability with different data sizes and concurrent operations
+- Write/read round-trip integrity across a range of data sizes
+- Correctness and thread-safety under concurrent and mixed operations
+- Stability of repeated operations
 - Cloud provider-specific behavior scenarios
 - Error recovery and resilience patterns
-- Resource utilization and optimization
 - Cross-provider compatibility and migration scenarios
+
+These run against an in-memory mock service and make no timing/throughput
+assertions; performance benchmarking belongs in a separate, opt-in suite.
 """
 
 import concurrent.futures
-import time
 import unittest
-from typing import List, Tuple
 from unittest.mock import Mock, patch
 
 from agentmap.agents.builtins.storage.blob.blob_reader_agent import BlobReaderAgent
@@ -31,16 +32,21 @@ from tests.fresh_suite.unit.services.storage.blob_storage_test_fixtures import (
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
-class TestBlobStoragePerformance(unittest.TestCase):
+class TestBlobStorageOperationScenarios(unittest.TestCase):
     """
-    Performance tests for blob storage operations.
+    Functional scenario tests for blob storage write/read agents.
 
-    Tests various performance characteristics including throughput,
-    latency, memory usage, and scalability under different conditions.
+    Exercises the BlobWriterAgent -> BlobReaderAgent round trip across a range
+    of data sizes, concurrent access patterns, and repeated operations to
+    verify correctness and thread-safety. These run against an in-memory mock
+    service, so they intentionally make no wall-clock/throughput assertions
+    (those would only measure runner speed, not the code under test). True
+    performance benchmarking belongs in a dedicated, opt-in benchmark suite
+    against real or latency-simulating providers.
     """
 
     def setUp(self):
-        """Set up performance test fixtures."""
+        """Set up scenario test fixtures."""
         self.mock_config = MockServiceFactory.create_mock_app_config_service(
             {"storage": {"blob": {"providers": {"file": {"base_directory": "/tmp"}}}}}
         )
@@ -57,379 +63,227 @@ class TestBlobStoragePerformance(unittest.TestCase):
         )
 
     # =============================================================================
-    # Data Size Performance Tests
+    # Data Size Round-Trip Tests
     # =============================================================================
 
-    def test_performance_small_data_operations(self):
-        """Test performance with small data (< 1KB)."""
-        # Test data sizes: 10B, 100B, 1KB
-        test_sizes = [10, 100, 1024]
-        # These operations run against a mock service, so timing is dominated by
-        # fixed Python/agent overhead rather than data size. A generous absolute
-        # budget absorbs CI-runner jitter while still catching catastrophic
-        # regressions; tight sub-second thresholds flake on shared runners.
-        max_time = 2.0
+    def _assert_round_trip(self, size: int, uri: str):
+        """Write `size` bytes through the writer agent, read them back through
+        the reader agent, and assert the bytes survive the round trip intact."""
+        test_data = PerformanceTestHelpers.generate_test_data(size)
 
-        for size in test_sizes:
+        mock_service = MockBlobStorageServiceFactory.create_successful_service()
+        writer = BlobAgentTestHelpers.create_test_blob_writer(blob_service=mock_service)
+        reader = BlobAgentTestHelpers.create_test_blob_reader(blob_service=mock_service)
+
+        writer.process({"blob_uri": uri, "data": test_data})
+        read_result = reader.process({"blob_uri": uri})
+
+        self.assertEqual(
+            read_result,
+            test_data,
+            f"Round-trip mismatch for {size} bytes",
+        )
+
+    def test_round_trip_small_data(self):
+        """Small payloads (10B, 100B, 1KB) round-trip through write/read intact."""
+        for size in [10, 100, 1024]:
             with self.subTest(size=size):
-                test_data = PerformanceTestHelpers.generate_test_data(size)
+                self._assert_round_trip(size, f"/tmp/roundtrip_small_{size}.blob")
 
-                # Mock successful operations
-                mock_service = MockBlobStorageServiceFactory.create_successful_service()
-
-                # Create agents
-                writer = BlobAgentTestHelpers.create_test_blob_writer(
-                    blob_service=mock_service
-                )
-                reader = BlobAgentTestHelpers.create_test_blob_reader(
-                    blob_service=mock_service
-                )
-
-                test_uri = f"/tmp/perf_small_{size}.blob"
-
-                # Measure write performance
-                write_time = PerformanceTestHelpers.measure_operation_time(
-                    writer.process, {"blob_uri": test_uri, "data": test_data}
-                )
-
-                # Measure read performance
-                read_time = PerformanceTestHelpers.measure_operation_time(
-                    reader.process, {"blob_uri": test_uri}
-                )
-
-                # Validate performance
-                self.assertLess(
-                    write_time,
-                    max_time,
-                    f"Write too slow for {size}B: {write_time:.3f}s",
-                )
-                self.assertLess(
-                    read_time, max_time, f"Read too slow for {size}B: {read_time:.3f}s"
-                )
-
-    def test_performance_medium_data_operations(self):
-        """Test performance with medium data (1KB - 1MB)."""
-        # Test data sizes: 10KB, 100KB, 1MB
-        test_sizes = [10 * 1024, 100 * 1024, 1024 * 1024]
-        max_time = 1.0  # 1 second should be reasonable for medium data
-
-        for size in test_sizes:
+    def test_round_trip_medium_data(self):
+        """Medium payloads (10KB, 100KB, 1MB) round-trip through write/read intact."""
+        for size in [10 * 1024, 100 * 1024, 1024 * 1024]:
             with self.subTest(size=size):
-                test_data = PerformanceTestHelpers.generate_test_data(size)
+                self._assert_round_trip(size, f"/tmp/roundtrip_medium_{size}.blob")
 
-                # Mock successful operations
-                mock_service = MockBlobStorageServiceFactory.create_successful_service()
-
-                # Create agents
-                writer = BlobAgentTestHelpers.create_test_blob_writer(
-                    blob_service=mock_service
-                )
-                reader = BlobAgentTestHelpers.create_test_blob_reader(
-                    blob_service=mock_service
-                )
-
-                test_uri = f"/tmp/perf_medium_{size}.blob"
-
-                # Measure operations
-                write_time = PerformanceTestHelpers.measure_operation_time(
-                    writer.process, {"blob_uri": test_uri, "data": test_data}
-                )
-
-                read_time = PerformanceTestHelpers.measure_operation_time(
-                    reader.process, {"blob_uri": test_uri}
-                )
-
-                # Calculate throughput
-                write_throughput = PerformanceTestHelpers.calculate_throughput(
-                    size, write_time
-                )
-                read_throughput = PerformanceTestHelpers.calculate_throughput(
-                    size, read_time
-                )
-
-                # Validate performance (more lenient for larger data). Floor the
-                # budget so the smallest sizes are not held to an unreasonably
-                # tight deadline: tiny operations are dominated by fixed overhead,
-                # not throughput, so a size-scaled threshold alone flakes on CI.
-                adjusted_max_time = max(
-                    max_time * (size / (100 * 1024)), 2.0
-                )  # Scale with size, floored
-                self.assertLess(
-                    write_time,
-                    adjusted_max_time,
-                    f"Write too slow for {size//1024}KB: {write_time:.3f}s",
-                )
-                self.assertLess(
-                    read_time,
-                    adjusted_max_time,
-                    f"Read too slow for {size//1024}KB: {read_time:.3f}s",
-                )
-
-                # Throughput should be reasonable (at least 1MB/s for medium data)
-                min_throughput = 1024 * 1024  # 1MB/s
-                if (
-                    write_time > 0.1
-                ):  # Only check for operations that take meaningful time
-                    self.assertGreater(
-                        write_throughput,
-                        min_throughput / 10,
-                        f"Write throughput too low: {write_throughput/1024:.1f}KB/s",
-                    )
-                if read_time > 0.1:
-                    self.assertGreater(
-                        read_throughput,
-                        min_throughput / 10,
-                        f"Read throughput too low: {read_throughput/1024:.1f}KB/s",
-                    )
-
-    def test_performance_large_data_operations(self):
-        """Test performance with large data (> 1MB)."""
-        # Test with 5MB and 10MB (reasonable for testing)
-        test_sizes = [5 * 1024 * 1024, 10 * 1024 * 1024]
-        max_time = 5.0  # 5 seconds should be reasonable for large data
-
-        for size in test_sizes:
+    def test_round_trip_large_data(self):
+        """Large payloads (5MB, 10MB) round-trip through write/read intact."""
+        for size in [5 * 1024 * 1024, 10 * 1024 * 1024]:
             with self.subTest(size=size):
-                test_data = PerformanceTestHelpers.generate_test_data(size)
-
-                # Mock successful operations
-                mock_service = MockBlobStorageServiceFactory.create_successful_service()
-
-                # Create agents
-                writer = BlobAgentTestHelpers.create_test_blob_writer(
-                    blob_service=mock_service
-                )
-                reader = BlobAgentTestHelpers.create_test_blob_reader(
-                    blob_service=mock_service
-                )
-
-                test_uri = f"/tmp/perf_large_{size}.blob"
-
-                # Measure operations
-                write_time = PerformanceTestHelpers.measure_operation_time(
-                    writer.process, {"blob_uri": test_uri, "data": test_data}
-                )
-
-                read_time = PerformanceTestHelpers.measure_operation_time(
-                    reader.process, {"blob_uri": test_uri}
-                )
-
-                # Validate performance (very lenient for large data)
-                self.assertLess(
-                    write_time,
-                    max_time,
-                    f"Write too slow for {size//1024//1024}MB: {write_time:.3f}s",
-                )
-                self.assertLess(
-                    read_time,
-                    max_time,
-                    f"Read too slow for {size//1024//1024}MB: {read_time:.3f}s",
-                )
+                self._assert_round_trip(size, f"/tmp/roundtrip_large_{size}.blob")
 
     # =============================================================================
-    # Concurrent Operations Performance Tests
+    # Concurrent Operations Tests (thread-safety / correctness)
     # =============================================================================
 
-    def test_performance_concurrent_writes(self):
-        """Test performance with concurrent write operations."""
+    @staticmethod
+    def _concurrent_uri(prefix: str, thread_id: int, op_id: int) -> str:
+        return f"/tmp/{prefix}_{thread_id}_{op_id}.blob"
+
+    def test_concurrent_writes_all_succeed(self):
+        """Concurrent writes from multiple threads complete and store correct data."""
         num_threads = 5
         operations_per_thread = 3
         test_data = PerformanceTestHelpers.generate_test_data(1024)  # 1KB per operation
 
-        # Mock successful operations
         mock_service = MockBlobStorageServiceFactory.create_successful_service()
 
-        def write_worker(thread_id: int) -> List[float]:
-            """Worker function for concurrent writes."""
-            times = []
+        def write_worker(thread_id: int) -> int:
+            """Write `operations_per_thread` blobs; return the number written."""
             writer = BlobAgentTestHelpers.create_test_blob_writer(
                 blob_service=mock_service
             )
-
             for op_id in range(operations_per_thread):
-                test_uri = f"/tmp/concurrent_write_{thread_id}_{op_id}.blob"
+                writer.process(
+                    {
+                        "blob_uri": self._concurrent_uri("cwrite", thread_id, op_id),
+                        "data": test_data,
+                    }
+                )
+            return operations_per_thread
 
-                start_time = time.time()
-                writer.process({"blob_uri": test_uri, "data": test_data})
-                operation_time = time.time() - start_time
-
-                times.append(operation_time)
-
-            return times
-
-        # Execute concurrent writes
-        start_time = time.time()
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = [executor.submit(write_worker, i) for i in range(num_threads)]
             results = [
                 future.result() for future in concurrent.futures.as_completed(futures)
             ]
-        total_time = time.time() - start_time
 
-        # Validate results
-        all_times = [time for thread_times in results for time in thread_times]
-        total_operations = num_threads * operations_per_thread
-
-        # All operations should complete in reasonable time
-        max_operation_time = max(all_times)
-        avg_operation_time = sum(all_times) / len(all_times)
-
-        self.assertLess(
-            max_operation_time, 2.0, "Slowest concurrent write took too long"
+        self.assertEqual(
+            sum(results),
+            num_threads * operations_per_thread,
+            "Not all concurrent writes completed",
         )
-        self.assertLess(
-            avg_operation_time, 0.5, "Average concurrent write time too slow"
-        )
-        self.assertLess(total_time, 10.0, "Total concurrent write time too slow")
 
-        # Calculate effective throughput
-        total_data = len(test_data) * total_operations
-        effective_throughput = total_data / total_time
-        self.assertGreater(
-            effective_throughput, 10240, "Concurrent write throughput too low"
-        )  # 10KB/s minimum
+        # Every concurrently-written blob must hold the data that was written.
+        reader = BlobAgentTestHelpers.create_test_blob_reader(blob_service=mock_service)
+        for thread_id in range(num_threads):
+            for op_id in range(operations_per_thread):
+                self.assertEqual(
+                    reader.process(
+                        {"blob_uri": self._concurrent_uri("cwrite", thread_id, op_id)}
+                    ),
+                    test_data,
+                    f"Concurrent write {thread_id}/{op_id} stored wrong data",
+                )
 
-    def test_performance_concurrent_reads(self):
-        """Test performance with concurrent read operations."""
+    def test_concurrent_reads_all_succeed(self):
+        """Concurrent reads from multiple threads return the data that was written."""
         num_threads = 5
         operations_per_thread = 3
 
-        # Mock successful operations
         mock_service = MockBlobStorageServiceFactory.create_successful_service()
 
-        def read_worker(thread_id: int) -> List[float]:
-            """Worker function for concurrent reads."""
-            times = []
+        def expected_data(thread_id: int, op_id: int) -> bytes:
+            return f"payload-{thread_id}-{op_id}".encode("utf-8")
+
+        # Pre-populate each blob with distinct, known data so the reads have
+        # something real to verify against.
+        writer = BlobAgentTestHelpers.create_test_blob_writer(blob_service=mock_service)
+        for thread_id in range(num_threads):
+            for op_id in range(operations_per_thread):
+                writer.process(
+                    {
+                        "blob_uri": self._concurrent_uri("cread", thread_id, op_id),
+                        "data": expected_data(thread_id, op_id),
+                    }
+                )
+
+        def read_worker(thread_id: int) -> list:
+            """Read this thread's blobs; return per-op data-integrity booleans."""
             reader = BlobAgentTestHelpers.create_test_blob_reader(
                 blob_service=mock_service
             )
+            return [
+                reader.process(
+                    {"blob_uri": self._concurrent_uri("cread", thread_id, op_id)}
+                )
+                == expected_data(thread_id, op_id)
+                for op_id in range(operations_per_thread)
+            ]
 
-            for op_id in range(operations_per_thread):
-                test_uri = f"/tmp/concurrent_read_{thread_id}_{op_id}.blob"
-
-                start_time = time.time()
-                reader.process({"blob_uri": test_uri})
-                operation_time = time.time() - start_time
-
-                times.append(operation_time)
-
-            return times
-
-        # Execute concurrent reads
-        start_time = time.time()
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = [executor.submit(read_worker, i) for i in range(num_threads)]
             results = [
                 future.result() for future in concurrent.futures.as_completed(futures)
             ]
-        total_time = time.time() - start_time
 
-        # Validate results
-        all_times = [time for thread_times in results for time in thread_times]
-
-        # All operations should complete quickly
-        max_operation_time = max(all_times)
-        avg_operation_time = sum(all_times) / len(all_times)
-
-        self.assertLess(
-            max_operation_time, 1.0, "Slowest concurrent read took too long"
+        checks = [ok for thread_checks in results for ok in thread_checks]
+        self.assertEqual(
+            len(checks),
+            num_threads * operations_per_thread,
+            "Not all concurrent reads completed",
         )
-        self.assertLess(
-            avg_operation_time, 0.2, "Average concurrent read time too slow"
-        )
-        self.assertLess(total_time, 5.0, "Total concurrent read time too slow")
+        self.assertTrue(all(checks), "Some concurrent reads returned incorrect data")
 
-    def test_performance_mixed_concurrent_operations(self):
-        """Test performance with mixed read/write operations."""
+    def test_mixed_concurrent_operations_all_succeed(self):
+        """Interleaved concurrent reads and writes complete and use correct data."""
         num_operations = 10
         test_data = PerformanceTestHelpers.generate_test_data(512)  # 512B per operation
 
-        # Mock successful operations
         mock_service = MockBlobStorageServiceFactory.create_successful_service()
 
-        def mixed_worker(operation_id: int) -> Tuple[str, float]:
-            """Worker function for mixed operations."""
-            test_uri = f"/tmp/mixed_op_{operation_id}.blob"
+        def uri_for(operation_id: int) -> str:
+            return f"/tmp/mixed_op_{operation_id}.blob"
 
+        # Pre-populate the blobs that the read operations (odd ids) will target.
+        setup_writer = BlobAgentTestHelpers.create_test_blob_writer(
+            blob_service=mock_service
+        )
+        for operation_id in range(num_operations):
+            if operation_id % 2 == 1:
+                setup_writer.process(
+                    {"blob_uri": uri_for(operation_id), "data": test_data}
+                )
+
+        def mixed_worker(operation_id: int) -> tuple:
+            """Perform one read or write; return (op_type, data_ok)."""
             if operation_id % 2 == 0:
-                # Write operation
                 writer = BlobAgentTestHelpers.create_test_blob_writer(
                     blob_service=mock_service
                 )
-                start_time = time.time()
-                writer.process({"blob_uri": test_uri, "data": test_data})
-                operation_time = time.time() - start_time
-                return ("write", operation_time)
+                writer.process({"blob_uri": uri_for(operation_id), "data": test_data})
+                return ("write", True)
             else:
-                # Read operation
                 reader = BlobAgentTestHelpers.create_test_blob_reader(
                     blob_service=mock_service
                 )
-                start_time = time.time()
-                reader.process({"blob_uri": test_uri})
-                operation_time = time.time() - start_time
-                return ("read", operation_time)
+                result = reader.process({"blob_uri": uri_for(operation_id)})
+                return ("read", result == test_data)
 
-        # Execute mixed operations
-        start_time = time.time()
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(mixed_worker, i) for i in range(num_operations)]
             results = [
                 future.result() for future in concurrent.futures.as_completed(futures)
             ]
-        total_time = time.time() - start_time
 
-        # Analyze results
-        write_times = [time for op_type, time in results if op_type == "write"]
-        read_times = [time for op_type, time in results if op_type == "read"]
-
-        # Validate performance
-        if write_times:
-            avg_write_time = sum(write_times) / len(write_times)
-            self.assertLess(avg_write_time, 0.5, "Average mixed write time too slow")
-
-        if read_times:
-            avg_read_time = sum(read_times) / len(read_times)
-            self.assertLess(avg_read_time, 0.2, "Average mixed read time too slow")
-
-        self.assertLess(total_time, 10.0, "Total mixed operations time too slow")
+        op_types = [op_type for op_type, _ in results]
+        self.assertEqual(
+            len(results), num_operations, "Not all mixed operations completed"
+        )
+        self.assertEqual(op_types.count("write"), 5)
+        self.assertEqual(op_types.count("read"), 5)
+        self.assertTrue(
+            all(ok for _, ok in results),
+            "Some mixed operations read or wrote incorrect data",
+        )
 
     # =============================================================================
-    # Memory Usage Performance Tests
+    # Repeated Operation Stability Tests
     # =============================================================================
 
-    def test_performance_memory_efficiency(self):
-        """Test memory efficiency of blob operations."""
-        # Test with progressively larger data to check memory scaling
+    def test_repeated_operations_remain_consistent(self):
+        """Repeating the write/read cycle keeps returning the same data intact."""
+        # Progressively larger data, repeated to surface state-bleed or leaks.
         test_sizes = [1024, 10 * 1024, 100 * 1024]  # 1KB, 10KB, 100KB
 
-        # Mock successful operations
         mock_service = MockBlobStorageServiceFactory.create_successful_service()
 
         for size in test_sizes:
             with self.subTest(size=size):
                 test_data = PerformanceTestHelpers.generate_test_data(size)
-
-                # Create agents
                 writer = BlobAgentTestHelpers.create_test_blob_writer(
                     blob_service=mock_service
                 )
                 reader = BlobAgentTestHelpers.create_test_blob_reader(
                     blob_service=mock_service
                 )
+                test_uri = f"/tmp/repeat_test_{size}.blob"
 
-                test_uri = f"/tmp/memory_test_{size}.blob"
-
-                # Perform operations multiple times to check for memory leaks
-                for i in range(5):
+                # Each iteration must return the same intact payload.
+                for _ in range(5):
                     writer.process({"blob_uri": test_uri, "data": test_data})
-                    reader.process({"blob_uri": test_uri})
-
-                # Test should complete without memory errors
-                # (In a real test environment, you might monitor actual memory usage)
-                self.assertTrue(
-                    True
-                )  # Test completion indicates no major memory issues
+                    read_result = reader.process({"blob_uri": test_uri})
+                    self.assertEqual(read_result, test_data)
 
 
 class TestBlobStorageCloudProviderScenarios(unittest.TestCase):
