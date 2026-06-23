@@ -1,3 +1,0 @@
-{"ts":"2026-06-12T10:35:12.893069-05:00","sid":"423fde05-f038-4585-b2d4-189dd8b8cd06","event":"agent_completed","detail":{"hook_event":"SubagentStop","agent_id":"ad61f5b1a81a637cb"}}
-{"ts":"2026-06-12T10:37:29.624633-05:00","sid":"423fde05-f038-4585-b2d4-189dd8b8cd06","event":"agent_completed","detail":{"hook_event":"SubagentStop","agent_id":"a35b030acffc54405"}}
-{"ts":"2026-06-12T10:47:39.376483-05:00","sid":"423fde05-f038-4585-b2d4-189dd8b8cd06","event":"agent_completed","detail":{"hook_event":"SubagentStop","agent_id":"ac7da41eb99ab4ae0"}}
