@@ -82,6 +82,8 @@ class StateSchemaBuilder:
         For direct fields (no colon), returns the field unchanged.
         For mapped fields (contains colon), returns the left side (state key)
         and validates that neither side is empty.
+        For GraphAgent child remaps (contains equals), returns the right side
+        because the syntax is target=source.
 
         Args:
             field: Raw field string from Input_Fields column.
@@ -93,25 +95,43 @@ class StateSchemaBuilder:
         Raises:
             ValueError: If a mapped field has an empty state_key or param_name.
         """
-        if ":" not in field:
+        if ":" in field:
+            state_key, param_name = field.split(":", 1)
+            state_key = state_key.strip()
+            param_name = param_name.strip()
+
+            if not state_key:
+                raise ValueError(
+                    f"Malformed mapped field '{field}' in node '{node_name}': "
+                    f"state_key (left of colon) is empty"
+                )
+            if not param_name:
+                raise ValueError(
+                    f"Malformed mapped field '{field}' in node '{node_name}': "
+                    f"param_name (right of colon) is empty"
+                )
+
+            return state_key
+
+        if "=" not in field:
             return field
 
-        state_key, param_name = field.split(":", 1)
-        state_key = state_key.strip()
-        param_name = param_name.strip()
+        target_key, source_key = field.split("=", 1)
+        target_key = target_key.strip()
+        source_key = source_key.strip()
 
-        if not state_key:
+        if not target_key:
             raise ValueError(
                 f"Malformed mapped field '{field}' in node '{node_name}': "
-                f"state_key (left of colon) is empty"
+                f"target_key (left of equals) is empty"
             )
-        if not param_name:
+        if not source_key:
             raise ValueError(
                 f"Malformed mapped field '{field}' in node '{node_name}': "
-                f"param_name (right of colon) is empty"
+                f"source_key (right of equals) is empty"
             )
 
-        return state_key
+        return source_key
 
     def get_schema_for_graph(self, graph: Optional[Graph] = None) -> type:
         """Get the appropriate state schema for a graph."""

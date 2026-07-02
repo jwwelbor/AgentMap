@@ -29,6 +29,9 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
     Implements GraphBundleCapableAgent protocol for proper service injection.
     """
 
+    _FULL_PARENT_STATE_KEY = "__graph_agent_parent_state__"
+    _MISSING = object()
+
     def __init__(
         self,
         name: str,
@@ -118,9 +121,13 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
     def _pre_process(
         self, state: Any, inputs: Dict[str, Any]
     ) -> Tuple[Any, Dict[str, Any]]:
-        """Inject subgraph_bundles from state into inputs for process()."""
-        if isinstance(state, dict) and "subgraph_bundles" in state:
-            inputs["subgraph_bundles"] = state["subgraph_bundles"]
+        """Inject graph internals needed to prepare subgraph inputs."""
+        subgraph_bundles = self.state_adapter_service.get_value(
+            state, "subgraph_bundles", self._MISSING
+        )
+        if subgraph_bundles is not self._MISSING:
+            inputs["subgraph_bundles"] = subgraph_bundles
+            inputs[self._FULL_PARENT_STATE_KEY] = state
         return state, inputs
 
     def process(self, inputs: Dict[str, Any]) -> Any:
@@ -276,7 +283,9 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
 
         # Case 2: Field mapping
         if any("=" in field for field in self.input_fields):
-            return self._apply_field_mapping(inputs)
+            return self._apply_field_mapping(
+                self._get_parent_state_for_mapping(inputs), inputs
+            )
 
         # Case 3: No mapping or direct field passthrough
         if not self.input_fields:
@@ -287,10 +296,20 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
             return {
                 field: inputs.get(field)
                 for field in self.input_fields
-                if field in inputs and field != "subgraph_bundles"
+                if field in inputs
+                and field not in {"subgraph_bundles", self._FULL_PARENT_STATE_KEY}
             }
 
-    def _apply_field_mapping(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    def _get_parent_state_for_mapping(self, inputs: Dict[str, Any]) -> Any:
+        """Expose the original parent state for GraphAgent input remaps."""
+        parent_state = inputs.get(self._FULL_PARENT_STATE_KEY)
+        if parent_state is not None:
+            return parent_state
+        return inputs
+
+    def _apply_field_mapping(
+        self, parent_state: Any, inputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Apply field-to-field mapping."""
         subgraph_state = {}
 
@@ -298,15 +317,21 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
             if "=" in field_spec:
                 # This is a mapping (target=source)
                 target_field, source_field = field_spec.split("=", 1)
-                if source_field in inputs:
-                    subgraph_state[target_field] = inputs[source_field]
+                source_value = self.state_adapter_service.get_value(
+                    parent_state, source_field, self._MISSING
+                )
+                if source_value is not self._MISSING:
+                    subgraph_state[target_field] = source_value
                     self.log_debug(
                         f"[GraphAgent] Mapped {source_field} -> {target_field}"
                     )
             else:
                 # Direct passthrough
-                if field_spec in inputs and field_spec != "subgraph_bundles":
-                    subgraph_state[field_spec] = inputs[field_spec]
+                field_value = self.state_adapter_service.get_value(
+                    parent_state, field_spec, self._MISSING
+                )
+                if field_spec != "subgraph_bundles" and field_value is not self._MISSING:
+                    subgraph_state[field_spec] = field_value
                     self.log_debug(f"[GraphAgent] Passed through {field_spec}")
 
         return subgraph_state

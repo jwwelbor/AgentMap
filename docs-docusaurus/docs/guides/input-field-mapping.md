@@ -202,6 +202,26 @@ GraphAgent supports mapping parent state fields to different names in the subgra
 Input_Fields: text=raw_data
 ```
 
+Example with a passthrough field in the same node:
+
+```csv
+GraphName,Node,AgentType,Input_Fields,Output_Field,Success_Next,Failure_Next,Context,Prompt
+OuterGraph,CallInner,graph,text=raw_data|request_id,child_result,Done,,{workflow=::InnerGraph},Call inner graph
+InnerGraph,InspectText,echo,text|request_id,child_snapshot,,,,Read child state
+```
+
+If the parent state starts as:
+
+```python
+{"raw_data": "hello", "request_id": "req-42"}
+```
+
+the child graph starts with:
+
+```python
+{"text": "hello", "request_id": "req-42"}
+```
+
 **Note:** This syntax uses `target=source` order, which is the **opposite** of the standard `source:target` syntax used by the rest of the framework. We recommend using the standard colon syntax (`raw_data:text`) where possible for consistency.
 
 ### Output Mapping: `parent_field=sub_field`

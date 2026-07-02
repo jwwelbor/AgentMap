@@ -53,6 +53,13 @@ TestOuter,Done,echo,child_result,final_result,,,,Return child result
 TestInner,InspectText,echo,text|request_id,child_snapshot,,,,Read selected child state
 """
 
+    REMAPPED_CHILD_INPUT_CSV = """\
+GraphName,Node,AgentType,Input_Fields,Output_Field,Success_Next,Failure_Next,Context,Prompt
+TestOuter,CallInner,graph,text=raw_data|request_id,child_result,Done,,{workflow=::TestInner},Call inner graph
+TestOuter,Done,echo,child_result,final_result,,,,Return child result
+TestInner,InspectText,echo,text|request_id,child_snapshot,,,,Read selected child state
+"""
+
     def setup_services(self):
         """Initialize services needed for graph execution."""
         super().setup_services()
@@ -197,6 +204,37 @@ TestInner,InspectText,echo,text|request_id,child_snapshot,,,,Read selected child
         self.assertIsInstance(result, ExecutionResult)
         self.assertTrue(
             result.success, f"Selected child input flow failed: {result.error}"
+        )
+        self.assertEqual(
+            result.final_state["child_result"]["child_snapshot"]["text"], "hello"
+        )
+        self.assertEqual(
+            result.final_state["child_result"]["child_snapshot"]["request_id"],
+            "req-42",
+        )
+
+    def test_remapped_parent_fields_are_forwarded_to_child_graph(self):
+        """GraphAgent should resolve target=source child remaps from parent state."""
+        csv_path = self._create_two_layer_csv(
+            filename="remapped_child_input_two_layer.csv",
+            content=self.REMAPPED_CHILD_INPUT_CSV,
+        )
+
+        bundle, _ = self.graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path,
+            graph_name="TestOuter",
+        )
+
+        result = self.graph_runner_service.run(
+            bundle,
+            initial_state={"raw_data": "hello", "request_id": "req-42"},
+        )
+
+        from agentmap.models.execution.result import ExecutionResult
+
+        self.assertIsInstance(result, ExecutionResult)
+        self.assertTrue(
+            result.success, f"Remapped child input flow failed: {result.error}"
         )
         self.assertEqual(
             result.final_state["child_result"]["child_snapshot"]["text"], "hello"
