@@ -14,6 +14,7 @@ subgraph_mapping/
 └── workflows/
     ├── ChildInputPassThrough.csv
     ├── DirectSubgraphState.csv
+    ├── RemappedChildInput.csv
     └── OutputRemapExample.csv
 ```
 
@@ -67,7 +68,30 @@ Relevant fields:
 }
 ```
 
-### 3. `OutputRemapExample`
+### 3. `RemappedChildInput`
+
+`Input_Fields: text=raw_data|request_id`
+
+The GraphAgent remaps a parent state key into a different child state key
+before the subgraph runs. The parent keeps `raw_data`; the child starts with
+`text`.
+
+Relevant fields:
+
+```python
+{
+    "child_result": {
+        "text": "hello through child remap",
+        "request_id": "req-42",
+        "child_snapshot": {
+            "text": "hello through child remap",
+            "request_id": "req-42",
+        },
+    }
+}
+```
+
+### 4. `OutputRemapExample`
 
 `Output_Field: selected_parent=child_final`
 
@@ -102,7 +126,8 @@ UV_CACHE_DIR=/tmp/uv-cache uv run python run_example.py
 
 - Standard framework input remap: `state_key:param_name`
 - GraphAgent child input selection: `field_a|field_b`
+- GraphAgent child input remap: `child_key=parent_key`
 - GraphAgent output remap: `parent_key=child_key`
 
-The GraphAgent output remap uses `target=source`, which is the reverse of the
+The GraphAgent `=` remaps use `target=source`, which is the reverse of the
 framework-wide `:` input mapping syntax.

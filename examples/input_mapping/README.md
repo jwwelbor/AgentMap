@@ -2,7 +2,7 @@
 
 A minimal example showing how to build a custom agent and chain its output
 into subsequent invocations using AgentMap's CSV workflow format. Demonstrates
-all three input binding modes: **positional**, **direct**, and **mapped**.
+the standard input binding modes: **positional**, **direct**, and **mapped**.
 
 ## Files
 
@@ -95,3 +95,14 @@ is disabled for the entire node — unmapped fields use direct mode instead.
 cd examples/input_mapping
 python run_example.py
 ```
+
+## Related GraphAgent Example
+
+The binding modes above apply to standard agent input parsing. Graph subflows
+also support a GraphAgent-specific child-input remap using `child_key=parent_key`.
+
+See [`examples/subgraph_mapping`](/home/jwwel/projects/agentmap/examples/subgraph_mapping) for:
+
+- direct child field passthrough: `text|request_id`
+- child input remap: `text=raw_data|request_id`
+- child output remap: `selected_parent=child_final`

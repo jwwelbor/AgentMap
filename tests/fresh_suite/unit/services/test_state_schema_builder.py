@@ -79,6 +79,25 @@ class TestStateSchemaBuilderMappedBindings(unittest.TestCase):
         result = self.builder._extract_state_key("namespace:key:param_name", "TestNode")
         self.assertEqual(result, "namespace")
 
+    def test_extract_state_key_graphagent_equals_mapping(self) -> None:
+        """GraphAgent target=source syntax should register the source state key."""
+        result = self.builder._extract_state_key("text=raw_data", "GraphNode")
+        self.assertEqual(result, "raw_data")
+
+    def test_extract_state_key_equals_missing_target_raises(self) -> None:
+        """Empty GraphAgent target key should fail schema creation."""
+        with self.assertRaises(ValueError) as ctx:
+            self.builder._extract_state_key("=raw_data", "GraphNode")
+        self.assertIn("=raw_data", str(ctx.exception))
+        self.assertIn("GraphNode", str(ctx.exception))
+
+    def test_extract_state_key_equals_missing_source_raises(self) -> None:
+        """Empty GraphAgent source key should fail schema creation."""
+        with self.assertRaises(ValueError) as ctx:
+            self.builder._extract_state_key("text=", "GraphNode")
+        self.assertIn("text=", str(ctx.exception))
+        self.assertIn("GraphNode", str(ctx.exception))
+
     # =========================================================================
     # create_dynamic_state_schema() tests
     # =========================================================================
@@ -96,6 +115,16 @@ class TestStateSchemaBuilderMappedBindings(unittest.TestCase):
         self.assertIn("raw_value", field_names)
         # Should NOT contain the param_name "addend_a"
         self.assertNotIn("addend_a", field_names)
+
+    def test_create_dynamic_state_schema_graphagent_equals_fields(self) -> None:
+        """GraphAgent child remap syntax should register the source state key."""
+        graph = self._make_graph("GraphNode", ["text=raw_data", "request_id"])
+        schema = self.builder.create_dynamic_state_schema(graph)
+        field_names = set(schema.__annotations__.keys())
+
+        self.assertIn("raw_data", field_names)
+        self.assertIn("request_id", field_names)
+        self.assertNotIn("text", field_names)
 
     def test_create_dynamic_state_schema_malformed_field_raises(self) -> None:
         """AC-5: Malformed mapped field raises ValueError during schema creation."""

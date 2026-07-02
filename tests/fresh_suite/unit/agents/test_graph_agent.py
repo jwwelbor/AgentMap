@@ -296,6 +296,29 @@ class TestGraphAgent(unittest.TestCase):
         }
         self.assertEqual(result, expected)
 
+    def test_prepare_subgraph_state_field_mapping_uses_parent_state_from_preprocess(self):
+        """Mapped child inputs should resolve from the original parent state."""
+        context = {"input_fields": ["text=raw_data", "request_id"]}
+        agent = self.create_graph_agent(context=context)
+
+        state = {
+            "raw_data": "hello",
+            "request_id": "req-42",
+            "subgraph_bundles": {"test_graph_agent": self.mock_bundle},
+        }
+        filtered_inputs = {"request_id": "req-42"}
+
+        _, pre_processed_inputs = agent._pre_process(state, filtered_inputs)
+        result = agent._prepare_subgraph_state(pre_processed_inputs)
+
+        self.assertEqual(
+            result,
+            {
+                "text": "hello",
+                "request_id": "req-42",
+            },
+        )
+
     def test_prepare_subgraph_state_function_mapping(self):
         """Test subgraph state preparation with function mapping."""
         context = {"input_fields": ["func:test.mapping_function"]}
@@ -646,6 +669,7 @@ class TestGraphAgent(unittest.TestCase):
         # subgraph_bundles should be injected into inputs
         self.assertIn("subgraph_bundles", updated_inputs)
         self.assertIn("test_graph_agent", updated_inputs["subgraph_bundles"])
+        self.assertIs(updated_inputs[agent._FULL_PARENT_STATE_KEY], state)
 
     def test_post_process_with_execution_summary(self):
         """Test post-processing handles execution summaries from subgraphs."""

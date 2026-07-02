@@ -1,0 +1,4 @@
+GraphName,Node,AgentType,Prompt,Input_Fields,Output_Field,Edge,Success_Next,Failure_Next,Context
+RemappedChildInput,CallInner,graph,Remap parent raw_data into child text,text=raw_data|request_id,child_result,Done,,,{workflow=::RemappedChildInputInner}
+RemappedChildInput,Done,echo,Return full child result,child_result,final_result,,,,
+RemappedChildInputInner,InspectText,echo,Read the remapped child input,text|request_id,child_snapshot,,,,

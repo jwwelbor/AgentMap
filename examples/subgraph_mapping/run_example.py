@@ -58,7 +58,13 @@ def main():
     )
 
     run_case(
-        "Example 3: Remap child child_final -> parent selected_parent on return",
+        "Example 3: Remap parent raw_data -> child text before subgraph execution",
+        "RemappedChildInput",
+        {"raw_data": "hello through child remap", "request_id": "req-42"},
+    )
+
+    run_case(
+        "Example 4: Remap child child_final -> parent selected_parent on return",
         "OutputRemapExample",
         {"raw_data": "mapped back to parent"},
     )

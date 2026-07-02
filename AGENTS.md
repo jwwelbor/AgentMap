@@ -1,19 +1,37 @@
-# Repository Guidelines
+# AgentMap Workspace Notes
 
-## Project Structure & Module Organization
-AgentMap follows a clean architecture split: `src/agentmap/models` stays data-only, `services/` contains business logic, `di/` wires dependencies, and `agents/` holds runtime implementations. CLI entry points (`cli.py`, `server_cli.py`) sit beside deployment helpers in `src/agentmap/deployment` and `deployment_scripts/`. Shared configs live in the repo root (`agentmap_config.yaml`, `agentmap_local_config.yaml`), while documentation sources are under `docs-docusaurus/docs`. Tests mirror runtime layers in `tests/unit`, `tests/integration`, and `tests/e2e`.
+Use [claude.md](/home/jwwel/projects/agentmap/claude.md) as the primary repository guidance. This file only captures repo-local overrides and high-signal reminders.
 
-## Build, Test, and Development Commands
-Install toolchains with `poetry install --with dev`. Execute workflows locally via `poetry run agentmap run --csv workflows.csv`, or launch the FastAPI host using `poetry run agentmap-server`. Run checks with `poetry run pytest` (coverage reports enabled by default) and `poetry run mypy src`. Format code through `poetry run black src tests` followed by `poetry run isort src tests`.
+## Tooling
 
-## Coding Style & Naming Conventions
-Stick to Black (88 chars, 4-space indent) and the matching isort profile. Modules are snake_case (`graph_runner_service.py`), classes PascalCase, methods snake_case, and constants UPPER_SNAKE_CASE. Services should depend on protocol types defined in `src/agentmap/services/protocols.py`, injected via constructors only. Keep public APIs fully typed and avoid files over ~350 lines or methods over 50 lines.
+- Use `uv`, not `poetry`.
+- Sync dependencies with `uv sync --dev`.
+- Run the CLI with `uv run agentmap run --csv workflows.csv`.
+- Start the server with `uv run agentmap-server`.
+- Run tests with `uv run pytest`.
+- Run type checks with `uv run mypy src`.
+- Format with `uv run black src tests` and `uv run isort src tests`.
 
-## Testing Guidelines
-Pytest powers the suite; name files `test_*.py`, classes `Test*`, and functions `test_*`. Unit tests should mock dependencies (see `tests/utils/MockServiceFactory`), while integration tests use the real DI container. Maintain ≥80% overall coverage and inspect `htmlcov/index.html` when `poetry run pytest` flags gaps. Add regression tests when altering agents, DI wiring, or service contracts.
+## Project Structure
 
-## Commit & Pull Request Guidelines
-Use `type(scope): summary` commit messages (e.g., `feat(services): add graph replay support`). PRs need clear descriptions, linked issues when available, passing checks, and documentation updates referencing `claude_documentation.md` for tone and structure. Include config migrations or CLI output screenshots when behavior changes and request at least one review before merge.
+- Runtime code lives under `src/agentmap/`.
+- Keep `src/agentmap/models` data-only.
+- Put business logic in `src/agentmap/services`.
+- Keep dependency wiring in `src/agentmap/di`.
+- Agent implementations live in `src/agentmap/agents`.
+- Documentation sources live in `docs-docusaurus/docs`.
+- Tests are organized under `tests/unit`, `tests/integration`, and `tests/e2e`.
 
-## Documentation & Workspace Tips
-Create temporary investigation artifacts under `dev-artifacts/YYYY-MM-DD-task-name/` with subfolders for analysis, scripts, and verification; remove them once merged unless still valuable. Keep secrets out of source control—copy `agentmap_local_config.yaml` for local overrides and load credentials through environment variables. Review `claude.md` when planning architecture changes to stay aligned with DRY, SOLID, and YAGNI.
+## Testing
+
+- Use `test_*.py` filenames, `Test*` classes, and `test_*` functions.
+- Unit tests should prefer mocks and `tests/utils/MockServiceFactory`.
+- Integration tests should use the real DI container.
+- Add regression coverage for agent behavior, DI wiring, and service contracts when those change.
+
+## Documentation And Workflow Notes
+
+- Slash-prefixed forms like `/shark deep-review high` are skill invocations, not shell commands.
+- Shell commands should be written without the leading slash, for example `shark get b003`.
+- Create temporary investigation artifacts under `dev-artifacts/YYYY-MM-DD-task-name/`.
+- Keep secrets out of source control; use local config overrides and environment variables.
