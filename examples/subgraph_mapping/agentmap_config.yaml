@@ -1,0 +1,23 @@
+storage_config_path: "agentmap_config_storage.yaml"
+
+paths:
+  csv_repository: "workflows"
+
+execution:
+  state_schema: "dynamic"
+  enable_validation: true
+
+logging:
+  version: 1
+  disable_existing_loggers: false
+  formatters:
+    default:
+      format: "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: default
+      level: INFO
+  root:
+    level: INFO
+    handlers: [console]

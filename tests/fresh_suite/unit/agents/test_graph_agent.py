@@ -739,6 +739,25 @@ class TestGraphAgent(unittest.TestCase):
         # Verify result is included in state_updates
         self.assertEqual(state_updates["result"], output)
 
+    def test_post_process_uses_mapped_output_target_field(self):
+        """Test post-processing writes mapped graph output to the parsed parent key."""
+        context = {"output_field": "selected_parent=child_final"}
+        agent = self.create_graph_agent(context=context)
+        agent.set_execution_tracker(self.mock_tracker)
+
+        output = {"selected_parent": "hello"}
+
+        updated_state, processed_output = agent._post_process({}, {}, output)
+
+        self.assertEqual(updated_state, {})
+        self.assertEqual(
+            processed_output["state_updates"],
+            {
+                "selected_parent": "hello",
+                "last_action_success": True,
+            },
+        )
+
     # =============================================================================
     # 7. Logging Integration Tests
     # =============================================================================

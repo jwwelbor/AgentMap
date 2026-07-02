@@ -37,6 +37,22 @@ TestInner,Process,default,data,processed,InnerDone,,,Process inner data
 TestInner,InnerDone,default,processed|data,inner_final,,,,Return inner result
 """
 
+    MAPPED_OUTPUT_CSV = """\
+GraphName,Node,AgentType,Input_Fields,Output_Field,Success_Next,Failure_Next,Context,Prompt
+TestOuter,Start,echo,input,data,CallInner,,,Initialize data
+TestOuter,CallInner,graph,data,selected_parent=child_final,ReadMapped,,{workflow=::TestInner},Call inner graph
+TestOuter,ReadMapped,echo,selected_parent,echoed_parent,,,,Read mapped parent field
+TestInner,Process,echo,data,processed,InnerDone,,,Process inner data
+TestInner,InnerDone,echo,processed,child_final,,,,Return inner result
+"""
+
+    DIRECT_CHILD_INPUT_CSV = """\
+GraphName,Node,AgentType,Input_Fields,Output_Field,Success_Next,Failure_Next,Context,Prompt
+TestOuter,CallInner,graph,text|request_id,child_result,Done,,{workflow=::TestInner},Call inner graph
+TestOuter,Done,echo,child_result,final_result,,,,Return child result
+TestInner,InspectText,echo,text|request_id,child_snapshot,,,,Read selected child state
+"""
+
     def setup_services(self):
         """Initialize services needed for graph execution."""
         super().setup_services()
@@ -137,6 +153,56 @@ TestInner,InnerDone,default,processed|data,inner_final,,,,Return inner result
                 result.success,
                 f"Legacy resolution should succeed. Error: {result.error}",
             )
+
+    def test_output_field_mapping_updates_parent_target_field(self):
+        """Mapped graph outputs should be readable by the next parent node."""
+        csv_path = self._create_two_layer_csv(
+            filename="mapped_output_two_layer.csv",
+            content=self.MAPPED_OUTPUT_CSV,
+        )
+
+        bundle, _ = self.graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path,
+            graph_name="TestOuter",
+        )
+
+        result = self.graph_runner_service.run(bundle, initial_state={"input": "hello"})
+
+        from agentmap.models.execution.result import ExecutionResult
+
+        self.assertIsInstance(result, ExecutionResult)
+        self.assertTrue(result.success, f"Mapped output flow failed: {result.error}")
+        self.assertEqual(result.final_state["selected_parent"], "hello")
+        self.assertEqual(result.final_state["echoed_parent"], "hello")
+
+    def test_selected_parent_fields_are_forwarded_to_child_graph(self):
+        """GraphAgent should pass selected parent fields into child state."""
+        csv_path = self._create_two_layer_csv(
+            filename="direct_child_input_two_layer.csv",
+            content=self.DIRECT_CHILD_INPUT_CSV,
+        )
+
+        bundle, _ = self.graph_bundle_service.get_or_create_bundle(
+            csv_path=csv_path,
+            graph_name="TestOuter",
+        )
+
+        result = self.graph_runner_service.run(
+            bundle,
+            initial_state={"text": "hello", "request_id": "req-42"},
+        )
+
+        from agentmap.models.execution.result import ExecutionResult
+
+        self.assertIsInstance(result, ExecutionResult)
+        self.assertTrue(result.success, f"Selected child input flow failed: {result.error}")
+        self.assertEqual(
+            result.final_state["child_result"]["child_snapshot"]["text"], "hello"
+        )
+        self.assertEqual(
+            result.final_state["child_result"]["child_snapshot"]["request_id"],
+            "req-42",
+        )
 
     # --- Unit-level checks ---
 

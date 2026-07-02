@@ -234,14 +234,29 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
                 "graph_success", output.get("last_action_success", True)
             )
 
-            state_updates = {
-                self.output_field: output,
-                "last_action_success": graph_success,
-            }
+            state_updates = self._build_state_updates(output, graph_success)
 
             return state, {"state_updates": state_updates}
 
         return state, output
+
+    def _build_state_updates(
+        self, output: Dict[str, Any], graph_success: Any
+    ) -> Dict[str, Any]:
+        """Build parent state updates for graph outputs."""
+        target_field = self._get_output_mapping_target()
+
+        if target_field:
+            mapped_value = output[target_field] if target_field in output else output
+            return {
+                target_field: mapped_value,
+                "last_action_success": graph_success,
+            }
+
+        return {
+            self.output_field: output,
+            "last_action_success": graph_success,
+        }
 
     def _prepare_subgraph_state(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -335,8 +350,9 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
             Processed result for parent graph
         """
         # Handle output field mapping
-        if self.output_field and "=" in self.output_field:
-            target_field, source_field = self.output_field.split("=", 1)
+        target_field = self._get_output_mapping_target()
+        if target_field:
+            _, source_field = self.output_field.split("=", 1)
             if source_field in result:
                 processed = {target_field: result[source_field]}
                 self.log_debug(
@@ -350,3 +366,10 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
 
         # Default: return entire result
         return result
+
+    def _get_output_mapping_target(self) -> Optional[str]:
+        """Return the parent target field for `target=source` output mapping."""
+        if self.output_field and "=" in self.output_field:
+            target_field, _ = self.output_field.split("=", 1)
+            return target_field
+        return None
