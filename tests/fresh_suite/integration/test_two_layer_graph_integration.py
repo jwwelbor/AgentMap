@@ -195,7 +195,9 @@ TestInner,InspectText,echo,text|request_id,child_snapshot,,,,Read selected child
         from agentmap.models.execution.result import ExecutionResult
 
         self.assertIsInstance(result, ExecutionResult)
-        self.assertTrue(result.success, f"Selected child input flow failed: {result.error}")
+        self.assertTrue(
+            result.success, f"Selected child input flow failed: {result.error}"
+        )
         self.assertEqual(
             result.final_state["child_result"]["child_snapshot"]["text"], "hello"
         )
