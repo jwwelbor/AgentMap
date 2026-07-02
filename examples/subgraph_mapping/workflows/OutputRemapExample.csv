@@ -1,0 +1,4 @@
+GraphName,Node,AgentType,Prompt,Input_Fields,Output_Field,Edge,Success_Next,Failure_Next,Context
+OutputRemapExample,CallInner,graph,Map a child field back to the parent,raw_data,selected_parent=child_final,ReadMapped,,,{workflow=::OutputRemapInner}
+OutputRemapExample,ReadMapped,echo,Read mapped parent field,selected_parent,echoed_parent,,,,
+OutputRemapInner,MakeChildValue,echo,Expose final child value,raw_data,child_final,,,,

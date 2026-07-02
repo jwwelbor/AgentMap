@@ -1,0 +1,5 @@
+GraphName,Node,AgentType,Prompt,Input_Fields,Output_Field,Edge,Success_Next,Failure_Next,Context
+DirectSubgraphState,CallInner,graph,Run child graph,raw_data,inner_result,Done,,,{workflow=::DirectSubgraphStateInner}
+DirectSubgraphState,Done,echo,Return nested child result,inner_result,final_result,,,,
+DirectSubgraphStateInner,CopyInput,echo,Copy parent data into child state,raw_data,child_value,Summarize,,,
+DirectSubgraphStateInner,Summarize,echo,Expose final child field,child_value,child_final,,,,

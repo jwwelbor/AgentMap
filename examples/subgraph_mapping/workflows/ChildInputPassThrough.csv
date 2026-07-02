@@ -1,0 +1,4 @@
+GraphName,Node,AgentType,Prompt,Input_Fields,Output_Field,Edge,Success_Next,Failure_Next,Context
+ChildInputPassThrough,CallInner,graph,Pass selected parent fields into child state,text|request_id,child_result,Done,,,{workflow=::ChildInputPassThroughInner}
+ChildInputPassThrough,Done,echo,Return full child result,child_result,final_result,,,,
+ChildInputPassThroughInner,InspectText,echo,Read the selected child input,text|request_id,child_snapshot,,,,
