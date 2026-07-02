@@ -296,7 +296,9 @@ class TestGraphAgent(unittest.TestCase):
         }
         self.assertEqual(result, expected)
 
-    def test_prepare_subgraph_state_field_mapping_uses_parent_state_from_preprocess(self):
+    def test_prepare_subgraph_state_field_mapping_uses_parent_state_from_preprocess(
+        self,
+    ):
         """Mapped child inputs should resolve from the original parent state."""
         context = {"input_fields": ["text=raw_data", "request_id"]}
         agent = self.create_graph_agent(context=context)

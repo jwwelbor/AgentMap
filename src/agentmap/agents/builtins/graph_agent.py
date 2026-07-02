@@ -330,7 +330,10 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
                 field_value = self.state_adapter_service.get_value(
                     parent_state, field_spec, self._MISSING
                 )
-                if field_spec != "subgraph_bundles" and field_value is not self._MISSING:
+                if (
+                    field_spec != "subgraph_bundles"
+                    and field_value is not self._MISSING
+                ):
                     subgraph_state[field_spec] = field_value
                     self.log_debug(f"[GraphAgent] Passed through {field_spec}")
 
