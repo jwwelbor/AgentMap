@@ -38,6 +38,7 @@ from agentmap.models.llm_batch import (
     LLMBatchStatus,
     LLMBatchSubmitRequest,
 )
+from agentmap.models.llm_cost import LLMCostBreakdown
 from agentmap.models.llm_execution import (
     LLMExecutionError,
     LLMFanoutResult,
@@ -51,6 +52,7 @@ from agentmap.services.config import AppConfigService
 from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
+from agentmap.services.llm.cost_calculator import LLMCostCalculator
 from agentmap.services.llm.stream_seam import stream_provider
 from agentmap.services.llm_batch_errors import (
     LLMBatchCancelNotSupportedError,
@@ -80,6 +82,7 @@ from agentmap.services.telemetry.constants import (
     GEN_AI_RESPONSE_MODEL,
     GEN_AI_SYSTEM,
     GEN_AI_SYSTEM_FINGERPRINT,
+    GEN_AI_USAGE_COST,
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
     LLM_CALL_SPAN,
@@ -184,6 +187,12 @@ class LLMService:
             ),
         )
         self._message_utils = LLMMessageService()
+
+        # Deterministic per-call cost (E05-F06 REQ-F-001/REQ-F-002): never
+        # estimated, never read from a provider response.
+        self._cost_calculator = LLMCostCalculator(
+            configuration.get_llm_pricing_config(), logging_service
+        )
 
         # Resilience: retry + circuit breaker
         self._resilience_config = configuration.get_llm_resilience_config()
@@ -1324,12 +1333,16 @@ class LLMService:
                     f"LLM call successful, response length: {len(text)}"
                     + (f", request_id: {req_id}" if req_id else "")
                 )
+                usage = self._extract_llm_usage(response)
+                cost = self._cost_calculator.calculate(usage, provider, model)
+                self._record_cost_span_attribute(cost)
                 return LLMResponse(
                     text=text,
                     resolved_provider=provider,
                     resolved_model=model,
-                    usage=self._extract_llm_usage(response),
+                    usage=usage,
                     finish_reason=self._extract_finish_reason(response),
+                    cost=cost,
                 )
             except Exception as e:
                 typed_error = classify_llm_error(e, provider)
@@ -2700,6 +2713,19 @@ class LLMService:
                 self._telemetry_service.set_span_attributes(current_span, attributes)
         except Exception:
             pass
+
+    def _record_cost_span_attribute(self, cost: Optional[LLMCostBreakdown]) -> None:
+        """Record the cost span attribute (REQ-F-010), error-isolated.
+
+        No-op when ``cost`` is ``None`` -- absence is meaningful (unpriced
+        call), never a fabricated zero. Reuses ``_set_current_span_attributes``,
+        which already short-circuits when telemetry is disabled and swallows
+        any telemetry-side failure so a spend-incurring call is never failed
+        by an observability defect.
+        """
+        if cost is None:
+            return
+        self._set_current_span_attributes({GEN_AI_USAGE_COST: float(cost.total_cost)})
 
     def _record_span_exception_safe(self, span: Any, exception: Exception) -> None:
         """Record exception on span safely. No-op on failure."""

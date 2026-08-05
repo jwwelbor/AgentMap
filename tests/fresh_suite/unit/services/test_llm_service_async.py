@@ -3,13 +3,15 @@ Async contract tests for LLM service protocols and test doubles.
 """
 
 import unittest
-from unittest.mock import AsyncMock, Mock, create_autospec, patch
+from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock, Mock, create_autospec, patch
 
 from agentmap.exceptions import LLMConfigurationError, LLMServiceError, LLMTimeoutError
 from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import LLMResponse
 from agentmap.services.llm_service import LLMService
 from agentmap.services.protocols import LLMServiceProtocol
+from agentmap.services.telemetry.constants import GEN_AI_USAGE_COST
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
@@ -738,3 +740,385 @@ class TestCacheSystemPromptAsyncWiring(unittest.IsolatedAsyncioTestCase):
         # Error message contains "caching" (the feature name used in the error message)
         self.assertIn("cach", error_msg)
         mock_get_client.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# T-E05-F06-004: cost wired onto the async receipt (TC-001/TC-002 rerun
+# against the live LLMService path, not just LLMCostCalculator in isolation).
+# ---------------------------------------------------------------------------
+
+
+class TestLLMServiceCostReceiptWiring(unittest.IsolatedAsyncioTestCase):
+    """TC-001 / TC-002 rerun against ``LLMService.call_llm_async`` -- proves the
+    real ``LLMCostCalculator`` is wired into the async receipt-construction
+    path, not merely unit-testable in isolation (that's T-E05-F06-003).
+
+    Caller-Path Contract (test-plan.md TC-001/TC-002):
+      - Entrypoint: ``LLMService.call_llm_async(messages, provider=..., model=...)``
+      - Lowest allowed mock seam: ``_client_factory.get_or_create_client``
+        returning a client whose ``ainvoke`` carries ``usage_metadata``.
+      - Forbidden mocks: ``LLMCostCalculator.calculate`` and
+        ``_invoke_with_resilience_async`` are never mocked here -- real cost
+        computation must run from the real ``usage_metadata`` extraction path.
+    """
+
+    PRICING_CATALOG = {
+        "catalog_version": "2026-08-01",
+        "currency": "USD",
+        "models": {
+            "anthropic": {
+                "claude-sonnet-4-5": {
+                    "input_per_1m": "3.00",
+                    "output_per_1m": "15.00",
+                    "cache_write_per_1m": "3.75",
+                    "cache_read_per_1m": "0.30",
+                }
+            }
+        },
+    }
+
+    def setUp(self):
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = (
+            MockServiceFactory.create_mock_app_config_service()
+        )
+        self.mock_app_config_service.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 60,
+            },
+        }
+        self.mock_app_config_service.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-default-model",
+            "api_key": "test-key",
+            "temperature": 0.7,
+        }
+        self.mock_app_config_service.get_llm_pricing_config.return_value = (
+            self.PRICING_CATALOG
+        )
+        self.mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
+        self.mock_routing_config_service = Mock()
+        self.mock_routing_config_service.supports_prompt_caching.return_value = False
+
+        self.service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=Mock(),
+            llm_models_config_service=self.mock_llm_models_config_service,
+            routing_config_service=self.mock_routing_config_service,
+        )
+
+    async def test_tc001_full_four_bucket_cost_computation_on_live_receipt(self):
+        """TC-001: response.cost.total_cost sums all four buckets, quantized to
+        6 decimal places, driven through the real async receipt path."""
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content="ok",
+                usage_metadata={
+                    "input_tokens": 1000,
+                    "output_tokens": 500,
+                    "cache_creation_input_tokens": 200,
+                    "cache_read_input_tokens": 400,
+                },
+                response_metadata={},
+            )
+        )
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+                model="claude-sonnet-4-5",
+            )
+
+        # Expected total per REQ-F-001: sum of tokens/1e6*rate across all four
+        # buckets, quantized to 6 places. Computed here (not hardcoded) so the
+        # assertion is self-checking against the formula, independent of any
+        # transcription error in a worked example:
+        #   1000/1e6*3.00 + 500/1e6*15.00 + 200/1e6*3.75 + 400/1e6*0.30
+        #   = 0.003 + 0.0075 + 0.00075 + 0.00012 = 0.01137
+        expected_total = (
+            (Decimal(1000) / Decimal(1_000_000) * Decimal("3.00"))
+            + (Decimal(500) / Decimal(1_000_000) * Decimal("15.00"))
+            + (Decimal(200) / Decimal(1_000_000) * Decimal("3.75"))
+            + (Decimal(400) / Decimal(1_000_000) * Decimal("0.30"))
+        ).quantize(Decimal("0.000001"))
+
+        self.assertIsNotNone(result.cost)
+        self.assertIsInstance(result.cost.total_cost, Decimal)
+        self.assertEqual(result.cost.total_cost, expected_total)
+        self.assertEqual(result.cost.currency, "USD")
+        self.assertEqual(result.cost.catalog_version, "2026-08-01")
+
+    async def test_tc002_two_bucket_usage_cache_buckets_absent(self):
+        """TC-002: cache buckets absent (None) contribute zero, not skipped --
+        cache_write_cost/cache_read_cost are Decimal("0"), total reflects only
+        input/output."""
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content="ok",
+                usage_metadata={
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "cache_creation_input_tokens": None,
+                    "cache_read_input_tokens": None,
+                },
+                response_metadata={},
+            )
+        )
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+                model="claude-sonnet-4-5",
+            )
+
+        expected_total = (Decimal(100) / Decimal(1_000_000) * Decimal("3.00")) + (
+            Decimal(50) / Decimal(1_000_000) * Decimal("15.00")
+        )
+        self.assertEqual(
+            result.cost.total_cost, expected_total.quantize(Decimal("0.000001"))
+        )
+        self.assertEqual(result.cost.cache_write_cost, Decimal("0"))
+        self.assertEqual(result.cost.cache_read_cost, Decimal("0"))
+
+
+class TestLLMServiceCostTelemetry(unittest.IsolatedAsyncioTestCase):
+    """TC-022 / TC-023 / TC-024: cost span attribute, error-isolated (REQ-F-010).
+
+    Caller-Path Contract (test-plan.md TC-022):
+      - Entrypoint: ``LLMService(..., telemetry_service=telemetry).call_llm_async(...)``
+        with ``telemetry_service`` passed at construction -- matching the
+        established pattern at ``test_llm_service_streaming.py:63,72``
+        (``_make_llm_service(telemetry_service=...)``).
+      - Lowest allowed mock seam: ``_client_factory.get_or_create_client`` for
+        the provider client; ``telemetry.set_span_attributes`` is asserted via
+        call-argument inspection.
+      - Forbidden mocks: ``_set_current_span_attributes`` is NOT mocked into a
+        no-op -- it internally calls the real ``opentelemetry.trace.get_current_span``,
+        so that OTel API is patched to return a recording fake span (the
+        established pattern in ``tests/unit/services/test_llm_service_telemetry.py::TestTokenCountExtraction``),
+        and assertions run against the mocked ``telemetry.set_span_attributes``
+        call arguments.
+      - Counter-factual: an impl that computes ``response.cost`` correctly but
+        never calls the span-attribute helper (or uses the wrong key) would
+        still pass a test that only checked ``response.cost`` -- asserting on
+        the telemetry mock's call arguments catches that.
+    """
+
+    PRICING_CATALOG = {
+        "catalog_version": "2026-08-01",
+        "currency": "USD",
+        "models": {
+            "anthropic": {
+                "claude-sonnet-4-5": {
+                    "input_per_1m": "3.00",
+                    "output_per_1m": "15.00",
+                },
+            },
+        },
+    }
+    EMPTY_CATALOG = {"catalog_version": None, "currency": "USD", "models": {}}
+
+    def _make_service(self, pricing_config, telemetry_service):
+        mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        mock_app_config_service = MockServiceFactory.create_mock_app_config_service()
+        mock_app_config_service.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 60,
+            },
+        }
+        mock_app_config_service.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-default-model",
+            "api_key": "test-key",
+            "temperature": 0.7,
+        }
+        mock_app_config_service.get_llm_pricing_config.return_value = pricing_config
+        mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
+        mock_routing_config_service = Mock()
+        mock_routing_config_service.supports_prompt_caching.return_value = False
+
+        return LLMService(
+            configuration=mock_app_config_service,
+            logging_service=mock_logging_service,
+            routing_service=Mock(),
+            llm_models_config_service=mock_llm_models_config_service,
+            routing_config_service=mock_routing_config_service,
+            telemetry_service=telemetry_service,
+        )
+
+    @staticmethod
+    def _mock_recording_span():
+        mock_span = MagicMock()
+        mock_span.is_recording.return_value = True
+        return mock_span
+
+    @staticmethod
+    def _collect_span_attributes(telemetry):
+        all_attrs = {}
+        for call in telemetry.set_span_attributes.call_args_list:
+            call_args = call[0]
+            if len(call_args) > 1:
+                all_attrs.update(call_args[1])
+        return all_attrs
+
+    @patch("opentelemetry.trace.get_current_span")
+    async def test_tc022_priced_call_records_cost_span_attribute(self, mock_get_span):
+        """TC-022: priced call + enabled telemetry -> set_span_attributes is
+        called with a cost attribute equal to float(response.cost.total_cost)."""
+        mock_get_span.return_value = self._mock_recording_span()
+        telemetry = MagicMock(name="telemetry_service")
+        service = self._make_service(self.PRICING_CATALOG, telemetry)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content="ok",
+                usage_metadata={
+                    "input_tokens": 1000,
+                    "output_tokens": 500,
+                    "cache_creation_input_tokens": None,
+                    "cache_read_input_tokens": None,
+                },
+                response_metadata={},
+            )
+        )
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            result = await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+                model="claude-sonnet-4-5",
+            )
+
+        self.assertIsNotNone(result.cost)
+        all_attrs = self._collect_span_attributes(telemetry)
+        self.assertIn(GEN_AI_USAGE_COST, all_attrs)
+        self.assertEqual(all_attrs[GEN_AI_USAGE_COST], float(result.cost.total_cost))
+
+    @patch("opentelemetry.trace.get_current_span")
+    async def test_tc023_unpriced_call_does_not_set_cost_attribute(self, mock_get_span):
+        """TC-023: no pricing catalog configured -> cost is None -> no cost
+        attribute is set (absence is meaningful; zero is not), even though
+        other attributes (e.g. token counts) are legitimately recorded on the
+        same span."""
+        mock_get_span.return_value = self._mock_recording_span()
+        telemetry = MagicMock(name="telemetry_service")
+        service = self._make_service(self.EMPTY_CATALOG, telemetry)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content="ok",
+                usage_metadata={
+                    "input_tokens": 1000,
+                    "output_tokens": 500,
+                    "cache_creation_input_tokens": None,
+                    "cache_read_input_tokens": None,
+                },
+                response_metadata={},
+            )
+        )
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            result = await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+                model="claude-sonnet-4-5",
+            )
+
+        self.assertIsNone(result.cost)
+        all_attrs = self._collect_span_attributes(telemetry)
+        self.assertNotIn(GEN_AI_USAGE_COST, all_attrs)
+
+    @patch("opentelemetry.trace.get_current_span")
+    async def test_tc024_telemetry_failure_does_not_fail_the_call(self, mock_get_span):
+        """TC-024: telemetry.set_span_attributes raises -> call_llm_async still
+        returns the real successful LLMResponse (error-isolation swallows the
+        telemetry failure), not an exception and not a degraded response."""
+        mock_get_span.return_value = self._mock_recording_span()
+        telemetry = MagicMock(name="telemetry_service")
+        telemetry.set_span_attributes.side_effect = RuntimeError("otel exporter down")
+        service = self._make_service(self.PRICING_CATALOG, telemetry)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content="ok",
+                usage_metadata={
+                    "input_tokens": 1000,
+                    "output_tokens": 500,
+                    "cache_creation_input_tokens": None,
+                    "cache_read_input_tokens": None,
+                },
+                response_metadata={},
+            )
+        )
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            result = await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+                model="claude-sonnet-4-5",
+            )
+
+        self.assertEqual(result.text, "ok")
+        self.assertIsNotNone(result.cost)
+
+    @patch("opentelemetry.trace.get_current_span")
+    async def test_tc024_provider_failure_not_masked_by_telemetry_failure(
+        self, mock_get_span
+    ):
+        """TC-024 (negative cross-check): when BOTH the provider call and
+        telemetry fail, the exception surfaced is the provider's failure --
+        never the telemetry RuntimeError -- proving telemetry failure never
+        masquerades as or replaces the real outcome."""
+        mock_get_span.return_value = self._mock_recording_span()
+        telemetry = MagicMock(name="telemetry_service")
+        telemetry.set_span_attributes.side_effect = RuntimeError("otel exporter down")
+        service = self._make_service(self.PRICING_CATALOG, telemetry)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(side_effect=RuntimeError("Invalid api_key"))
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            with self.assertRaises(LLMResolvedCallError) as ctx:
+                await service.call_llm_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="anthropic",
+                    model="claude-sonnet-4-5",
+                )
+
+        self.assertIsInstance(ctx.exception.cause, LLMConfigurationError)
+        self.assertNotIn("otel exporter down", str(ctx.exception))
