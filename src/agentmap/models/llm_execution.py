@@ -144,11 +144,22 @@ class LLMExecutionError:
 
     Replaces raw uncaught exceptions so callers can inspect failure details
     without catching submission-level exceptions.
+
+    ``is_budget_refusal`` is an additive discriminator (E05-F06,
+    T-E05-F06-008 round-5 rework, UAT Finding 1) mirroring
+    ``LLMResponse.cost``/``.tool_calls``'s additive-field pattern: ``True``
+    when the failure was a budget-guard refusal (``is_budget_guard_refusal``
+    in ``services/llm/_budget_guard_refusal.py``), ``None`` otherwise. Lets
+    a caller recognize a budget refusal deterministically regardless of the
+    host guard's chosen exception type, without relying on ``error_type``
+    (which intentionally stays the raw, unmodified exception class name for
+    every fan-out failure, refusal or not).
     """
 
     error_type: str
     message: str
     retryable: bool
+    is_budget_refusal: Optional[bool] = None
 
 
 @dataclass

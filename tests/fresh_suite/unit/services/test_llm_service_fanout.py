@@ -1047,6 +1047,39 @@ class TestAC008BudgetGuardRefusalClassification(unittest.IsolatedAsyncioTestCase
         mock_client.ainvoke.assert_not_called()
         mock_client.invoke.assert_not_called()
 
+    async def test_fan_out_item_refused_marks_is_budget_refusal_true(self):
+        """T-E05-F06-008 round-5 kickback item 3 (UAT Finding 1, additive
+        discriminator): a fan-out item refused by the budget guard must
+        carry ``error.is_budget_refusal is True``, mirroring
+        ``LLMResponse.cost``/``.tool_calls``'s additive-field pattern
+        (``models/llm_execution.py``) -- a caller can then recognize a
+        budget refusal deterministically without relying on ``error_type``,
+        which stays the raw exception class name for every fan-out failure."""
+        guard = Mock()
+        guard.check_before_dispatch = AsyncMock(
+            side_effect=RuntimeError("tenant=acme-42 remaining_budget=$0.00")
+        )
+        guard.observe_receipt = AsyncMock(return_value=None)
+        service = self._make_guarded_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="never"))
+        mock_client.invoke = Mock()
+
+        spec = _make_spec("budget-refused-discriminator", provider="anthropic")
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            results = await service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertIs(
+            r.error.is_budget_refusal,
+            True,
+            "a budget refusal must be deterministically discoverable via "
+            "error.is_budget_refusal, independent of error_type",
+        )
+
     async def test_fan_out_item_refused_by_a_normally_retryable_type_is_forced_false(
         self,
     ):
@@ -1124,6 +1157,12 @@ class TestAC008BudgetGuardRefusalClassification(unittest.IsolatedAsyncioTestCase
         r = results[0]
         self.assertEqual(r.error.error_type, "LLMServiceError")
         self.assertFalse(r.error.retryable)
+        self.assertIn(
+            r.error.is_budget_refusal,
+            (None, False),
+            "an ordinary (non-guard) failure must not be misclassified as "
+            "a budget refusal",
+        )
 
 
 # ---------------------------------------------------------------------------

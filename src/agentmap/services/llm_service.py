@@ -1589,30 +1589,12 @@ class LLMService:
         caller unchanged and must never be reclassified (NFR-F-003,
         Decision 5).
 
-        On **every** tier (primary and each fallback tier), the exception
-        is wrapped in ``BudgetGuardRefusal`` so it can be recognized and
-        passed through unchanged by every blanket ``except Exception`` net
-        on the dispatch/fallback path -- ``call_llm_async``'s direct,
-        routing, and telemetry-retry branches, and
-        ``LLMFallbackAsyncLadderMixin._try_fallback_tier``'s per-tier loop
-        (``services/llm/fallback_ladder.py``, composed into
-        ``LLMFallbackHandler``; explicitly re-raises ``BudgetGuardRefusal``
-        ahead of its own ``except Exception`` -- see that method) -- instead
-        of being reclassified as a tier failure, retried, or absorbed so the
-        ladder continues to the next tier. The wrapper is unwrapped back to
-        ``.original`` at the single outermost boundary each entrypoint owns
-        (``_dispatch_call_llm_async`` for ``call_llm_async``;
-        ``call_llm_stream_async`` for its streaming sibling) and never
-        reaches a caller.
-
-        Also stamps ``e`` with the ``is_budget_guard_refusal`` marker
-        (T-E05-F06-008 round-4 UAT) before wrapping it -- the fan-out path
-        (``call_llm_many_async`` -> ``_execute_fan_out_item`` -> this method,
-        via ``call_llm_async``) only ever observes the *unwrapped* ``.original``
-        once it reaches ``_execute_fan_out_item``'s own exception handling, so
-        the marker is the only way that per-item classification can recognize
-        a budget refusal deterministically rather than by chance of exception
-        type.
+        On **every** tier, wraps the exception in ``BudgetGuardRefusal`` (see
+        that class's own docstring in ``_budget_guard_refusal.py`` for the
+        full per-seam pass-through and outermost-unwrap rationale) and stamps
+        it via ``mark_as_budget_guard_refusal`` (see that function's
+        docstring for why the fan-out path needs the stamp in addition to
+        the wrapper).
         """
         if self._budget_guard is None:
             return
@@ -2445,7 +2427,10 @@ class LLMService:
         inherited from the single async resilience stack (spec Decision 3).
         Builds ``LLMFanoutResult`` from the returned ``LLMResponse`` so that
         ``provider``, ``model``, and ``usage`` reflect the resolved values, not
-        the requested spec values.
+        the requested spec values. Failure-branch construction is delegated to
+        ``_fan_out_result_from_resolved_error`` / ``_fan_out_result_from_exception``
+        (NFR-F-006) -- see those methods' docstrings for the per-branch
+        classification rationale.
         """
         async with semaphore:
             kwargs = dict(spec.request_options)
@@ -2468,82 +2453,103 @@ class LLMService:
                     usage=llm_response.usage,
                 )
             except LLMResolvedCallError as exc:
-                # Failure occurred after routing/fallback resolved a concrete
-                # provider/model — preserve that identity in the result record.
-                #
-                # A budget-guard refusal cannot surface as LLMResolvedCallError
-                # (T-E05-F06-008 round-4 UAT investigation; verified by tracing
-                # the direct and fallback-ladder paths as they exist at this
-                # rework, not assumed): _check_budget_before_dispatch always
-                # wraps the guard's exception in BudgetGuardRefusal before it
-                # goes anywhere, and BudgetGuardRefusal is not an LLMServiceError
-                # subclass, so it is never caught by the except-Exception /
-                # except-LLMServiceError nets in _call_llm_async_direct,
-                # _try_fallback_tier (fallback_ladder.py), or
-                # _dispatch_fallback_ladder that would otherwise wrap a failure
-                # as LLMResolvedCallError -- it propagates past all of them
-                # unmodified. The wrapper is only ever unwrapped back to
-                # .original at the single outermost boundary
-                # (_dispatch_call_llm_async), which sits above this fan-out
-                # exception handling in the call stack. So exc.cause here is
-                # never a guard exception and no is_budget_guard_refusal check
-                # is needed. If this stack ever changes such that a guard
-                # exception could be wrapped as LLMResolvedCallError, this
-                # comment (and this branch's missing marker check) is the
-                # first place to revisit.
-                return LLMFanoutResult(
-                    request_id=spec.request_id,
-                    status="failed",
-                    resolved_provider=exc.resolved_provider,
-                    resolved_model=exc.resolved_model,
-                    text=None,
-                    usage=None,
-                    error=LLMExecutionError(
-                        error_type=type(exc.cause).__name__,
-                        message=_sanitize_error_message(exc.cause),
-                        retryable=is_retryable(exc.cause),
-                    ),
-                )
+                return self._fan_out_result_from_resolved_error(spec, exc)
             except Exception as exc:
-                # Failure occurred before any provider/model was resolved
-                # (e.g., validation error, routing service unavailable, or a
-                # budget-guard refusal -- REQ-F-003 covers fan-out, "once per
-                # item", per spec.md's Budget guard contract table; this is
-                # NOT out of scope). Echo spec values — may be None. Do not
-                # fabricate.
-                #
-                # error_type intentionally stays type(exc).__name__ unchanged
-                # (including for a budget refusal) -- every other fan-out
-                # failure path in this file treats error_type as an exact,
-                # unmodified discriminator of the underlying exception class
-                # (see _raise_fallback_exhausted's docstring and
-                # test_tc_ac8_07's "error_type must preserve the original
-                # typed error discriminator"), so rewriting it here for one
-                # failure kind would break that established contract. What
-                # IS made deterministic instead of incidental: retryable is
-                # forced False for a marked guard refusal rather than left to
-                # whatever isinstance(exc, (LLMTimeoutError, LLMRateLimitError))
-                # happens to return for the host's exception type — this is
-                # the concrete form NFR-F-003's "must never be reclassified
-                # as a transient provider failure" takes once the exception
-                # has left the resilience/fallback stack and become a fan-out
-                # result rather than a raised exception (T-E05-F06-008
-                # round-4 UAT finding; dispatch itself is already prevented
-                # by _check_budget_before_dispatch regardless of this flag).
-                retryable = False if is_budget_guard_refusal(exc) else is_retryable(exc)
-                return LLMFanoutResult(
-                    request_id=spec.request_id,
-                    status="failed",
-                    resolved_provider=spec.provider,
-                    resolved_model=spec.model,
-                    text=None,
-                    usage=None,
-                    error=LLMExecutionError(
-                        error_type=type(exc).__name__,
-                        message=_sanitize_error_message(exc),
-                        retryable=retryable,
-                    ),
-                )
+                return self._fan_out_result_from_exception(spec, exc)
+
+    def _fan_out_result_from_resolved_error(
+        self, spec: LLMRequest, exc: LLMResolvedCallError
+    ) -> LLMFanoutResult:
+        """Build a failed ``LLMFanoutResult`` after routing/fallback resolved
+        a concrete provider/model -- preserves that identity in the result.
+
+        No ``is_budget_guard_refusal`` check here -- see
+        ``_classify_fan_out_exception``'s docstring for why a budget refusal
+        cannot surface as ``LLMResolvedCallError``.
+        """
+        return LLMFanoutResult(
+            request_id=spec.request_id,
+            status="failed",
+            resolved_provider=exc.resolved_provider,
+            resolved_model=exc.resolved_model,
+            text=None,
+            usage=None,
+            error=LLMExecutionError(
+                error_type=type(exc.cause).__name__,
+                message=_sanitize_error_message(exc.cause),
+                retryable=is_retryable(exc.cause),
+            ),
+        )
+
+    def _fan_out_result_from_exception(
+        self, spec: LLMRequest, exc: Exception
+    ) -> LLMFanoutResult:
+        """Build a failed ``LLMFanoutResult`` for a failure that occurred
+        before any provider/model was resolved (validation error, routing
+        service unavailable, or a budget-guard refusal -- REQ-F-003 covers
+        fan-out, "once per item"; NOT out of scope). Echoes spec values --
+        may be ``None``, never fabricated. See ``_classify_fan_out_exception``'s
+        docstring for the retryable / is_budget_refusal rationale.
+        """
+        retryable, is_budget_refusal = self._classify_fan_out_exception(exc)
+        return LLMFanoutResult(
+            request_id=spec.request_id,
+            status="failed",
+            resolved_provider=spec.provider,
+            resolved_model=spec.model,
+            text=None,
+            usage=None,
+            error=LLMExecutionError(
+                error_type=type(exc).__name__,
+                message=_sanitize_error_message(exc),
+                retryable=retryable,
+                is_budget_refusal=is_budget_refusal,
+            ),
+        )
+
+    def _classify_fan_out_exception(
+        self, exc: Exception
+    ) -> Tuple[bool, Optional[bool]]:
+        """Classify a fan-out item's generic-``Exception`` failure.
+
+        Returns ``(retryable, is_budget_refusal)`` for
+        ``_execute_fan_out_item``'s ``except Exception`` branch only -- the
+        sibling ``except LLMResolvedCallError`` branch never calls this: a
+        budget-guard refusal cannot surface as ``LLMResolvedCallError``
+        (T-E05-F06-008 round-4 UAT investigation; verified by tracing the
+        direct and fallback-ladder paths as they exist at this rework, not
+        assumed) -- ``_check_budget_before_dispatch`` always wraps the
+        guard's exception in ``BudgetGuardRefusal`` before it goes anywhere,
+        and ``BudgetGuardRefusal`` is not an ``LLMServiceError`` subclass, so
+        it is never caught by the except-Exception / except-LLMServiceError
+        nets in ``_call_llm_async_direct``, ``_try_fallback_tier``
+        (fallback_ladder.py), or ``_dispatch_fallback_ladder`` that would
+        otherwise wrap a failure as ``LLMResolvedCallError`` -- it
+        propagates past all of them unmodified, unwrapped back to
+        ``.original`` only at the outermost boundary
+        (``_dispatch_call_llm_async``), above this fan-out handling in the
+        call stack. If this stack ever changes such that a guard exception
+        could be wrapped as ``LLMResolvedCallError``, this paragraph is the
+        first place to revisit.
+
+        ``error_type`` intentionally stays ``type(exc).__name__`` unchanged
+        even for a refusal -- every other fan-out failure path treats it as
+        an exact, unmodified discriminator of the underlying exception class
+        (see ``_raise_fallback_exhausted``'s docstring and
+        ``test_tc_ac8_07``), so this method never rewrites it. Instead:
+        ``retryable`` is forced ``False`` for a marked guard refusal rather
+        than left to whatever ``is_retryable(exc)`` returns for the host's
+        chosen exception type (NFR-F-003's "must never be reclassified as a
+        transient provider failure", T-E05-F06-008 round-4 UAT finding;
+        dispatch is already prevented by ``_check_budget_before_dispatch``
+        regardless of this flag). ``is_budget_refusal`` is the additive
+        discriminator (round-5, UAT Finding 1): ``True`` for a marked
+        refusal, ``None`` otherwise -- lets a caller recognize a refusal
+        deterministically without relying on ``error_type``.
+        """
+        if is_budget_guard_refusal(exc):
+            return False, True
+        return is_retryable(exc), None
 
     # ------------------------------------------------------------------
     # Batch lifecycle methods (E05-F04 registry-based dispatch)
