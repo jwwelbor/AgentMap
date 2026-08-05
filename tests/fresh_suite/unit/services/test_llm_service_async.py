@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, create_autospec, patch
 from agentmap.exceptions import LLMConfigurationError, LLMServiceError, LLMTimeoutError
 from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import LLMResponse
+from agentmap.models.llm_tool_call import LLMToolCall
 from agentmap.services.llm_service import LLMService
 from agentmap.services.protocols import LLMServiceProtocol
 from agentmap.services.telemetry.constants import GEN_AI_USAGE_COST
@@ -1122,3 +1123,257 @@ class TestLLMServiceCostTelemetry(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(ctx.exception.cause, LLMConfigurationError)
         self.assertNotIn("otel exporter down", str(ctx.exception))
+
+
+class TestLLMServiceToolCallAndTextNormalizationWiring(
+    unittest.IsolatedAsyncioTestCase
+):
+    """TC-013 / TC-026 / TC-027 / TC-028 / TC-028a / TC-029 (T-E05-F06-005):
+    ``extract_tool_calls`` / ``normalize_response_text`` wired into the live
+    async receipt-construction path (``_invoke_with_resilience_async``), not
+    merely unit-testable in isolation (that's ``test_tool_call_extraction.py``).
+
+    Caller-Path Contract:
+      - Entrypoint: ``LLMService.call_llm_async(messages, provider=..., ...)``
+        (``ask_async`` for TC-029).
+      - Lowest allowed mock seam: ``_client_factory.get_or_create_client``
+        returning a client whose ``ainvoke`` resolves to a raw response
+        object carrying ``.tool_calls`` / list-or-str ``.content`` directly.
+      - Forbidden mocks: ``extract_tool_calls`` / ``normalize_response_text``
+        are never mocked here -- the real extraction/normalization must run.
+
+    Scope-boundary note (TC-013): TC-013's own Caller-Path Contract also
+    declares a ``bind_tools`` call assertion, part of REQ-F-006's
+    tool-definition send path -- explicitly out of this task's scope (T-005
+    Scope Boundary: "Do NOT implement tools=/bind_tools here -- that is
+    T-E05-F06-006"). ``tools=`` is still passed here (accepted harmlessly via
+    ``call_llm_async``'s ``**kwargs``, since ``LLMService`` does not yet
+    reject/consume it) to preserve the literal entrypoint shape, but no
+    ``bind_tools`` assertion is made; that assertion is TC-014/TC-014a's,
+    covered by T-E05-F06-006.
+    """
+
+    def setUp(self):
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = (
+            MockServiceFactory.create_mock_app_config_service()
+        )
+        self.mock_app_config_service.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 60,
+            },
+        }
+        self.mock_app_config_service.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-default-model",
+            "api_key": "test-key",
+            "temperature": 0.7,
+        }
+        self.mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
+        self.mock_routing_config_service = Mock()
+        self.mock_routing_config_service.supports_prompt_caching.return_value = False
+
+        self.service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=Mock(),
+            llm_models_config_service=self.mock_llm_models_config_service,
+            routing_config_service=self.mock_routing_config_service,
+        )
+
+    async def test_tc013_one_tool_call_in_normalized_channel_populates_tool_calls(
+        self,
+    ):
+        """TC-013: response.tool_calls == [LLMToolCall(...)], response.text
+        unaffected (cross-checked with TC-026), finish_reason unchanged."""
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content="Let me check.",
+                tool_calls=[
+                    {
+                        "id": "toolu_1",
+                        "name": "get_weather",
+                        "args": {"city": "Oslo"},
+                        "type": "tool_call",
+                    }
+                ],
+                response_metadata={"stop_reason": "tool_use"},
+            )
+        )
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "weather in Oslo?"}],
+                provider="anthropic",
+                tools=[
+                    {
+                        "name": "get_weather",
+                        "description": "...",
+                        "parameters": {},
+                    }
+                ],
+            )
+
+        self.assertEqual(
+            result.tool_calls,
+            [LLMToolCall(id="toolu_1", name="get_weather", arguments={"city": "Oslo"})],
+        )
+        self.assertEqual(result.text, "Let me check.")
+        self.assertEqual(result.finish_reason, "tool_use")
+
+    async def test_tc013_edge_plain_text_response_tool_calls_is_none(self):
+        """TC-013 edge case: no tool_calls attribute -> response.tool_calls
+        is None, never []."""
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="hello"))
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+            )
+
+        self.assertIsNone(result.tool_calls)
+
+    async def test_tc026_block_list_content_with_text_block_concatenates(self):
+        """TC-026: block-list content -> response.text is the concatenated
+        text-block string, isinstance(response.text, str)."""
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content=[
+                    {"type": "text", "text": "Let me check."},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "get_weather",
+                        "input": {},
+                    },
+                ],
+            )
+        )
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "weather in Oslo?"}],
+                provider="anthropic",
+                tools=[{"name": "get_weather", "description": "...", "parameters": {}}],
+            )
+
+        self.assertEqual(result.text, "Let me check.")
+        self.assertIsInstance(result.text, str)
+
+    async def test_tc027_block_list_content_with_no_text_block_is_empty_string(
+        self,
+    ):
+        """TC-027: block-list content with no text block -> "" (not None)."""
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content=[
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "get_weather",
+                        "input": {},
+                    }
+                ],
+            )
+        )
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "weather in Oslo?"}],
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text, "")
+
+    async def test_tc028_plain_string_content_unchanged(self):
+        """TC-028: plain string content -> response.text unchanged
+        (regression -- the common path)."""
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="hello"))
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text, "hello")
+
+    async def test_tc028a_malformed_block_list_content_degrades_gracefully(self):
+        """TC-028a: non-dict list entry is skipped, not raised."""
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content=["plain string entry", {"type": "text", "text": "b"}],
+            )
+        )
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text, "b")
+
+    async def test_tc029_ask_async_returns_str_on_a_tool_bound_call(self):
+        """TC-029: await ask_async(...) returns a str on a tool-bound call
+        (production convenience wrapper, not call_llm_async directly)."""
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content=[
+                    {"type": "text", "text": "Let me check."},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "get_weather",
+                        "input": {},
+                    },
+                ],
+            )
+        )
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.ask_async(
+                "weather in Oslo?",
+                provider="anthropic",
+                tools=[{"name": "get_weather", "description": "...", "parameters": {}}],
+            )
+
+        self.assertIsInstance(result, str)
+        self.assertEqual(result, "Let me check.")

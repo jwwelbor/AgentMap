@@ -54,6 +54,10 @@ from agentmap.services.config.llm_routing_config_service import LLMRoutingConfig
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.llm.cost_calculator import LLMCostCalculator
 from agentmap.services.llm.stream_seam import stream_provider
+from agentmap.services.llm.tool_call_extraction import (
+    extract_tool_calls,
+    normalize_response_text,
+)
 from agentmap.services.llm_batch_errors import (
     LLMBatchCancelNotSupportedError,
     LLMBatchExpiredError,
@@ -1313,9 +1317,7 @@ class LLMService:
                 response = await self._invoke_provider_async(client, langchain_messages)
                 duration = time.monotonic() - start_time
 
-                text = (
-                    response.content if hasattr(response, "content") else str(response)
-                )
+                text = normalize_response_text(response)
 
                 was_open = self._circuit_breaker.is_open(provider, model)
                 self._circuit_breaker.record_success(provider, model)
@@ -1343,6 +1345,7 @@ class LLMService:
                     usage=usage,
                     finish_reason=self._extract_finish_reason(response),
                     cost=cost,
+                    tool_calls=extract_tool_calls(response),
                 )
             except Exception as e:
                 typed_error = classify_llm_error(e, provider)
