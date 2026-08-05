@@ -1794,7 +1794,7 @@ class TestLLMServiceBudgetGuard(unittest.IsolatedAsyncioTestCase):
     """T-E05-F06-008: pre-dispatch budget guard + post-completion observation.
 
     Covers test-plan.md TC-007, TC-007a, TC-007b, TC-008, TC-009, TC-010,
-    TC-010b, TC-011, TC-012, TC-030.
+    TC-010b, TC-011, TC-012, TC-030, TC-033.
 
     Caller-Path Contract (shared across all tests in this class):
       - Entrypoint: ``LLMService(..., budget_guard=guard).call_llm_async(
@@ -2165,6 +2165,61 @@ class TestLLMServiceBudgetGuard(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(fallback_check.max_possible_output_cost)
         self.assertEqual(fallback_check.resolved_provider, "anthropic")
         self.assertEqual(fallback_check.resolved_model, "claude-haiku")
+
+    # -- Fail-closed on a FALLBACK tier (T-E05-F06-008 rework -- code ------
+    # -- review Finding 1: a fallback-tier guard refusal must stop the -----
+    # -- ladder and propagate, not be absorbed as an ordinary tier failure -
+
+    async def test_tc033_fallback_tier_guard_refusal_stops_ladder_and_propagates(
+        self,
+    ):
+        """TC-033: the primary tier's guard check passes and its provider
+        call fails (triggering the fallback ladder); the FALLBACK tier's own
+        guard check then raises. The fallback provider client must never be
+        invoked, and the guard's raw exception must reach the caller of
+        call_llm_async unchanged -- not be logged and absorbed as an
+        ordinary tier failure with the ladder continuing (there is only one
+        fallback tier here, but the defect this guards against is the
+        ladder continuing past a refusal at all, not just exhausting)."""
+        guard = self._make_guard()
+
+        async def _refuse_on_fallback(check):
+            if check.attempt_kind == "fallback":
+                raise RuntimeError("fallback tier over budget")
+            return None
+
+        guard.check_before_dispatch = AsyncMock(side_effect=_refuse_on_fallback)
+        service = self._make_fallback_service(guard)
+        _, fallback_client, fake_get_client = self._fallback_clients()
+        service._client_factory.get_or_create_client = Mock(side_effect=fake_get_client)
+
+        with patch("agentmap.services.llm_service.asyncio.sleep", new=AsyncMock()):
+            with self.assertRaises(RuntimeError) as ctx:
+                await service.call_llm_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="openai",
+                    model="gpt-4o-mini",
+                )
+
+        # The guard's raw exception reaches the caller unchanged -- not
+        # wrapped in LLMResolvedCallError (which is what a buggy
+        # implementation that treats the refusal as an ordinary tier
+        # failure and exhausts the ladder would raise instead).
+        self.assertEqual(str(ctx.exception), "fallback tier over budget")
+        self.assertNotIsInstance(ctx.exception, LLMResolvedCallError)
+
+        # The fallback client was never invoked -- the guard refusal
+        # blocked dispatch before any network call on this tier.
+        fallback_client.ainvoke.assert_not_called() if fallback_client.ainvoke else None
+        fallback_client.invoke.assert_not_called()
+
+        # Guard awaited exactly once per attempted tier: primary (passes),
+        # then fallback (refuses) -- the refusal does not trigger a second
+        # fallback attempt or re-check.
+        self.assertEqual(guard.check_before_dispatch.await_count, 2)
+        checks = [c.args[0] for c in guard.check_before_dispatch.await_args_list]
+        self.assertEqual(checks[0].attempt_kind, "primary")
+        self.assertEqual(checks[1].attempt_kind, "fallback")
 
     async def test_no_guard_registered_byte_identical_pre_f06_behavior(self):
         """Regression: with no budget_guard registered, no guard-related code

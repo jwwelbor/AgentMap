@@ -54,6 +54,7 @@ from agentmap.services.config import AppConfigService
 from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
+from agentmap.services.llm._budget_guard_refusal import BudgetGuardRefusal
 from agentmap.services.llm.cost_calculator import LLMCostCalculator
 from agentmap.services.llm.stream_seam import stream_provider
 from agentmap.services.llm.tool_call_extraction import (
@@ -134,32 +135,12 @@ _RESERVED_KEYS: frozenset = frozenset(
 )
 
 
-class _BudgetGuardRefusal(Exception):
-    """Internal marker carrying a primary-tier budget guard's raw exception
-    through ``call_llm_async``'s several broad ``except Exception`` nets
-    (direct dispatch, routing, and the telemetry wrapper's own
-    retry-without-instrumentation branch).
-
-    NFR-F-003 requires *any* exception from ``check_before_dispatch`` --
-    typed or not -- to propagate to the caller unchanged, never be
-    reclassified as a provider failure, and never trigger a fallback
-    attempt or a silent re-dispatch. An untyped exception (e.g. a plain
-    ``RuntimeError``) is otherwise indistinguishable by type from a genuine
-    provider failure (which also often surfaces as ``RuntimeError``) or a
-    telemetry-infrastructure failure, so this wrapper marks "this came from
-    the guard, not the provider or telemetry" without changing the
-    original exception's type or message. ``call_llm_async`` is the single
-    outermost boundary that unwraps and re-raises ``.original`` verbatim.
-    Never surfaces to callers.
-
-    Only raised for **primary**-tier refusals -- see
-    ``_check_budget_before_dispatch`` for why fallback-tier refusals are
-    left unwrapped.
-    """
-
-    def __init__(self, original: BaseException) -> None:
-        super().__init__(str(original))
-        self.original = original
+# NOTE: the budget-guard refusal marker (``BudgetGuardRefusal``) lives in
+# ``agentmap.services.llm._budget_guard_refusal`` rather than here, so that
+# ``llm_fallback_handler.py`` can import and re-raise it ahead of its own
+# per-tier ``except Exception`` without creating a circular import (this
+# module imports ``LLMFallbackHandler`` below). See that module's docstring
+# for the full rationale.
 
 
 class LLMService:
@@ -572,7 +553,7 @@ class LLMService:
             return await self._call_llm_async_core(
                 messages, provider, model, temperature, routing_context, **kwargs
             )
-        except _BudgetGuardRefusal as refusal:
+        except BudgetGuardRefusal as refusal:
             raise refusal.original
 
     async def _call_llm_async_with_telemetry(
@@ -626,7 +607,7 @@ class LLMService:
                     # be treated as a telemetry-infrastructure failure and
                     # silently re-dispatched (re-checking the guard a second
                     # time) without instrumentation.
-                    _BudgetGuardRefusal,
+                    BudgetGuardRefusal,
                 ),
             ):
                 raise
@@ -770,7 +751,7 @@ class LLMService:
 
         Returns a rich ``LLMResponse`` carrying the resolved provider identity
         and usage.  Both public entrypoints delegate here; there is exactly one
-        async resilience stack. A ``_BudgetGuardRefusal`` raised by the
+        async resilience stack. A ``BudgetGuardRefusal`` raised by the
         routing or direct branch (``_dispatch_async_core``) propagates through
         unchanged -- ``call_llm_async`` is the outermost boundary that unwraps
         it, so it survives the telemetry wrapper's own except-Exception nets
@@ -1173,7 +1154,7 @@ class LLMService:
             # silently rewrite the resolved identity with the fallback provider.
             # Mirrors the identical guard in _call_llm_async_direct:842.
             raise
-        except _BudgetGuardRefusal:
+        except BudgetGuardRefusal:
             # REQ-F-003 / NFR-F-003: same pass-through as the direct path --
             # a budget-guard refusal must not be treated as a pre-selection
             # routing failure and silently retried against fallback_provider.
@@ -1411,7 +1392,7 @@ class LLMService:
             )
         except LLMResolvedCallError:
             raise  # Already wrapped by the fallback handler — tier identity intact.
-        except _BudgetGuardRefusal:
+        except BudgetGuardRefusal:
             # REQ-F-003/NFR-F-003 policy decision, not a transient failure --
             # propagate unconditionally; call_llm_async unwraps at the top.
             raise
@@ -1586,24 +1567,18 @@ class LLMService:
         caller unchanged and must never be reclassified (NFR-F-003,
         Decision 5).
 
-        On the **primary** tier, the exception is wrapped in
-        ``_BudgetGuardRefusal`` purely so ``call_llm_async``'s broad
-        ``except Exception`` nets (direct, routing, and telemetry-retry
-        branches) can recognize and pass it through unchanged instead of
-        reclassifying or retrying it; the wrapper is unwrapped back to
-        ``.original`` at the outermost boundary (``call_llm_async``) and
-        never reaches a caller.
-
-        On a **fallback** tier the exception is left unwrapped: it is
-        raised from inside ``LLMFallbackHandler.try_with_fallback_async``'s
-        own per-tier ``except Exception`` (Decision 3 forbids changing that
-        file), which already absorbs it and continues to the next tier or
-        exhausts into ``LLMResolvedCallError``. Wrapping there would leak
-        the private ``_BudgetGuardRefusal`` type into that error's public
-        ``.cause`` attribute for no benefit -- a fallback-tier refusal is a
-        documented, accepted v1 limitation (spec.md Component Change 2),
-        not a guarantee this seam can fully close without touching the
-        fallback handler.
+        On **every** tier (primary and each fallback tier), the exception
+        is wrapped in ``BudgetGuardRefusal`` so it can be recognized and
+        passed through unchanged by every blanket ``except Exception`` net
+        on the dispatch/fallback path -- ``call_llm_async``'s direct,
+        routing, and telemetry-retry branches, and
+        ``LLMFallbackHandler.try_with_fallback_async``'s per-tier loop
+        (which explicitly re-raises ``BudgetGuardRefusal`` ahead of its own
+        ``except Exception`` -- see that method) -- instead of being
+        reclassified as a tier failure, retried, or absorbed so the ladder
+        continues to the next tier. The wrapper is unwrapped back to
+        ``.original`` at the single outermost boundary
+        (``_dispatch_call_llm_async``) and never reaches a caller.
         """
         if self._budget_guard is None:
             return
@@ -1617,9 +1592,7 @@ class LLMService:
         try:
             await self._budget_guard.check_before_dispatch(check)
         except Exception as e:
-            if attempt_kind == "primary":
-                raise _BudgetGuardRefusal(e) from e
-            raise
+            raise BudgetGuardRefusal(e) from e
 
     async def _invoke_with_resilience_async(
         self,
@@ -1631,7 +1604,7 @@ class LLMService:
         attempt_kind: str = "primary",
         max_output_tokens: Optional[int] = None,
     ) -> LLMResponse:
-        """Single async resilience seam: retry + circuit breaker + response wrapping.
+        """Single async resilience seam: circuit breaker + budget check + retry.
 
         Returns ``LLMResponse`` carrying the resolved ``provider``, ``model``,
         response text, and normalized ``LLMUsage`` extracted from the raw response.
@@ -1639,11 +1612,12 @@ class LLMService:
         public ``call_llm_async`` both funnel through here. Every fallback tier
         also re-enters here (via the ``invoke_async_fn`` lambda in ``__init__``),
         which is what gives the budget guard per-tier coverage "for free"
-        (Decision 3) with no changes to ``llm_fallback_handler.py``.
+        (Decision 3).
 
-        The pre-dispatch budget check sits **before** the retry loop below
-        (not inside it) so retries within a tier are never re-checked --
-        only a fresh tier re-enters this method and re-triggers the check.
+        The pre-dispatch budget check sits **before** the retry loop (extracted
+        to ``_run_resilient_retry_loop``, NFR-F-006) so retries within a tier
+        are never re-checked -- only a fresh tier re-enters this method and
+        re-triggers the check.
         """
         self._record_circuit_breaker_state(provider, model)
 
@@ -1661,12 +1635,39 @@ class LLMService:
             langchain_messages, provider, model, attempt_kind, max_output_tokens
         )
 
-        retry_cfg = self._resilience_config.get("retry", {})
-        max_attempts = retry_cfg.get("max_attempts", 3)
-        backoff_base = retry_cfg.get("backoff_base", 2.0)
-        backoff_max = retry_cfg.get("backoff_max", 30.0)
-        jitter = retry_cfg.get("jitter", True)
+        return await self._run_resilient_retry_loop(
+            client, langchain_messages, provider, model
+        )
 
+    def _resolve_retry_config(self) -> Tuple[int, float, float, bool]:
+        """Resolve retry config knobs from ``self._resilience_config``.
+
+        Extracted from ``_run_resilient_retry_loop`` (NFR-F-006).
+        """
+        retry_cfg = self._resilience_config.get("retry", {})
+        return (
+            retry_cfg.get("max_attempts", 3),
+            retry_cfg.get("backoff_base", 2.0),
+            retry_cfg.get("backoff_max", 30.0),
+            retry_cfg.get("jitter", True),
+        )
+
+    async def _run_resilient_retry_loop(
+        self,
+        client: Any,
+        langchain_messages: List[Any],
+        provider: str,
+        model: str,
+    ) -> LLMResponse:
+        """Retry loop: attempt the call, retry retryable failures with backoff.
+
+        Extracted from ``_invoke_with_resilience_async`` (NFR-F-006). Owns
+        only the per-attempt try/except and the final exhaustion exit;
+        success construction lives in ``_attempt_llm_call_async``, per-attempt
+        failure classification/backoff-or-raise in
+        ``_handle_retry_attempt_failure``.
+        """
+        max_attempts, backoff_base, backoff_max, jitter = self._resolve_retry_config()
         last_error: Optional[Exception] = None
 
         for attempt in range(1, max_attempts + 1):
@@ -1675,68 +1676,151 @@ class LLMService:
                     f"LLM call to {provider}:{model} "
                     f"(attempt {attempt}/{max_attempts})"
                 )
-                start_time = time.monotonic()
-                response = await self._invoke_provider_async(client, langchain_messages)
-                duration = time.monotonic() - start_time
-
-                text = normalize_response_text(response)
-
-                was_open = self._circuit_breaker.is_open(provider, model)
-                self._circuit_breaker.record_success(provider, model)
-                self._record_circuit_breaker_metric_on_close(was_open, provider, model)
-                self._record_duration_metric(duration, provider, model)
-                self._record_llm_response_attributes(response, provider, model)
-
-                resp_meta = getattr(response, "response_metadata", None)
-                req_id = (
-                    self._extract_provider_request_id(resp_meta, provider)
-                    if isinstance(resp_meta, dict)
-                    else None
-                )
-                self._logger.debug(
-                    f"LLM call successful, response length: {len(text)}"
-                    + (f", request_id: {req_id}" if req_id else "")
-                )
-                usage = self._extract_llm_usage(response)
-                cost = self._cost_calculator.calculate(usage, provider, model)
-                self._record_cost_span_attribute(cost)
-                return LLMResponse(
-                    text=text,
-                    resolved_provider=provider,
-                    resolved_model=model,
-                    usage=usage,
-                    finish_reason=self._extract_finish_reason(response),
-                    cost=cost,
-                    tool_calls=extract_tool_calls(response),
+                return await self._attempt_llm_call_async(
+                    client, langchain_messages, provider, model
                 )
             except Exception as e:
-                typed_error = classify_llm_error(e, provider)
-                last_error = typed_error
-
-                if not is_retryable(typed_error):
-                    self._circuit_breaker.record_failure(provider, model)
-                    self._record_error_metric(typed_error, provider, model)
-                    self._record_circuit_breaker_metric_on_open(provider, model)
-                    raise typed_error
-
-                if attempt == max_attempts:
-                    break
-
-                delay = min(backoff_base ** (attempt - 1), backoff_max)
-                if jitter:
-                    delay = delay * (0.5 + random.random())
-
-                self._logger.warning(
-                    f"Retryable error on {provider}:{model} "
-                    f"(attempt {attempt}/{max_attempts}): {typed_error}. "
-                    f"Retrying in {delay:.1f}s"
+                last_error = await self._handle_retry_attempt_failure(
+                    e,
+                    attempt,
+                    max_attempts,
+                    provider,
+                    model,
+                    backoff_base,
+                    backoff_max,
+                    jitter,
                 )
-                await asyncio.sleep(delay)
 
+        self._raise_terminal_retry_failure(last_error, provider, model)
+
+    async def _handle_retry_attempt_failure(
+        self,
+        e: Exception,
+        attempt: int,
+        max_attempts: int,
+        provider: str,
+        model: str,
+        backoff_base: float,
+        backoff_max: float,
+        jitter: bool,
+    ) -> Exception:
+        """Classify one attempt's failure and either raise (non-retryable) or
+        sleep for backoff and return the typed error to the caller.
+
+        Extracted from ``_run_resilient_retry_loop`` (NFR-F-006). On the
+        final attempt, no sleep occurs -- the loop ends naturally and the
+        caller's final ``_raise_terminal_retry_failure`` call raises this
+        returned error.
+        """
+        typed_error = classify_llm_error(e, provider)
+
+        if not is_retryable(typed_error):
+            self._raise_terminal_retry_failure(typed_error, provider, model)
+
+        if attempt < max_attempts:
+            await self._sleep_before_retry(
+                attempt,
+                max_attempts,
+                typed_error,
+                provider,
+                model,
+                backoff_base,
+                backoff_max,
+                jitter,
+            )
+        return typed_error
+
+    async def _attempt_llm_call_async(
+        self,
+        client: Any,
+        langchain_messages: List[Any],
+        provider: str,
+        model: str,
+    ) -> LLMResponse:
+        """Single provider invocation plus success-path ``LLMResponse`` construction.
+
+        Extracted from ``_invoke_with_resilience_async``'s retry loop
+        (NFR-F-006). Raises on any provider failure -- classification and the
+        retry-vs-terminal decision are the caller's
+        (``_run_resilient_retry_loop``'s) responsibility.
+        """
+        start_time = time.monotonic()
+        response = await self._invoke_provider_async(client, langchain_messages)
+        duration = time.monotonic() - start_time
+
+        text = normalize_response_text(response)
+
+        was_open = self._circuit_breaker.is_open(provider, model)
+        self._circuit_breaker.record_success(provider, model)
+        self._record_circuit_breaker_metric_on_close(was_open, provider, model)
+        self._record_duration_metric(duration, provider, model)
+        self._record_llm_response_attributes(response, provider, model)
+
+        resp_meta = getattr(response, "response_metadata", None)
+        req_id = (
+            self._extract_provider_request_id(resp_meta, provider)
+            if isinstance(resp_meta, dict)
+            else None
+        )
+        self._logger.debug(
+            f"LLM call successful, response length: {len(text)}"
+            + (f", request_id: {req_id}" if req_id else "")
+        )
+        usage = self._extract_llm_usage(response)
+        cost = self._cost_calculator.calculate(usage, provider, model)
+        self._record_cost_span_attribute(cost)
+        return LLMResponse(
+            text=text,
+            resolved_provider=provider,
+            resolved_model=model,
+            usage=usage,
+            finish_reason=self._extract_finish_reason(response),
+            cost=cost,
+            tool_calls=extract_tool_calls(response),
+        )
+
+    def _raise_terminal_retry_failure(
+        self, error: Exception, provider: str, model: str
+    ) -> NoReturn:
+        """Record circuit-breaker/error-metric state for a terminal retry-loop
+        failure, then raise it.
+
+        Extracted from ``_invoke_with_resilience_async``'s retry loop
+        (NFR-F-006) -- shared by the non-retryable-error exit and the
+        retries-exhausted exit, which previously duplicated these three
+        calls verbatim.
+        """
         self._circuit_breaker.record_failure(provider, model)
-        self._record_error_metric(last_error, provider, model)
+        self._record_error_metric(error, provider, model)
         self._record_circuit_breaker_metric_on_open(provider, model)
-        raise last_error  # type: ignore[misc]
+        raise error
+
+    async def _sleep_before_retry(
+        self,
+        attempt: int,
+        max_attempts: int,
+        typed_error: Exception,
+        provider: str,
+        model: str,
+        backoff_base: float,
+        backoff_max: float,
+        jitter: bool,
+    ) -> None:
+        """Compute the backoff delay, log it, and sleep before the next retry.
+
+        Extracted from ``_invoke_with_resilience_async``'s retry loop
+        (NFR-F-006).
+        """
+        delay = min(backoff_base ** (attempt - 1), backoff_max)
+        if jitter:
+            delay = delay * (0.5 + random.random())
+
+        self._logger.warning(
+            f"Retryable error on {provider}:{model} "
+            f"(attempt {attempt}/{max_attempts}): {typed_error}. "
+            f"Retrying in {delay:.1f}s"
+        )
+        await asyncio.sleep(delay)
 
     async def _invoke_with_resilience_stream_async(
         self,
@@ -3407,18 +3491,30 @@ class LLMService:
         chunks carry ``text_delta`` and ``chunk_index``; exactly one terminal chunk
         (``is_final=True``) closes the stream with accumulated usage/finish_reason
         and reconstructed provider/model identity (REQ-F-011, SC-1).
+
+        REQ-F-003 / NFR-F-003: this is the streaming sibling of
+        ``_dispatch_call_llm_async``'s outermost unwrap boundary -- a
+        ``BudgetGuardRefusal`` can reach here from the pre-first-chunk
+        fallback path (``_call_llm_stream_async_direct`` re-enters the
+        guarded non-streaming resilience seam via
+        ``LLMFallbackHandler.try_with_fallback_async`` when materializing a
+        fallback tier). Without this unwrap, the internal marker type would
+        leak to a stream caller instead of the guard's own exception.
         """
         kwargs["cache_system_prompt"] = cache_system_prompt
-        if self._telemetry_service is not None:
-            async for chunk in self._call_llm_stream_async_with_telemetry(
-                messages, provider, model, temperature, routing_context, **kwargs
-            ):
-                yield chunk
-        else:
-            async for chunk in self._call_llm_stream_async_core(
-                messages, provider, model, temperature, routing_context, **kwargs
-            ):
-                yield chunk
+        try:
+            if self._telemetry_service is not None:
+                async for chunk in self._call_llm_stream_async_with_telemetry(
+                    messages, provider, model, temperature, routing_context, **kwargs
+                ):
+                    yield chunk
+            else:
+                async for chunk in self._call_llm_stream_async_core(
+                    messages, provider, model, temperature, routing_context, **kwargs
+                ):
+                    yield chunk
+        except BudgetGuardRefusal as refusal:
+            raise refusal.original
 
     async def _call_llm_stream_async_with_telemetry(
         self,

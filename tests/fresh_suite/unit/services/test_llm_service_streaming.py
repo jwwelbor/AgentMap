@@ -435,6 +435,48 @@ class TestCallLLMStreamAsyncDispatch(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(chunks[0].is_final)
 
 
+class TestCallLLMStreamAsyncBudgetGuardRefusalUnwrap(unittest.IsolatedAsyncioTestCase):
+    """T-E05-F06-008 rework (code-review Finding 1 sweep): ``call_llm_stream_async``
+    must unwrap a ``BudgetGuardRefusal`` back to the guard's original exception,
+    mirroring ``_dispatch_call_llm_async``'s non-streaming unwrap boundary.
+
+    A ``BudgetGuardRefusal`` can reach here from the pre-first-chunk fallback
+    path (``_call_llm_stream_async_direct`` re-enters the guarded non-streaming
+    resilience seam via ``LLMFallbackHandler.try_with_fallback_async`` when
+    materializing a fallback tier). Without this unwrap, the internal marker
+    type would leak to a stream caller instead of the guard's own exception --
+    the same defect class as the non-streaming fail-closed fix, on the
+    streaming entrypoint's own outermost boundary.
+    """
+
+    async def test_budget_guard_refusal_unwrapped_to_original_exception(self):
+        from agentmap.services.llm._budget_guard_refusal import BudgetGuardRefusal
+
+        svc = _make_llm_service(telemetry_service=None)
+        original = RuntimeError("fallback tier over budget")
+
+        async def fake_core(
+            messages, provider, model, temperature, routing_context, **kwargs
+        ):
+            raise BudgetGuardRefusal(original)
+            yield  # pragma: no cover -- makes this an async generator
+
+        svc._call_llm_stream_async_core = fake_core
+
+        with self.assertRaises(RuntimeError) as ctx:
+            async for _ in svc.call_llm_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="openai",
+                model="gpt-4o-mini",
+            ):
+                pass
+
+        # Must be the guard's own original exception, unwrapped -- not the
+        # internal BudgetGuardRefusal marker leaking to the caller.
+        self.assertIs(ctx.exception, original)
+        self.assertNotIsInstance(ctx.exception, BudgetGuardRefusal)
+
+
 # ---------------------------------------------------------------------------
 # TC-F03-005: Routing dispatch mirrors the non-streaming core
 # ---------------------------------------------------------------------------
