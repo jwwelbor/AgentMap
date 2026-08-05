@@ -103,6 +103,18 @@ class TestAppConfigService(unittest.TestCase):
         result = self.app_config_service.get_llm_config("missing")
         self.assertEqual(result, {})
 
+    def test_get_llm_pricing_config_delegates_to_llm_manager(self):
+        """TC-009a (delegation half): get_llm_pricing_config() delegates
+        identically to self._llm_manager.get_pricing_config(), mirroring
+        get_llm_resilience_config()'s delegation pattern. No llm.pricing key
+        is present in setUp's mock config, so this also exercises the
+        absent-block -> structural-defaults-only path end to end."""
+        result = self.app_config_service.get_llm_pricing_config()
+
+        self.assertEqual(
+            result, {"catalog_version": None, "currency": "USD", "models": {}}
+        )
+
     def test_get_routing_config(self):
         """Test getting routing configuration with defaults."""
         result = self.app_config_service.get_routing_config()
