@@ -875,12 +875,12 @@ class MyBudgetGuard:
     async def check_before_dispatch(self, check: LLMBudgetCheck) -> None:
         # Raise to refuse dispatch. LLMBudgetExceededError is the canonical
         # typed refusal, but any exception (typed or not) refuses the call.
+        # It takes no custom __init__ (a plain message string); use the
+        # standard `raise ... from ...` syntax for cause chaining.
         if await self._remaining_budget(check.resolved_provider) <= 0:
             raise LLMBudgetExceededError(
-                check.resolved_provider,
-                check.resolved_model,
-                cause=RuntimeError("budget exhausted"),
-            )
+                f"Budget exceeded for {check.resolved_provider}:{check.resolved_model}"
+            ) from RuntimeError("budget exhausted")
 
     async def observe_receipt(self, receipt: LLMResponse) -> None:
         # Record a completed call's spend. Exceptions here are caught and
@@ -931,7 +931,7 @@ This asymmetry is deliberate: a buggy pre-dispatch guard must never become a sil
 ### Scope
 
 - The guard is `async`-only and is invoked exclusively from `call_llm_async()` and the async wrappers built on it (`ask_async()`, `ask_vision_async()`). The synchronous `call_llm()`, `ask()`, and `ask_vision()` are never guard-covered — awaiting an async guard from sync code would require `asyncio.run()`, which breaks inside an already-running event loop.
-- The guard is never invoked on the streaming path (`call_llm_stream_async()`).
+- The guard is not invoked on `call_llm_stream_async()`'s primary streaming dispatch. It IS invoked, however, when a pre-first-chunk streaming failure triggers that path's non-streaming fallback recovery — that recovery call is a genuine non-streaming dispatch and inherits the same pre-dispatch guard check as `call_llm_async()`.
 - AgentMap does not own budget identity, durable accounting, or cross-process locking — that state lives behind the protocol on the host side.
 
 ---
