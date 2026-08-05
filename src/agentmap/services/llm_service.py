@@ -20,6 +20,7 @@ from typing import (
     AsyncIterator,
     Dict,
     List,
+    NoReturn,
     Optional,
     Tuple,
     Union,
@@ -540,6 +541,29 @@ class LLMService:
         """
         kwargs["cache_system_prompt"] = cache_system_prompt
         kwargs["tools"] = tools
+        return await self._dispatch_call_llm_async(
+            messages, provider, model, temperature, routing_context, **kwargs
+        )
+
+    async def _dispatch_call_llm_async(
+        self,
+        messages: List[LLMMessage],
+        provider: Optional[str],
+        model: Optional[str],
+        temperature: Optional[float],
+        routing_context: Optional[Dict[str, Any]],
+        **kwargs,
+    ) -> LLMResponse:
+        """Dispatch to the telemetry or plain core path and unwrap a refusal.
+
+        Extracted from ``call_llm_async`` (NFR-F-006). REQ-F-003 / NFR-F-003:
+        the single outermost boundary that unwraps a primary-tier
+        budget-guard refusal back to the guard's own exception (typed or
+        not) -- covers both the telemetry-wrapped and plain dispatch paths,
+        including the telemetry wrapper's own "retry without instrumentation
+        on unrecognized exception" branch, which would otherwise re-dispatch
+        (and re-check the guard) a second time for an untyped refusal.
+        """
         try:
             if self._telemetry_service is not None:
                 return await self._call_llm_async_with_telemetry(
@@ -549,14 +573,6 @@ class LLMService:
                 messages, provider, model, temperature, routing_context, **kwargs
             )
         except _BudgetGuardRefusal as refusal:
-            # REQ-F-003 / NFR-F-003: the single outermost boundary that
-            # unwraps a primary-tier budget-guard refusal back to the
-            # guard's own exception (typed or not) -- covers both the
-            # telemetry-wrapped and plain dispatch paths, including the
-            # telemetry wrapper's own "retry without instrumentation on
-            # unrecognized exception" branch, which would otherwise
-            # re-dispatch (and re-check the guard) a second time for an
-            # untyped refusal.
             raise refusal.original
 
     async def _call_llm_async_with_telemetry(
@@ -1184,6 +1200,176 @@ class LLMService:
                 **kwargs,
             )
 
+    def _resolve_config(
+        self,
+        provider: str,
+        model: Optional[str],
+        temperature: Optional[float],
+        max_tokens: Optional[int],
+    ) -> Dict[str, Any]:
+        """Resolve the provider config, applying model/temperature/max_tokens.
+
+        Extracted from ``_call_llm_async_direct`` (NFR-F-006). Mirrors the
+        equivalent override-merge step of the sync path (``_call_llm_direct``)
+        for NFR-F-002 parity.
+        """
+        config = self._provider_utils.get_provider_config(provider)
+        if model or temperature is not None or max_tokens is not None:
+            config = config.copy()
+            if model:
+                config["model"] = model
+            if temperature is not None:
+                config["temperature"] = temperature
+            if max_tokens == 0:
+                config.pop("max_tokens", None)
+            elif max_tokens is not None:
+                config["max_tokens"] = max_tokens
+        return config
+
+    def _bind_tools_if_present(
+        self,
+        client: Any,
+        tools: Optional[List[Dict[str, Any]]],
+        provider: str,
+    ) -> Any:
+        """Bind REQ-F-006 tool definitions to a call-local client instance.
+
+        Returns a new bound client when ``tools`` is non-empty, otherwise
+        ``client`` unchanged. The bound runnable (``RunnableBinding``) is
+        deliberately call-local -- ``get_or_create_client`` returns a cached,
+        shared instance, and writing the bound result back into it would leak
+        one caller's tool schema into every subsequent call for that
+        provider/model (AC-21, Decision 8 in Component Change 8).
+        """
+        if not tools:
+            return client
+        bind_tools_fn = getattr(client, "bind_tools", None)
+        if not callable(bind_tools_fn):
+            raise LLMServiceError(
+                f"Provider '{provider}' does not support tool calling: "
+                "resolved client exposes no bind_tools() method."
+            )
+        return bind_tools_fn(tools)
+
+    async def _bind_and_invoke_direct(
+        self,
+        client: Any,
+        messages: List[LLMMessage],
+        provider: str,
+        current_model: str,
+        cache_system_prompt: bool,
+        tools: Optional[List[Dict[str, Any]]],
+        max_output_tokens: Optional[int],
+    ) -> LLMResponse:
+        """Bind tools, inject cache metadata, convert, and invoke with resilience.
+
+        Extracted from ``_call_llm_async_direct`` (NFR-F-006). Cache metadata
+        injection sits after provider resolution and before LangChain
+        conversion so it uses the resolved provider (E05-F05, Decision 2).
+        ``max_output_tokens`` lets the primary tier's LLMBudgetCheck carry a
+        real configured bound (REQ-F-003 Component Change 8) -- fallback
+        tiers stay ``None``, see the ``__init__`` note.
+        """
+        client = self._bind_tools_if_present(client, tools, provider)
+        messages = self._message_utils.inject_cache_metadata(
+            messages, provider, cache_system_prompt
+        )
+        langchain_messages = self._message_utils.convert_messages_to_langchain(messages)
+        return await self._invoke_with_resilience_async(
+            client,
+            langchain_messages,
+            provider,
+            current_model,
+            max_output_tokens=max_output_tokens,
+        )
+
+    def _raise_for_tool_bound_failure(
+        self, provider: str, current_model: str, typed_error: Exception
+    ) -> NoReturn:
+        """Suppress fallback for a failed tool-bound call (REQ-F-008 / Decision 9).
+
+        A fallback tier is a different model that may not accept the same
+        tool schema; returning prose from a fallback tier where the caller's
+        loop expects a structured tool call is exactly the silent degradation
+        Scenario 5 forbids, so tool-bound calls never fall back.
+        """
+        self._logger.warning(
+            f"Tool-bound call to {provider}:{current_model} failed - "
+            "fallback suppressed (tool-bound call, fallback suppressed)"
+        )
+        raise LLMResolvedCallError(
+            provider, current_model, typed_error
+        ) from typed_error
+
+    async def _handle_direct_call_exception(
+        self,
+        e: Exception,
+        provider: str,
+        current_model: str,
+        tools: Optional[List[Dict[str, Any]]],
+        original_messages: List[LLMMessage],
+        **kwargs,
+    ) -> LLMResponse:
+        """Classify a direct-call failure and dispatch to the fallback ladder.
+
+        Extracted from ``_call_llm_async_direct`` (NFR-F-006). Handles the
+        REQ-F-008 tool-bound fallback suppression, non-retryable error
+        classification, and delegation to ``_fallback_handler`` when routing
+        is configured -- mirrors the exception handling previously inline in
+        ``_call_llm_async_direct``'s ``except Exception`` branch verbatim.
+        """
+        typed_error = classify_llm_error(e, provider)
+
+        if tools:
+            self._raise_for_tool_bound_failure(provider, current_model, typed_error)
+
+        if isinstance(typed_error, (LLMDependencyError, LLMConfigurationError)):
+            raise LLMResolvedCallError(
+                provider, current_model, typed_error
+            ) from typed_error
+
+        if self.features_registry and self.routing_config:
+            return await self._dispatch_fallback_ladder(
+                provider, current_model, original_messages, typed_error, **kwargs
+            )
+
+        raise LLMResolvedCallError(
+            provider, current_model, typed_error
+        ) from typed_error
+
+    async def _dispatch_fallback_ladder(
+        self,
+        provider: str,
+        current_model: str,
+        original_messages: List[LLMMessage],
+        typed_error: Exception,
+        **kwargs,
+    ) -> LLMResponse:
+        """Delegate to the fallback handler and normalize its error wrapping.
+
+        Extracted from ``_handle_direct_call_exception`` (NFR-F-006).
+        """
+        try:
+            return await self._fallback_handler.try_with_fallback_async(
+                provider,
+                current_model,
+                original_messages,
+                typed_error,
+                self._provider_utils.get_provider_config,
+                self._client_factory.get_or_create_client,
+                self._message_utils.convert_messages_to_langchain,
+                **kwargs,
+            )
+        except LLMResolvedCallError:
+            # Fallback handler already wrapped the error with tier identity.
+            raise
+        except LLMServiceError as fallback_err:
+            # Tier exhaustion without LLMResolvedCallError — wrap with
+            # the original provider/model (the last known resolved identity).
+            raise LLMResolvedCallError(
+                provider, current_model, fallback_err
+            ) from fallback_err
+
     async def _call_llm_async_direct(
         self,
         provider: str,
@@ -1193,29 +1379,15 @@ class LLMService:
         routing_context: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> LLMResponse:
-        """Async direct provider invocation with resilience and fallback parity.
-
-        Args:
-            routing_context: Optional routing context forwarded from the routing
-                             path so that ``requires_prompt_caching`` flags
-                             carried there are honoured even when messages contain
-                             no embedded ``cache_control`` blocks.
-
-        Returns ``LLMResponse`` carrying the resolved provider, model, and usage
-        extracted from the raw provider response.
-        """
+        """Async direct provider invocation with resilience and fallback parity."""
         current_model: str = "unknown"
         original_messages = messages
-        # REQ-F-006: tool definitions to bind to the resolved client below.
-        # Bound before the try block so the except handler can safely check
-        # it even if an exception is raised before kwargs.pop("tools") runs.
+        # REQ-F-006: declared before try so except can safely check it even
+        # if an exception precedes kwargs.pop("tools").
         tools: Optional[List[Dict[str, Any]]] = None
         try:
-            # Extract cache_system_prompt before forwarding kwargs to the provider.
-            # Mirrors the sync path (_call_llm_direct) for NFR-F-002 parity.
             cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
             tools = kwargs.pop("tools", None)
-
             provider = self._provider_utils.normalize_provider(provider)
             self._validate_prompt_caching_support(
                 provider,
@@ -1224,118 +1396,29 @@ class LLMService:
                 execution_path="call_llm_async",
                 cache_system_prompt=cache_system_prompt,
             )
-            config = self._provider_utils.get_provider_config(provider)
-
             max_tokens = kwargs.pop("max_tokens", None)
-            if model or temperature is not None or max_tokens is not None:
-                config = config.copy()
-                if model:
-                    config["model"] = model
-                if temperature is not None:
-                    config["temperature"] = temperature
-                if max_tokens == 0:
-                    config.pop("max_tokens", None)
-                elif max_tokens is not None:
-                    config["max_tokens"] = max_tokens
-
+            config = self._resolve_config(provider, model, temperature, max_tokens)
             current_model = config.get("model", "unknown")
             client = self._client_factory.get_or_create_client(provider, config)
-
-            # REQ-F-006: bind tool definitions to the resolved client. The
-            # bound runnable (`RunnableBinding`) is a call-local value --
-            # `get_or_create_client` returns a cached, shared instance, and
-            # writing the bound result back into it would leak one caller's
-            # tool schema into every subsequent call for that provider/model
-            # (AC-21, Decision 8 in Component Change 8).
-            if tools:
-                bind_tools_fn = getattr(client, "bind_tools", None)
-                if not callable(bind_tools_fn):
-                    raise LLMServiceError(
-                        f"Provider '{provider}' does not support tool calling: "
-                        "resolved client exposes no bind_tools() method."
-                    )
-                client = client.bind_tools(tools)
-
-            # Inject provider-specific cache metadata (E05-F05).
-            # Placed after provider resolution and before LangChain conversion
-            # so the correct resolved provider drives injection (Decision 2).
-            messages = self._message_utils.inject_cache_metadata(
-                messages, provider, cache_system_prompt
-            )
-
-            langchain_messages = self._message_utils.convert_messages_to_langchain(
-                messages
-            )
-            # REQ-F-003 Component Change 8: pass the resolved max_tokens down
-            # so the primary tier's LLMBudgetCheck can carry a real configured
-            # bound. Fallback tiers stay None -- see the __init__ lambda note.
-            return await self._invoke_with_resilience_async(
+            return await self._bind_and_invoke_direct(
                 client,
-                langchain_messages,
+                messages,
                 provider,
                 current_model,
-                max_output_tokens=config.get("max_tokens"),
+                cache_system_prompt,
+                tools,
+                config.get("max_tokens"),
             )
         except LLMResolvedCallError:
-            # Already wrapped by the fallback handler — preserve its tier identity.
-            raise
+            raise  # Already wrapped by the fallback handler — tier identity intact.
         except _BudgetGuardRefusal:
-            # REQ-F-003 / NFR-F-003: a budget-guard refusal (typed or not)
-            # is a policy decision, not a transient provider failure -- it
-            # must propagate to the caller unconditionally and unchanged,
-            # bypassing classification and the fallback ladder entirely.
-            # Falling back to a different tier would still spend money
-            # against the same policy the guard just refused (spec.md
-            # Component Change 7). Left wrapped -- call_llm_async unwraps
-            # back to the guard's own exception at the outermost boundary.
+            # REQ-F-003/NFR-F-003 policy decision, not a transient failure --
+            # propagate unconditionally; call_llm_async unwraps at the top.
             raise
         except Exception as e:
-            typed_error = classify_llm_error(e, provider)
-
-            if tools:
-                # REQ-F-008 / Decision 9: a fallback tier is a different model
-                # that may not accept the same tool schema. Returning prose
-                # from a fallback tier where the caller's loop expects a
-                # structured tool call is exactly the silent degradation
-                # Scenario 5 forbids, so tool-bound calls never fall back.
-                self._logger.warning(
-                    f"Tool-bound call to {provider}:{current_model} failed - "
-                    "fallback suppressed (tool-bound call, fallback suppressed)"
-                )
-                raise LLMResolvedCallError(
-                    provider, current_model, typed_error
-                ) from typed_error
-
-            if isinstance(typed_error, (LLMDependencyError, LLMConfigurationError)):
-                raise LLMResolvedCallError(
-                    provider, current_model, typed_error
-                ) from typed_error
-
-            if self.features_registry and self.routing_config:
-                try:
-                    return await self._fallback_handler.try_with_fallback_async(
-                        provider,
-                        current_model,
-                        original_messages,
-                        typed_error,
-                        self._provider_utils.get_provider_config,
-                        self._client_factory.get_or_create_client,
-                        self._message_utils.convert_messages_to_langchain,
-                        **kwargs,
-                    )
-                except LLMResolvedCallError:
-                    # Fallback handler already wrapped the error with tier identity.
-                    raise
-                except LLMServiceError as fallback_err:
-                    # Tier exhaustion without LLMResolvedCallError — wrap with
-                    # the original provider/model (the last known resolved identity).
-                    raise LLMResolvedCallError(
-                        provider, current_model, fallback_err
-                    ) from fallback_err
-
-            raise LLMResolvedCallError(
-                provider, current_model, typed_error
-            ) from typed_error
+            return await self._handle_direct_call_exception(
+                e, provider, current_model, tools, original_messages, **kwargs
+            )
 
     def _invoke_with_resilience(
         self,
