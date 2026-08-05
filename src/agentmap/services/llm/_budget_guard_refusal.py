@@ -10,8 +10,10 @@ propagate to the original caller of ``call_llm_async`` unchanged, on
 reclassified as a transient provider failure, and must never trigger a
 further fallback attempt or a silent re-dispatch.
 
-Lives in its own module (not ``llm_service.py``) specifically so that
-``llm_fallback_handler.py`` can import and re-raise it ahead of its own
+Lives in its own module (not ``llm_service.py``) specifically so that the
+async fallback ladder (``LLMFallbackAsyncLadderMixin._try_fallback_tier``,
+``services/llm/fallback_ladder.py``, composed into
+``LLMFallbackHandler``) can import and re-raise it ahead of its own
 per-tier ``except Exception`` -- ``llm_service.py`` imports
 ``LLMFallbackHandler``, so defining this in ``llm_service.py`` would make
 that import circular.
@@ -27,11 +29,14 @@ class BudgetGuardRefusal(Exception):
 
     Raised for **every** attempt kind (``"primary"`` and ``"fallback"``) by
     ``LLMService._check_budget_before_dispatch``. Unwrapped back to
-    ``.original`` at ``LLMService._dispatch_call_llm_async`` -- the single
-    outermost boundary that every dispatch path (direct, routing,
-    telemetry-wrapped, and every fallback tier re-entering the resilience
-    seam) funnels through -- and never surfaces to a caller of
-    ``call_llm_async``.
+    ``.original`` at the single outermost boundary each entrypoint owns --
+    ``LLMService._dispatch_call_llm_async`` for every non-streaming dispatch
+    path (direct, routing, telemetry-wrapped, and every fallback tier
+    re-entering the resilience seam), and ``LLMService.call_llm_stream_async``
+    for its streaming sibling (a fallback-tier refusal can reach it via
+    ``_call_llm_stream_async_direct``'s pre-first-chunk fallback
+    materialization) -- and never surfaces to a caller of ``call_llm_async``
+    or ``call_llm_stream_async``.
     """
 
     def __init__(self, original: BaseException) -> None:

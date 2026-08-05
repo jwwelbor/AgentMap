@@ -137,7 +137,8 @@ _RESERVED_KEYS: frozenset = frozenset(
 
 # NOTE: the budget-guard refusal marker (``BudgetGuardRefusal``) lives in
 # ``agentmap.services.llm._budget_guard_refusal`` rather than here, so that
-# ``llm_fallback_handler.py`` can import and re-raise it ahead of its own
+# the async fallback ladder (``services/llm/fallback_ladder.py``, composed
+# into ``LLMFallbackHandler``) can import and re-raise it ahead of its own
 # per-tier ``except Exception`` without creating a circular import (this
 # module imports ``LLMFallbackHandler`` below). See that module's docstring
 # for the full rationale.
@@ -1572,13 +1573,16 @@ class LLMService:
         passed through unchanged by every blanket ``except Exception`` net
         on the dispatch/fallback path -- ``call_llm_async``'s direct,
         routing, and telemetry-retry branches, and
-        ``LLMFallbackHandler.try_with_fallback_async``'s per-tier loop
-        (which explicitly re-raises ``BudgetGuardRefusal`` ahead of its own
-        ``except Exception`` -- see that method) -- instead of being
-        reclassified as a tier failure, retried, or absorbed so the ladder
-        continues to the next tier. The wrapper is unwrapped back to
-        ``.original`` at the single outermost boundary
-        (``_dispatch_call_llm_async``) and never reaches a caller.
+        ``LLMFallbackAsyncLadderMixin._try_fallback_tier``'s per-tier loop
+        (``services/llm/fallback_ladder.py``, composed into
+        ``LLMFallbackHandler``; explicitly re-raises ``BudgetGuardRefusal``
+        ahead of its own ``except Exception`` -- see that method) -- instead
+        of being reclassified as a tier failure, retried, or absorbed so the
+        ladder continues to the next tier. The wrapper is unwrapped back to
+        ``.original`` at the single outermost boundary each entrypoint owns
+        (``_dispatch_call_llm_async`` for ``call_llm_async``;
+        ``call_llm_stream_async`` for its streaming sibling) and never
+        reaches a caller.
         """
         if self._budget_guard is None:
             return
