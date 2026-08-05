@@ -1091,12 +1091,15 @@ class LLMService:
         """
         current_model: str = "unknown"
         original_messages = messages
+        # REQ-F-006: tool definitions to bind to the resolved client below.
+        # Bound before the try block so the except handler can safely check
+        # it even if an exception is raised before kwargs.pop("tools") runs.
+        tools: Optional[List[Dict[str, Any]]] = None
         try:
             # Extract cache_system_prompt before forwarding kwargs to the provider.
             # Mirrors the sync path (_call_llm_direct) for NFR-F-002 parity.
             cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
-            # REQ-F-006: tool definitions to bind to the resolved client below.
-            tools: Optional[List[Dict[str, Any]]] = kwargs.pop("tools", None)
+            tools = kwargs.pop("tools", None)
 
             provider = self._provider_utils.normalize_provider(provider)
             self._validate_prompt_caching_support(
