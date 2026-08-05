@@ -9,6 +9,9 @@ no business logic lives here.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from agentmap.models.llm_cost import LLMCostBreakdown
+from agentmap.models.llm_tool_call import LLMToolCall
+
 # Structured message block for LLM calls.  Content values may be plain strings
 # (text-only messages) or structured dicts/lists (vision, cache-control blocks,
 # multi-modal content).  Using Any instead of str matches LangChain and the
@@ -39,6 +42,16 @@ class LLMResponse:
     (e.g. Anthropic ``stop_reason`` / OpenAI/Google ``finish_reason``), read
     from the response metadata. It is ``None`` when the provider did not report
     one. Callers use it to detect truncation (``"max_tokens"`` / ``"length"``).
+
+    ``cost`` is the deterministic receipt derived from ``usage`` and the
+    configured price catalog (E05-F06). It is ``None`` whenever pricing is
+    unconfigured, no catalog entry matches the resolved provider/model, or any
+    positive-count usage bucket lacks a configured rate — never a fabricated
+    or partial total (REQ-F-001/REQ-F-002).
+
+    ``tool_calls`` is the normalized tool-call list extracted from the
+    provider response (E05-F06). It is ``None`` when the response carried no
+    tool calls; it is never an empty list (REQ-F-005).
     """
 
     text: str
@@ -46,6 +59,8 @@ class LLMResponse:
     resolved_model: str
     usage: Optional["LLMUsage"] = None
     finish_reason: Optional[str] = None
+    cost: Optional["LLMCostBreakdown"] = None
+    tool_calls: Optional[List["LLMToolCall"]] = None
 
 
 @dataclass
@@ -62,6 +77,13 @@ class LLMStreamChunk:
 
     ``chunk_index`` is a zero-based, monotonically increasing counter assigned
     by the seam. It is NOT the provider's sequence number.
+
+    Deliberately mirrors ``LLMResponse``'s terminal fields but does **not**
+    gain ``cost`` or ``tool_calls`` (E05-F06). That is intentional, not an
+    oversight: E06 owns the streaming seam and ``stream_seam.py`` filters
+    tool-call events by design, so a streaming chunk never carries a
+    tool-call channel to normalize, and cost is out of scope for the
+    streaming path (E05-F06 spec.md Out of Scope 3).
 
     Non-frozen by design (deviation from ``LLMResponse``): the seam accumulates
     the terminal chunk's fields progressively as native events arrive (input
