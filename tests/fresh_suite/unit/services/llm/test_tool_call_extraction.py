@@ -30,6 +30,7 @@ text payload is never silently dropped; this test file's assertion matches
 that choice explicitly rather than assuming it silently.
 """
 
+import logging
 import unittest
 
 from agentmap.models.llm_tool_call import LLMToolCall
@@ -61,6 +62,17 @@ class TestExtractToolCallsAbsentOrEmpty(unittest.TestCase):
 
 class TestExtractToolCallsMalformedEntries(unittest.TestCase):
     """TC-013b: malformed entries are skipped with a debug log, not raised."""
+
+    def setUp(self):
+        # Some other test suite in the same process (e.g. a real DI-container
+        # bootstrap via ``logging.config.dictConfig`` without
+        # ``disable_existing_loggers: False``) can permanently disable this
+        # already-created module logger; ``assertLogs`` sets the level but
+        # does not reset ``.disabled``, so restore it explicitly per test.
+        logger = logging.getLogger("agentmap.services.llm.tool_call_extraction")
+        self._logger_was_disabled = logger.disabled
+        logger.disabled = False
+        self.addCleanup(setattr, logger, "disabled", self._logger_was_disabled)
 
     def test_tc013b_entry_missing_id_is_skipped_with_debug_log(self):
         response = _Resp(
