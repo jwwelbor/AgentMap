@@ -72,6 +72,23 @@ class LLMResolvedCallError(LLMServiceError):
         )
 
 
+class LLMBudgetExceededError(LLMServiceError):
+    """Raised by a host-registered budget guard to refuse a call before dispatch.
+
+    Canonical typed refusal for ``LLMBudgetGuardProtocol.check_before_dispatch``
+    (E05-F06 REQ-F-003). Subclassing ``LLMServiceError`` means a refusal is a
+    non-retryable service error, not a transient provider failure: it must
+    propagate to the caller unconditionally and never be routed into the
+    fallback ladder, because falling back to a different tier would still
+    spend money against the same policy the guard just refused.
+
+    ``LLMService._call_llm_async_direct`` re-raises this exception ahead of
+    its generic ``except Exception`` handler for exactly that reason (see
+    spec.md Component Change 7/8, NFR-F-003 -- pre-dispatch failures fail
+    closed).
+    """
+
+
 class StorageConfigurationNotAvailableException(ConfigurationException):
     """Exception raised when storage configuration is not available or invalid."""
 

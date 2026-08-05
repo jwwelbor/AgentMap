@@ -15,6 +15,16 @@ class LLMContainer(containers.DeclarativeContainer):
     llm_models_config_service = providers.Dependency()
     telemetry_service = providers.Dependency()
 
+    # E05-F06 REQ-F-003/REQ-F-004 (Component Change 10): the single canonical
+    # registration path for an opt-in LLMBudgetGuardProtocol implementation.
+    # Defaults to None (no guard-related code path executes). Hosts register
+    # their guard by overriding this provider:
+    #   container.llm.budget_guard.override(my_guard)
+    # There is deliberately no competing per-call registration path
+    # (Decision 4).
+    budget_guard = providers.Dependency()
+    budget_guard.set_default(providers.Object(None))
+
     @staticmethod
     def _create_llm_routing_config_service(
         app_config_service,
@@ -192,6 +202,7 @@ class LLMContainer(containers.DeclarativeContainer):
         openai_batch_adapter=None,
         gemini_batch_adapter=None,
         batch_handle_repository=None,
+        budget_guard=None,
     ):
         from agentmap.services.llm_service import LLMService
 
@@ -215,6 +226,7 @@ class LLMContainer(containers.DeclarativeContainer):
             telemetry_service,
             batch_adapters=batch_adapters,
             batch_repo=batch_handle_repository,
+            budget_guard=budget_guard,
         )
 
         # Wire content capture flags from telemetry config (T-E02-F04-003).
@@ -239,4 +251,5 @@ class LLMContainer(containers.DeclarativeContainer):
         openai_batch_adapter,
         gemini_batch_adapter,
         batch_handle_repository,
+        budget_guard,
     )

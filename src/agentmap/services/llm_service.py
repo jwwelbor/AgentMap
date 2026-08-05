@@ -13,6 +13,7 @@ import mimetypes
 import random
 import re
 import time
+from decimal import Decimal
 from typing import (
     Any,
     AsyncGenerator,
@@ -38,7 +39,7 @@ from agentmap.models.llm_batch import (
     LLMBatchStatus,
     LLMBatchSubmitRequest,
 )
-from agentmap.models.llm_cost import LLMCostBreakdown
+from agentmap.models.llm_cost import LLMBudgetCheck, LLMCostBreakdown
 from agentmap.models.llm_execution import (
     LLMExecutionError,
     LLMFanoutResult,
@@ -74,6 +75,7 @@ from agentmap.services.llm_fallback_handler import LLMFallbackHandler
 from agentmap.services.llm_message_service import LLMMessageService
 from agentmap.services.llm_provider_utils import LLMProviderUtils
 from agentmap.services.logging_service import LoggingService
+from agentmap.services.protocols.service_protocols import LLMBudgetGuardProtocol
 from agentmap.services.routing.circuit_breaker import CircuitBreaker
 from agentmap.services.routing.routing_service import LLMRoutingService
 from agentmap.services.routing.types import RoutingContext
@@ -131,6 +133,34 @@ _RESERVED_KEYS: frozenset = frozenset(
 )
 
 
+class _BudgetGuardRefusal(Exception):
+    """Internal marker carrying a primary-tier budget guard's raw exception
+    through ``call_llm_async``'s several broad ``except Exception`` nets
+    (direct dispatch, routing, and the telemetry wrapper's own
+    retry-without-instrumentation branch).
+
+    NFR-F-003 requires *any* exception from ``check_before_dispatch`` --
+    typed or not -- to propagate to the caller unchanged, never be
+    reclassified as a provider failure, and never trigger a fallback
+    attempt or a silent re-dispatch. An untyped exception (e.g. a plain
+    ``RuntimeError``) is otherwise indistinguishable by type from a genuine
+    provider failure (which also often surfaces as ``RuntimeError``) or a
+    telemetry-infrastructure failure, so this wrapper marks "this came from
+    the guard, not the provider or telemetry" without changing the
+    original exception's type or message. ``call_llm_async`` is the single
+    outermost boundary that unwraps and re-raises ``.original`` verbatim.
+    Never surfaces to callers.
+
+    Only raised for **primary**-tier refusals -- see
+    ``_check_budget_before_dispatch`` for why fallback-tier refusals are
+    left unwrapped.
+    """
+
+    def __init__(self, original: BaseException) -> None:
+        super().__init__(str(original))
+        self.original = original
+
+
 class LLMService:
     """
     Centralized service for making LLM calls across different providers.
@@ -151,6 +181,7 @@ class LLMService:
         batch_adapter: Optional[Any] = None,
         batch_adapters: Optional[Dict[str, Any]] = None,
         batch_repo: Optional[Any] = None,
+        budget_guard: Optional[LLMBudgetGuardProtocol] = None,
     ):
         """
         Initialize the LLM service.
@@ -164,6 +195,12 @@ class LLMService:
             routing_config_service: Optional routing configuration service
             telemetry_service: Optional telemetry service for span management.
                 When None, all telemetry helpers silently no-op.
+            budget_guard: Optional host-registered ``LLMBudgetGuardProtocol``
+                (E05-F06 REQ-F-003/REQ-F-004). This is the single
+                registration path (Decision 4) -- there is no competing
+                per-call ``budget_guard=`` kwarg. When ``None`` (default),
+                no guard-related code path executes and async dispatch
+                behavior is byte-identical to the pre-F06 path.
         """
         self.configuration = configuration
         self._logger = logging_service.get_class_logger("agentmap.llm")
@@ -172,6 +209,10 @@ class LLMService:
         self.features_registry = features_registry_service
         self.routing_config = routing_config_service
         self._telemetry_service = telemetry_service
+        # E05-F06 REQ-F-003/REQ-F-004: opt-in pre-dispatch budget refusal and
+        # post-completion receipt observation. None => no guard-related code
+        # path executes (NFR-F-002/AC pre-F06 byte-identical behavior).
+        self._budget_guard: Optional[LLMBudgetGuardProtocol] = budget_guard
 
         # Initialize helper components
         self._client_factory = LLMClientFactory(logging_service)
@@ -180,14 +221,21 @@ class LLMService:
         )
         # Use lambda so the fallback handler always dispatches through the
         # current binding of _invoke_with_resilience_async (important for
-        # tests that patch the method after construction).
+        # tests that patch the method after construction). attempt_kind is
+        # pinned to "fallback" here -- every tier the fallback handler drives
+        # re-enters this seam, which is what gives the budget guard per-tier
+        # coverage "for free" (Decision 3) without any change to
+        # LLMFallbackHandler's own signature. Its four-positional-argument
+        # shape can't carry the primary's resolved max_tokens, which is why
+        # max_output_tokens is None on every fallback-tier LLMBudgetCheck
+        # (spec.md Component Change 2, "Fallback-tier limitation (accepted, v1)").
         self._fallback_handler = LLMFallbackHandler(
             logging_service,
             routing_config_service,
             features_registry_service,
             invoke_fn=self._invoke_with_resilience,
             invoke_async_fn=lambda client, msgs, provider, model: self._invoke_with_resilience_async(
-                client, msgs, provider, model
+                client, msgs, provider, model, attempt_kind="fallback"
             ),
         )
         self._message_utils = LLMMessageService()
@@ -492,13 +540,24 @@ class LLMService:
         """
         kwargs["cache_system_prompt"] = cache_system_prompt
         kwargs["tools"] = tools
-        if self._telemetry_service is not None:
-            return await self._call_llm_async_with_telemetry(
+        try:
+            if self._telemetry_service is not None:
+                return await self._call_llm_async_with_telemetry(
+                    messages, provider, model, temperature, routing_context, **kwargs
+                )
+            return await self._call_llm_async_core(
                 messages, provider, model, temperature, routing_context, **kwargs
             )
-        return await self._call_llm_async_core(
-            messages, provider, model, temperature, routing_context, **kwargs
-        )
+        except _BudgetGuardRefusal as refusal:
+            # REQ-F-003 / NFR-F-003: the single outermost boundary that
+            # unwraps a primary-tier budget-guard refusal back to the
+            # guard's own exception (typed or not) -- covers both the
+            # telemetry-wrapped and plain dispatch paths, including the
+            # telemetry wrapper's own "retry without instrumentation on
+            # unrecognized exception" branch, which would otherwise
+            # re-dispatch (and re-check the guard) a second time for an
+            # untyped refusal.
+            raise refusal.original
 
     async def _call_llm_async_with_telemetry(
         self,
@@ -547,6 +606,11 @@ class LLMService:
                     LLMProviderError,
                     LLMConfigurationError,
                     LLMDependencyError,
+                    # REQ-F-003 / NFR-F-003: a budget-guard refusal must not
+                    # be treated as a telemetry-infrastructure failure and
+                    # silently re-dispatched (re-checking the guard a second
+                    # time) without instrumentation.
+                    _BudgetGuardRefusal,
                 ),
             ):
                 raise
@@ -690,8 +754,30 @@ class LLMService:
 
         Returns a rich ``LLMResponse`` carrying the resolved provider identity
         and usage.  Both public entrypoints delegate here; there is exactly one
-        async resilience stack.
+        async resilience stack. A ``_BudgetGuardRefusal`` raised by the
+        routing or direct branch (``_dispatch_async_core``) propagates through
+        unchanged -- ``call_llm_async`` is the outermost boundary that unwraps
+        it, so it survives the telemetry wrapper's own except-Exception nets
+        too (REQ-F-003 / NFR-F-003).
         """
+        response = await self._dispatch_async_core(
+            messages, provider, model, temperature, routing_context, **kwargs
+        )
+        await self._observe_receipt(response)
+        return response
+
+    async def _dispatch_async_core(
+        self,
+        messages: List[LLMMessage],
+        provider: Optional[str],
+        model: Optional[str],
+        temperature: Optional[float],
+        routing_context: Optional[Dict[str, Any]],
+        **kwargs,
+    ) -> LLMResponse:
+        """Routing-vs-direct branch, split out of ``_call_llm_async_core`` so
+        that method's own body stays under the 50-line limit once the
+        budget-guard unwrap/observe wiring was added."""
         if routing_context is not None and self.routing_service:
             if model is not None:
                 self._logger.warning(
@@ -724,6 +810,29 @@ class LLMService:
             temperature,
             **kwargs,
         )
+
+    async def _observe_receipt(self, response: LLMResponse) -> None:
+        """Post-completion budget-guard observation (REQ-F-004), fails **open**.
+
+        Deliberately asymmetric vs. ``_check_budget_before_dispatch``
+        (NFR-F-003, Decision 5): the provider has already been paid for this
+        call, so a buggy guard must not destroy an already-billed result.
+        Any exception from ``observe_receipt`` is caught and logged at
+        warning level -- a documented deviation from the uniform
+        ``try/except Exception: pass`` telemetry pattern used elsewhere
+        (see ``_set_current_span_attributes``), not an oversight.
+
+        Single site: both the routing and direct branches of
+        ``_call_llm_async_core`` converge here, so a call that recovers on a
+        fallback tier produces exactly one observation, carrying the
+        winning tier's receipt.
+        """
+        if self._budget_guard is None:
+            return
+        try:
+            await self._budget_guard.observe_receipt(response)
+        except Exception as e:
+            self._logger.warning(f"Budget guard observe_receipt failed: {e}")
 
     def _call_llm_with_routing(
         self,
@@ -1048,6 +1157,12 @@ class LLMService:
             # silently rewrite the resolved identity with the fallback provider.
             # Mirrors the identical guard in _call_llm_async_direct:842.
             raise
+        except _BudgetGuardRefusal:
+            # REQ-F-003 / NFR-F-003: same pass-through as the direct path --
+            # a budget-guard refusal must not be treated as a pre-selection
+            # routing failure and silently retried against fallback_provider.
+            # call_llm_async unwraps this at the outermost boundary.
+            raise
         except LLMServiceError:
             raise
         except Exception as e:
@@ -1151,11 +1266,28 @@ class LLMService:
             langchain_messages = self._message_utils.convert_messages_to_langchain(
                 messages
             )
+            # REQ-F-003 Component Change 8: pass the resolved max_tokens down
+            # so the primary tier's LLMBudgetCheck can carry a real configured
+            # bound. Fallback tiers stay None -- see the __init__ lambda note.
             return await self._invoke_with_resilience_async(
-                client, langchain_messages, provider, current_model
+                client,
+                langchain_messages,
+                provider,
+                current_model,
+                max_output_tokens=config.get("max_tokens"),
             )
         except LLMResolvedCallError:
             # Already wrapped by the fallback handler — preserve its tier identity.
+            raise
+        except _BudgetGuardRefusal:
+            # REQ-F-003 / NFR-F-003: a budget-guard refusal (typed or not)
+            # is a policy decision, not a transient provider failure -- it
+            # must propagate to the caller unconditionally and unchanged,
+            # bypassing classification and the fallback ladder entirely.
+            # Falling back to a different tier would still spend money
+            # against the same policy the guard just refused (spec.md
+            # Component Change 7). Left wrapped -- call_llm_async unwraps
+            # back to the guard's own exception at the outermost boundary.
             raise
         except Exception as e:
             typed_error = classify_llm_error(e, provider)
@@ -1319,19 +1451,116 @@ class LLMService:
         self._record_circuit_breaker_metric_on_open(provider, model)
         raise last_error  # type: ignore[misc]
 
+    def _build_budget_check(
+        self,
+        langchain_messages: List[Any],
+        provider: str,
+        model: str,
+        attempt_kind: str,
+        max_output_tokens: Optional[int],
+    ) -> LLMBudgetCheck:
+        """Build the pre-dispatch payload for a registered budget guard.
+
+        Carries only measured or configured values (REQ-F-003, REQ-F-009,
+        Out of Scope 5) -- no fabricated token estimates.
+        """
+        rates = self._cost_calculator.get_rates(provider, model)
+        max_possible_output_cost: Optional[Decimal] = None
+        if (
+            max_output_tokens is not None
+            and rates is not None
+            and rates.output_per_1m is not None
+        ):
+            max_possible_output_cost = (
+                Decimal(max_output_tokens) / Decimal(1_000_000)
+            ) * rates.output_per_1m
+        return LLMBudgetCheck(
+            resolved_provider=provider,
+            resolved_model=model,
+            rates=rates,
+            catalog_version=self._cost_calculator.catalog_version,
+            max_output_tokens=max_output_tokens,
+            max_possible_output_cost=max_possible_output_cost,
+            message_count=len(langchain_messages),
+            input_chars=sum(
+                len(str(getattr(m, "content", ""))) for m in langchain_messages
+            ),
+            attempt_kind=attempt_kind,
+        )
+
+    async def _check_budget_before_dispatch(
+        self,
+        langchain_messages: List[Any],
+        provider: str,
+        model: str,
+        attempt_kind: str,
+        max_output_tokens: Optional[int],
+    ) -> None:
+        """Pre-dispatch budget-guard check (REQ-F-003), fails **closed**.
+
+        No-op when no guard is registered. Any exception raised by
+        ``check_before_dispatch`` -- typed or not -- must propagate to the
+        caller unchanged and must never be reclassified (NFR-F-003,
+        Decision 5).
+
+        On the **primary** tier, the exception is wrapped in
+        ``_BudgetGuardRefusal`` purely so ``call_llm_async``'s broad
+        ``except Exception`` nets (direct, routing, and telemetry-retry
+        branches) can recognize and pass it through unchanged instead of
+        reclassifying or retrying it; the wrapper is unwrapped back to
+        ``.original`` at the outermost boundary (``call_llm_async``) and
+        never reaches a caller.
+
+        On a **fallback** tier the exception is left unwrapped: it is
+        raised from inside ``LLMFallbackHandler.try_with_fallback_async``'s
+        own per-tier ``except Exception`` (Decision 3 forbids changing that
+        file), which already absorbs it and continues to the next tier or
+        exhausts into ``LLMResolvedCallError``. Wrapping there would leak
+        the private ``_BudgetGuardRefusal`` type into that error's public
+        ``.cause`` attribute for no benefit -- a fallback-tier refusal is a
+        documented, accepted v1 limitation (spec.md Component Change 2),
+        not a guarantee this seam can fully close without touching the
+        fallback handler.
+        """
+        if self._budget_guard is None:
+            return
+        check = self._build_budget_check(
+            langchain_messages, provider, model, attempt_kind, max_output_tokens
+        )
+        self._logger.debug(
+            f"Budget guard pre-dispatch check: provider={provider} "
+            f"model={model} attempt_kind={attempt_kind}"
+        )
+        try:
+            await self._budget_guard.check_before_dispatch(check)
+        except Exception as e:
+            if attempt_kind == "primary":
+                raise _BudgetGuardRefusal(e) from e
+            raise
+
     async def _invoke_with_resilience_async(
         self,
         client: Any,
         langchain_messages: List[Any],
         provider: str,
         model: str,
+        *,
+        attempt_kind: str = "primary",
+        max_output_tokens: Optional[int] = None,
     ) -> LLMResponse:
         """Single async resilience seam: retry + circuit breaker + response wrapping.
 
         Returns ``LLMResponse`` carrying the resolved ``provider``, ``model``,
         response text, and normalized ``LLMUsage`` extracted from the raw response.
         This is the **only** async resilience stack — the fan-out path and the
-        public ``call_llm_async`` both funnel through here.
+        public ``call_llm_async`` both funnel through here. Every fallback tier
+        also re-enters here (via the ``invoke_async_fn`` lambda in ``__init__``),
+        which is what gives the budget guard per-tier coverage "for free"
+        (Decision 3) with no changes to ``llm_fallback_handler.py``.
+
+        The pre-dispatch budget check sits **before** the retry loop below
+        (not inside it) so retries within a tier are never re-checked --
+        only a fresh tier re-enters this method and re-triggers the check.
         """
         self._record_circuit_breaker_state(provider, model)
 
@@ -1341,6 +1570,13 @@ class LLMService:
                 f"skipping call (resets after "
                 f"{self._circuit_breaker.reset}s)"
             )
+
+        # REQ-F-003: pre-dispatch budget check, once per tier, before this
+        # tier's retry loop (so retries never re-check). Fails closed --
+        # see _check_budget_before_dispatch.
+        await self._check_budget_before_dispatch(
+            langchain_messages, provider, model, attempt_kind, max_output_tokens
+        )
 
         retry_cfg = self._resilience_config.get("retry", {})
         max_attempts = retry_cfg.get("max_attempts", 3)

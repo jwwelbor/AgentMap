@@ -820,7 +820,11 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
 
         call_count = [0]
 
-        async def invoke_side_effect(client, msgs, provider, model):
+        async def invoke_side_effect(client, msgs, provider, model, **kwargs):
+            # **kwargs: E05-F06 T-E05-F06-008 threads attempt_kind /
+            # max_output_tokens through this seam (budget guard support);
+            # this mock's assertions are about fallback identity/usage
+            # propagation and don't care about either value.
             call_count[0] += 1
             if provider == "openai":
                 raise RuntimeError("primary failed")

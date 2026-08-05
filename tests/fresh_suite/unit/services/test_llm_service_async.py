@@ -7,7 +7,11 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, Mock, create_autospec, patch
 
 from agentmap.exceptions import LLMConfigurationError, LLMServiceError, LLMTimeoutError
-from agentmap.exceptions.service_exceptions import LLMResolvedCallError
+from agentmap.exceptions.service_exceptions import (
+    LLMBudgetExceededError,
+    LLMResolvedCallError,
+)
+from agentmap.models.llm_cost import LLMBudgetCheck
 from agentmap.models.llm_execution import LLMResponse
 from agentmap.models.llm_tool_call import LLMToolCall
 from agentmap.services.llm_service import LLMService
@@ -1784,3 +1788,489 @@ class TestLLMServiceToolBindingFactoryCacheIntegrity(unittest.IsolatedAsyncioTes
             )
 
         self.assertEqual(result.text, "ok")
+
+
+class TestLLMServiceBudgetGuard(unittest.IsolatedAsyncioTestCase):
+    """T-E05-F06-008: pre-dispatch budget guard + post-completion observation.
+
+    Covers test-plan.md TC-007, TC-007a, TC-007b, TC-008, TC-009, TC-010,
+    TC-010b, TC-011, TC-012, TC-030.
+
+    Caller-Path Contract (shared across all tests in this class):
+      - Entrypoint: ``LLMService(..., budget_guard=guard).call_llm_async(
+        messages, provider=...)``.
+      - Lowest allowed mock seam: ``_client_factory.get_or_create_client``
+        returning tier-specific mock clients; ``guard.check_before_dispatch``
+        / ``guard.observe_receipt`` are ``AsyncMock``.
+      - Forbidden mocks: never mock ``_invoke_with_resilience_async``,
+        ``_call_llm_async_core``, ``LLMFallbackHandler``, or
+        ``_build_tier_plan`` -- the real dispatch/fallback/observation
+        wiring must drive every assertion in this class.
+    """
+
+    def setUp(self):
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = (
+            MockServiceFactory.create_mock_app_config_service()
+        )
+        self.mock_app_config_service.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 2,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 5,
+                "reset_timeout": 60,
+            },
+        }
+        self.mock_app_config_service.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-default-model",
+            "api_key": "test-key",
+        }
+        self.mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
+
+    def _make_guard(self) -> Mock:
+        guard = Mock()
+        guard.check_before_dispatch = AsyncMock(return_value=None)
+        guard.observe_receipt = AsyncMock(return_value=None)
+        return guard
+
+    def _make_simple_service(self, guard, telemetry_service=None) -> LLMService:
+        """A guard-registered service with no fallback ladder configured."""
+        return LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=Mock(),
+            llm_models_config_service=self.mock_llm_models_config_service,
+            routing_config_service=Mock(
+                supports_prompt_caching=Mock(return_value=False)
+            ),
+            budget_guard=guard,
+            telemetry_service=telemetry_service,
+        )
+
+    def _make_fallback_service(self, guard) -> LLMService:
+        """A guard-registered service with a live one-tier fallback ladder:
+        primary ``openai`` -> fallback ``anthropic`` (mirrors TC-019's setup)."""
+        mock_features_registry = Mock()
+        mock_features_registry.is_provider_available.return_value = True
+        mock_routing_config = Mock()
+        mock_routing_config.fallback = {"default_provider": "anthropic"}
+        mock_routing_config.routing_matrix = {"anthropic": {"low": "claude-haiku"}}
+        mock_routing_config.supports_prompt_caching.return_value = False
+
+        service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=Mock(),
+            llm_models_config_service=self.mock_llm_models_config_service,
+            features_registry_service=mock_features_registry,
+            routing_config_service=mock_routing_config,
+            budget_guard=guard,
+        )
+        service._provider_utils.normalize_provider = Mock(side_effect=lambda p: p)
+        service._provider_utils.get_provider_config = Mock(
+            side_effect=lambda provider: {
+                "model": f"{provider}-default-model",
+                "api_key": "test-key",
+            }
+        )
+        return service
+
+    @staticmethod
+    def _fallback_clients():
+        """Primary (openai) fails every attempt; fallback (anthropic) succeeds
+        on its first (sync-only, to-thread) invocation."""
+        failing_client = Mock()
+        failing_client.ainvoke = AsyncMock(
+            side_effect=RuntimeError("Connection timeout")
+        )
+        fallback_client = Mock()
+        fallback_client.ainvoke = None  # Sync-only fallback -- to_thread path.
+        fallback_client.invoke.return_value = Mock(content="fallback response")
+
+        def fake_get_client(provider, config):
+            return failing_client if provider == "openai" else fallback_client
+
+        return failing_client, fallback_client, fake_get_client
+
+    # -- REQ-F-003 / AC-4/AC-5: pre-dispatch refusal --------------------
+
+    async def test_tc007_guard_refusal_blocks_dispatch_before_any_provider_call(
+        self,
+    ):
+        """TC-007: a typed LLMBudgetExceededError from check_before_dispatch
+        propagates to the caller and the provider client is never invoked."""
+        guard = self._make_guard()
+        guard.check_before_dispatch = AsyncMock(
+            side_effect=LLMBudgetExceededError("over budget")
+        )
+        service = self._make_simple_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="never"))
+        mock_client.invoke = Mock()
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            with self.assertRaises(LLMBudgetExceededError):
+                await service.call_llm_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="anthropic",
+                )
+
+        mock_client.ainvoke.assert_not_called()
+        mock_client.invoke.assert_not_called()
+
+    async def test_tc007a_untyped_guard_exception_still_fails_closed(self):
+        """TC-007a: an untyped RuntimeError from check_before_dispatch still
+        propagates unchanged and still blocks dispatch -- fail-closed does
+        not depend on the guard raising the "right" exception type."""
+        guard = self._make_guard()
+        guard.check_before_dispatch = AsyncMock(side_effect=RuntimeError("boom"))
+        service = self._make_simple_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="never"))
+        mock_client.invoke = Mock()
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            with self.assertRaises(RuntimeError):
+                await service.call_llm_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="anthropic",
+                )
+
+        mock_client.ainvoke.assert_not_called()
+        mock_client.invoke.assert_not_called()
+
+    async def test_tc008_guard_returns_normally_provider_invoked_once(self):
+        """TC-008: a guard that returns normally lets dispatch proceed;
+        provider invoked exactly once, guard awaited exactly once."""
+        guard = self._make_guard()
+        service = self._make_simple_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="ok"))
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            result = await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text, "ok")
+        mock_client.ainvoke.assert_awaited_once()
+        guard.check_before_dispatch.assert_awaited_once()
+
+    async def test_tc009_fallback_ladder_guard_awaited_once_per_tier_not_per_retry(
+        self,
+    ):
+        """TC-009: primary fails (retried, exhausted) then a fallback tier
+        succeeds -- guard.check_before_dispatch is awaited exactly twice
+        (once per attempted tier), never once per retry attempt, and each
+        call's LLMBudgetCheck carries that tier's own resolved identity."""
+        guard = self._make_guard()
+        service = self._make_fallback_service(guard)
+        _, _, fake_get_client = self._fallback_clients()
+        service._client_factory.get_or_create_client = Mock(side_effect=fake_get_client)
+
+        with patch("agentmap.services.llm_service.asyncio.sleep", new=AsyncMock()):
+            result = await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="openai",
+                model="gpt-4o-mini",
+            )
+
+        self.assertEqual(result.text, "fallback response")
+        self.assertEqual(guard.check_before_dispatch.await_count, 2)
+        checks = [c.args[0] for c in guard.check_before_dispatch.await_args_list]
+        self.assertEqual(checks[0].resolved_provider, "openai")
+        self.assertEqual(checks[0].attempt_kind, "primary")
+        self.assertEqual(checks[1].resolved_provider, "anthropic")
+        self.assertEqual(checks[1].resolved_model, "claude-haiku")
+        self.assertEqual(checks[1].attempt_kind, "fallback")
+
+    async def test_tc007b_pre_dispatch_log_line_precedes_guard_await(self):
+        """TC-007b (Codex-added observability case): a debug-level log
+        naming resolved_provider/resolved_model/attempt_kind is emitted at
+        the check site immediately before check_before_dispatch is awaited,
+        for both the primary and the fallback tier."""
+        events = []
+
+        async def _record_guard_call(check):
+            events.append(("guard", check.attempt_kind))
+
+        guard = self._make_guard()
+        guard.check_before_dispatch = AsyncMock(side_effect=_record_guard_call)
+        service = self._make_fallback_service(guard)
+        _, _, fake_get_client = self._fallback_clients()
+        service._client_factory.get_or_create_client = Mock(side_effect=fake_get_client)
+        service._logger.debug = Mock(
+            side_effect=lambda msg, *a, **kw: events.append(("log", msg))
+        )
+
+        with patch("agentmap.services.llm_service.asyncio.sleep", new=AsyncMock()):
+            await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="openai",
+                model="gpt-4o-mini",
+            )
+
+        guard_events = [
+            (i, kind) for i, (etype, kind) in enumerate(events) if etype == "guard"
+        ]
+        self.assertEqual([kind for _, kind in guard_events], ["primary", "fallback"])
+        for index, attempt_kind in guard_events:
+            self.assertGreater(
+                index,
+                0,
+                "a log event must precede every guard event",
+            )
+            preceding_type, preceding_msg = events[index - 1]
+            self.assertEqual(preceding_type, "log")
+            self.assertIn(
+                "openai" if attempt_kind == "primary" else "anthropic", preceding_msg
+            )
+            self.assertIn(attempt_kind, preceding_msg)
+
+    # -- REQ-F-004 / AC-6: post-completion observation, error-isolated --
+
+    async def test_tc010_success_observe_receipt_awaited_once_with_response(self):
+        """TC-010: on a successful direct call, observe_receipt is awaited
+        exactly once with the actual returned LLMResponse."""
+        guard = self._make_guard()
+        service = self._make_simple_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="ok"))
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            result = await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+            )
+
+        guard.observe_receipt.assert_awaited_once_with(result)
+
+    async def test_tc011_observe_receipt_raises_swallowed_call_succeeds_warns(
+        self,
+    ):
+        """TC-011: observe_receipt raising does not fail the call -- the
+        caller still receives the LLMResponse -- and a warning is logged
+        (the documented NFR-F-003 deviation from the uniform
+        try/except Exception: pass telemetry pattern)."""
+        guard = self._make_guard()
+        guard.observe_receipt = AsyncMock(side_effect=RuntimeError("ledger down"))
+        service = self._make_simple_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="ok"))
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            result = await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text, "ok")
+        guard.observe_receipt.assert_awaited_once()
+        warning_calls = [c for c in service._logger.calls if c[0] == "warning"]
+        self.assertTrue(
+            warning_calls, "observe_receipt failure must be logged at warning level"
+        )
+
+    async def test_tc010b_fallback_success_observes_winning_fallback_receipt_once(
+        self,
+    ):
+        """TC-010b: a call that recovers on its fallback tier produces
+        exactly one observe_receipt call, carrying the fallback tier's
+        identity -- not the failed primary's, and not one call per tier."""
+        guard = self._make_guard()
+        service = self._make_fallback_service(guard)
+        _, _, fake_get_client = self._fallback_clients()
+        service._client_factory.get_or_create_client = Mock(side_effect=fake_get_client)
+
+        with patch("agentmap.services.llm_service.asyncio.sleep", new=AsyncMock()):
+            result = await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="openai",
+                model="gpt-4o-mini",
+            )
+
+        self.assertEqual(result.resolved_provider, "anthropic")
+        self.assertEqual(guard.observe_receipt.await_count, 1)
+        observed = guard.observe_receipt.await_args_list[0].args[0]
+        self.assertEqual(observed.resolved_provider, "anthropic")
+        self.assertEqual(observed.resolved_model, "claude-haiku")
+        self.assertEqual(guard.check_before_dispatch.await_count, 2)
+
+    async def test_tc012_terminal_failure_observe_receipt_not_called(self):
+        """TC-012: when the call fails terminally (no fallback configured,
+        non-retryable provider error), observe_receipt is never awaited --
+        there is no receipt to observe."""
+        guard = self._make_guard()
+        service = self._make_simple_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(side_effect=RuntimeError("Invalid api_key"))
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            with self.assertRaises(LLMResolvedCallError):
+                await service.call_llm_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="anthropic",
+                )
+
+        guard.observe_receipt.assert_not_awaited()
+
+    # -- AC-19: fallback-tier guard payload accepted None fields --------
+
+    async def test_tc030_fallback_tier_payload_accepted_none_fields(self):
+        """TC-030: on the fallback tier's LLMBudgetCheck, attempt_kind ==
+        "fallback" and max_output_tokens / max_possible_output_cost are
+        None (accepted v1 limitation), while resolved_provider /
+        resolved_model reflect the fallback tier's own identity."""
+        guard = self._make_guard()
+        service = self._make_fallback_service(guard)
+        _, _, fake_get_client = self._fallback_clients()
+        service._client_factory.get_or_create_client = Mock(side_effect=fake_get_client)
+
+        with patch("agentmap.services.llm_service.asyncio.sleep", new=AsyncMock()):
+            await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="openai",
+                model="gpt-4o-mini",
+            )
+
+        fallback_check = guard.check_before_dispatch.await_args_list[1].args[0]
+        self.assertIsInstance(fallback_check, LLMBudgetCheck)
+        self.assertEqual(fallback_check.attempt_kind, "fallback")
+        self.assertIsNone(fallback_check.max_output_tokens)
+        self.assertIsNone(fallback_check.max_possible_output_cost)
+        self.assertEqual(fallback_check.resolved_provider, "anthropic")
+        self.assertEqual(fallback_check.resolved_model, "claude-haiku")
+
+    async def test_no_guard_registered_byte_identical_pre_f06_behavior(self):
+        """Regression: with no budget_guard registered, no guard-related code
+        path executes -- a plain successful call behaves exactly as before
+        F06 (no AttributeError, no unexpected awaits, normal LLMResponse)."""
+        service = self._make_simple_service(None)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="ok"))
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            result = await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text, "ok")
+
+    async def test_routing_path_untyped_guard_exception_propagates_unchanged(
+        self,
+    ):
+        """Regression: a guard's untyped exception raised while dispatching
+        through the ROUTING path (``routing_context=...``) must propagate to
+        the caller unchanged too -- not be swallowed by
+        ``_call_llm_async_with_routing``'s own broad except-Exception net and
+        silently retried against a different ``fallback_provider``."""
+        guard = self._make_guard()
+        guard.check_before_dispatch = AsyncMock(side_effect=RuntimeError("boom"))
+
+        mock_routing_service = Mock()
+        mock_decision = Mock()
+        mock_decision.provider = "anthropic"
+        mock_decision.model = "claude-sonnet"
+        mock_decision.complexity = "low"
+        mock_decision.confidence = 0.5
+        mock_decision.max_tokens = None
+        mock_decision.cache_hit = False
+        mock_decision.fallback_used = False
+        mock_routing_service.route_request.return_value = mock_decision
+
+        service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=mock_routing_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+            routing_config_service=Mock(
+                supports_prompt_caching=Mock(return_value=False)
+            ),
+            budget_guard=guard,
+        )
+        service._provider_utils.get_available_providers = Mock(
+            return_value=["anthropic"]
+        )
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="never"))
+        mock_client.invoke = Mock()
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            with self.assertRaises(RuntimeError):
+                await service.call_llm_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    routing_context={
+                        "routing_enabled": True,
+                        "fallback_provider": "openai",
+                    },
+                )
+
+        mock_client.ainvoke.assert_not_called()
+        mock_client.invoke.assert_not_called()
+
+    @patch("opentelemetry.trace.get_current_span")
+    async def test_telemetry_enabled_untyped_guard_exception_not_double_dispatched(
+        self, mock_get_span
+    ):
+        """Regression: with telemetry enabled, an untyped guard exception must
+        not be mistaken for a telemetry-infrastructure failure by
+        ``_call_llm_async_with_telemetry``'s "retry without instrumentation"
+        branch -- that would re-check the guard (and re-attempt dispatch) a
+        second time for what should be a single, final refusal."""
+        mock_span = MagicMock()
+        mock_span.is_recording.return_value = True
+        mock_get_span.return_value = mock_span
+        telemetry = MagicMock(name="telemetry_service")
+
+        guard = self._make_guard()
+        guard.check_before_dispatch = AsyncMock(side_effect=RuntimeError("boom"))
+        service = self._make_simple_service(guard, telemetry_service=telemetry)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="never"))
+        mock_client.invoke = Mock()
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            with self.assertRaises(RuntimeError):
+                await service.call_llm_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="anthropic",
+                )
+
+        self.assertEqual(guard.check_before_dispatch.await_count, 1)
+        mock_client.ainvoke.assert_not_called()
+        mock_client.invoke.assert_not_called()
