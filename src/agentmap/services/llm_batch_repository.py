@@ -13,7 +13,7 @@ import tempfile
 from typing import Any, Dict
 
 from agentmap.exceptions import LLMServiceError
-from agentmap.models.llm_execution import LLMBatchHandle
+from agentmap.models.llm_batch import LLMBatchHandle
 
 # Defense-in-depth: an agentmap_batch_id must be exactly this shape before it is
 # ever composed into a filesystem path. The service layer (restore_batch) already

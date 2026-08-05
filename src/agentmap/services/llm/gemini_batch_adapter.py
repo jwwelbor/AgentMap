@@ -33,14 +33,8 @@ from datetime import datetime
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from agentmap.exceptions import LLMDependencyError, LLMServiceError
-from agentmap.models.llm_execution import (
-    BatchPollResult,
-    LLMBatchResult,
-    LLMBatchStatus,
-    LLMExecutionError,
-    LLMRequest,
-    LLMUsage,
-)
+from agentmap.models.llm_batch import BatchPollResult, LLMBatchResult, LLMBatchStatus
+from agentmap.models.llm_execution import LLMExecutionError, LLMRequest, LLMUsage
 from agentmap.services.llm_batch_errors import LLMBatchResultIntegrityError
 
 

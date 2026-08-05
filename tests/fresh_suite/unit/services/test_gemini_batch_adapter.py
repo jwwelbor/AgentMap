@@ -36,10 +36,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agentmap.exceptions import LLMDependencyError, LLMServiceError
-from agentmap.models.llm_execution import (
-    LLMBatchStatus,
-    LLMRequest,
-)
+from agentmap.models.llm_batch import LLMBatchStatus
+from agentmap.models.llm_execution import LLMRequest
 
 # ---------------------------------------------------------------------------
 # Helpers

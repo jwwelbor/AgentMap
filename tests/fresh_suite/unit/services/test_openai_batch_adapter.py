@@ -22,10 +22,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agentmap.exceptions import LLMDependencyError
-from agentmap.models.llm_execution import (
-    LLMBatchStatus,
-    LLMRequest,
-)
+from agentmap.models.llm_batch import LLMBatchStatus
+from agentmap.models.llm_execution import LLMRequest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -637,7 +635,7 @@ class TestPoll:
 
     def test_poll_returns_batch_poll_result(self):
         """poll must return a BatchPollResult instance."""
-        from agentmap.models.llm_execution import BatchPollResult
+        from agentmap.models.llm_batch import BatchPollResult
 
         result = self._poll_with_status("in_progress")
         assert isinstance(result, BatchPollResult)

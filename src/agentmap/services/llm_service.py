@@ -32,11 +32,13 @@ from agentmap.exceptions import (
     LLMResolvedCallError,
     LLMServiceError,
 )
-from agentmap.models.llm_execution import (
+from agentmap.models.llm_batch import (
     LLMBatchHandle,
     LLMBatchResult,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
+)
+from agentmap.models.llm_execution import (
     LLMExecutionError,
     LLMFanoutResult,
     LLMMessage,

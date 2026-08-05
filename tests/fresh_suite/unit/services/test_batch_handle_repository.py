@@ -11,10 +11,7 @@ import json
 import os
 import tempfile
 
-from agentmap.models.llm_execution import (
-    LLMBatchHandle,
-    LLMBatchStatus,
-)
+from agentmap.models.llm_batch import LLMBatchHandle, LLMBatchStatus
 
 
 def _make_handle(**kwargs):

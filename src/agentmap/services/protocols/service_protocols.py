@@ -18,11 +18,13 @@ from typing import (
     runtime_checkable,
 )
 
-from agentmap.models.llm_execution import (
+from agentmap.models.llm_batch import (
     BatchPollResult,
     LLMBatchHandle,
     LLMBatchResult,
     LLMBatchSubmitRequest,
+)
+from agentmap.models.llm_execution import (
     LLMFanoutResult,
     LLMMessage,
     LLMRequest,

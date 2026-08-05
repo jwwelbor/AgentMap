@@ -14,12 +14,8 @@ Protocol isinstance checks are performed without mocking the Protocol itself.
 
 from unittest.mock import MagicMock, patch
 
-from agentmap.models.llm_execution import (
-    BatchPollResult,
-    LLMBatchResult,
-    LLMBatchStatus,
-    LLMRequest,
-)
+from agentmap.models.llm_batch import BatchPollResult, LLMBatchResult, LLMBatchStatus
+from agentmap.models.llm_execution import LLMRequest
 from agentmap.services.protocols.service_protocols import BatchAdapterProtocol
 
 # ---------------------------------------------------------------------------

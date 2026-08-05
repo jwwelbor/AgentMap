@@ -18,11 +18,8 @@ from typing import Any, Dict, List, Tuple
 
 import pytest
 
-from agentmap.models.llm_execution import (
-    DEFAULT_TOKEN_LIMIT,
-    LLMBatchSubmitRequest,
-    LLMRequest,
-)
+from agentmap.models.llm_batch import LLMBatchSubmitRequest
+from agentmap.models.llm_execution import DEFAULT_TOKEN_LIMIT, LLMRequest
 from agentmap.services.llm._param_resolution import (
     RESERVED_PARAMS,
     ReservedParam,

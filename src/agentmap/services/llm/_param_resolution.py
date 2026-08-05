@@ -22,11 +22,8 @@ import itertools
 from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
-from agentmap.models.llm_execution import (
-    DEFAULT_TOKEN_LIMIT,
-    LLMBatchSubmitRequest,
-    LLMRequest,
-)
+from agentmap.models.llm_batch import LLMBatchSubmitRequest
+from agentmap.models.llm_execution import DEFAULT_TOKEN_LIMIT, LLMRequest
 from agentmap.services.llm_batch_errors import LLMBatchParamConflictError
 
 
