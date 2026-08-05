@@ -2,13 +2,21 @@
 Unit tests for LLMMessageService — inject_cache_metadata() and rename verification.
 
 Covers TC-001, TC-002, TC-003, TC-004, TC-007 from E05-F05 test plan.
+Covers TC-015, TC-016, TC-017, TC-031, TC-031a from E05-F06 test plan
+(T-E05-F06-007: tool-result round-trip in message conversion).
 """
 
 import logging
 import unittest
+from unittest.mock import AsyncMock, Mock, patch
+
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 # NOTE: These imports will fail until llm_message_service.py exists (RED phase).
+from agentmap.exceptions import LLMServiceError
 from agentmap.services.llm_message_service import LLMMessageService
+from agentmap.services.llm_service import LLMService
+from tests.utils.mock_service_factory import MockServiceFactory
 
 
 class TestInjectCacheMetadataPlainString(unittest.TestCase):
@@ -449,6 +457,320 @@ class TestStripCacheControl(unittest.TestCase):
         out = LLMMessageService.strip_cache_control(messages)
         self.assertFalse(LLMMessageService.has_prompt_caching(out))
         self.assertEqual(out[0]["content"], "sys")
+
+
+class TestConvertMessagesToolResultRoundTrip(unittest.TestCase):
+    """TC-015 / TC-016 / TC-017 (T-E05-F06-007): convert_messages_to_langchain()
+    supports the two message shapes a caller-owned tool loop sends back,
+    closing the silent-degradation path where an unrecognized role became a
+    HumanMessage (REQ-F-007, spec.md AC-9/AC-10).
+
+    Caller-Path Contract (all three cases):
+      - Entrypoint: ``LLMMessageService.convert_messages_to_langchain(messages)``.
+      - Lowest allowed mock seam: none -- pure static-method transform, the
+        same entrypoint production callers (llm_service.py) use directly.
+    """
+
+    def test_tc015_tool_role_with_tool_call_id_becomes_tool_message(self):
+        """TC-015: role='tool' + tool_call_id -> ToolMessage with matching
+        tool_call_id and content.
+
+        Counter-factual: today's silent-degradation bug coerces this to a
+        HumanMessage -- a buggy fix that keeps the `else` branch as the
+        catch-all would still produce a HumanMessage and this
+        isinstance(result[0], ToolMessage) assertion would fail.
+        """
+        messages = [{"role": "tool", "tool_call_id": "toolu_1", "content": "18C"}]
+
+        result = LLMMessageService.convert_messages_to_langchain(messages)
+
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], ToolMessage)
+        self.assertEqual(result[0].tool_call_id, "toolu_1")
+        self.assertEqual(result[0].content, "18C")
+
+    def test_tc016_tool_role_without_tool_call_id_raises_llm_service_error(self):
+        """TC-016: role='tool' with no tool_call_id raises LLMServiceError
+        naming the missing field -- no silent coercion to HumanMessage."""
+        messages = [{"role": "tool", "content": "18C"}]
+
+        with self.assertRaises(LLMServiceError) as ctx:
+            LLMMessageService.convert_messages_to_langchain(messages)
+
+        self.assertIn("tool_call_id", str(ctx.exception))
+
+    def test_tc017_assistant_tool_calls_become_ai_message_preserving_them(self):
+        """TC-017: assistant message carrying tool_calls -> AIMessage whose
+        tool_calls preserve id/name/args from the input.
+
+        Note: LangChain's AIMessage.tool_calls validator normalizes each
+        entry by adding a 'type': 'tool_call' key when absent, so the
+        resulting list is not byte-for-byte identical to the input dict --
+        the id/name/args fields (what a caller-owned tool loop actually
+        needs) are asserted individually instead of a brittle full-list
+        equality that would break on any LangChain-internal normalization
+        detail unrelated to this feature.
+        """
+        input_tool_calls = [
+            {"id": "toolu_1", "name": "get_weather", "args": {}},
+        ]
+        messages = [
+            {"role": "assistant", "content": "", "tool_calls": input_tool_calls}
+        ]
+
+        result = LLMMessageService.convert_messages_to_langchain(messages)
+
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], AIMessage)
+        self.assertEqual(len(result[0].tool_calls), 1)
+        preserved = result[0].tool_calls[0]
+        self.assertEqual(preserved["id"], "toolu_1")
+        self.assertEqual(preserved["name"], "get_weather")
+        self.assertEqual(preserved["args"], {})
+
+    def test_tc017_regression_assistant_without_tool_calls_unchanged(self):
+        """TC-017 regression: assistant message with no tool_calls key still
+        produces a plain AIMessage (existing behavior unchanged)."""
+        messages = [{"role": "assistant", "content": "Hello there."}]
+
+        result = LLMMessageService.convert_messages_to_langchain(messages)
+
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], AIMessage)
+        self.assertEqual(result[0].content, "Hello there.")
+        self.assertFalse(result[0].tool_calls)
+
+    def test_tc020_regression_system_and_user_conversion_unchanged(self):
+        """AC-9/AC-10 regression gate (TC-020): existing system/user
+        conversions are unaffected by the new tool/assistant-tool_calls
+        branches."""
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hi"},
+        ]
+
+        result = LLMMessageService.convert_messages_to_langchain(messages)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0].content, "You are helpful.")
+        self.assertIsInstance(result[1], HumanMessage)
+        self.assertEqual(result[1].content, "Hi")
+
+
+class TestToolResultRoundTripStripCacheControlChain(unittest.TestCase):
+    """TC-031a (T-E05-F06-007): strip_cache_control() -> convert_messages_to_langchain()
+    unit-level chain -- supplementary, explicitly internal-only.
+
+    This supplements TC-031 (below); it does not replace it. TC-031 is the
+    production-path evidence (drives the real LLMService.call_llm_async()
+    fallback dispatch). This case exists only to isolate a failure to the
+    message-service layer specifically when TC-031 fails -- a legitimate
+    debugging aid, not primary AC evidence (spec.md AC-20, Codex finding).
+    """
+
+    def test_tc031a_field_survival_through_strip_then_convert_chain(self):
+        """tool_call_id and tool_calls survive strip_cache_control() ->
+        convert_messages_to_langchain() chained directly at the
+        message-service boundary."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "What's the weather?",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "toolu_1",
+                        "name": "get_weather",
+                        "args": {"location": "NYC"},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "toolu_1", "content": "18C"},
+        ]
+
+        stripped = LLMMessageService.strip_cache_control(messages)
+        result = LLMMessageService.convert_messages_to_langchain(stripped)
+
+        self.assertEqual(len(result), 3)
+
+        human_message = result[0]
+        self.assertIsInstance(human_message, HumanMessage)
+        for block in human_message.content:
+            self.assertNotIn("cache_control", block)
+
+        ai_message = result[1]
+        self.assertIsInstance(ai_message, AIMessage)
+        self.assertEqual(len(ai_message.tool_calls), 1)
+        self.assertEqual(ai_message.tool_calls[0]["id"], "toolu_1")
+        self.assertEqual(ai_message.tool_calls[0]["name"], "get_weather")
+        self.assertEqual(ai_message.tool_calls[0]["args"], {"location": "NYC"})
+
+        tool_message = result[2]
+        self.assertIsInstance(tool_message, ToolMessage)
+        self.assertEqual(tool_message.tool_call_id, "toolu_1")
+        self.assertEqual(tool_message.content, "18C")
+
+
+class TestToolResultRoundTripRealFallbackDispatch(unittest.IsolatedAsyncioTestCase):
+    """TC-031 (T-E05-F06-007): tool-result round-trip field survival proven
+    at the real LLMService.call_llm_async() fallback dispatch path -- not an
+    isolated message-service unit test (Codex BLOCKER fix, spec.md AC-20).
+
+    Caller-Path Contract:
+      - Entrypoint: ``LLMService.call_llm_async(messages, provider="anthropic")``
+        -- no ``tools=`` argument, so REQ-F-008's fallback suppression does
+        not apply and the fallback ladder is genuinely live.
+      - Lowest allowed mock seam: ``_client_factory.get_or_create_client``
+        returning tier-specific mock clients (mirrors the TC-018/TC-019
+        fallback harness in test_llm_service_async.py).
+      - Forbidden mocks: ``LLMMessageService.strip_cache_control()``,
+        ``convert_messages_to_langchain()``, and ``LLMFallbackHandler`` are
+        never mocked -- all three run for real, which is the production seam
+        Codex's red-team review required.
+      - Counter-factual: a buggy ``strip_cache_control()`` that rebuilds
+        message dicts via a partial ``{**msg, "content": ...}`` merge that
+        drops non-content keys would silently lose ``tool_call_id`` before it
+        ever reaches the fallback client's ``ainvoke()`` call -- this test
+        inspects the actual LangChain messages the fallback client received.
+    """
+
+    def setUp(self):
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = (
+            MockServiceFactory.create_mock_app_config_service()
+        )
+        self.mock_app_config_service.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 60,
+            },
+        }
+        self.mock_app_config_service.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-default-model",
+            "api_key": "test-key",
+            "temperature": 0.7,
+        }
+        self.mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
+
+        self.mock_features_registry = Mock()
+        self.mock_features_registry.is_provider_available.return_value = True
+
+        self.mock_routing_config_service = Mock()
+        # Tier 1 (same provider, low-complexity model) is deliberately absent
+        # from the routing matrix so the single live fallback tier is tier 2
+        # (the configured default_provider) -- keeps the primary/fallback
+        # client dispatch unambiguous in fake_get_client below.
+        self.mock_routing_config_service.fallback = {"default_provider": "openai"}
+        self.mock_routing_config_service.routing_matrix = {
+            "openai": {"low": "gpt-4o-mini"}
+        }
+        # Messages carry an embedded cache_control block (Anthropic passthrough,
+        # E05-F01); the primary provider must support it or
+        # _validate_prompt_caching_support raises before any client is built.
+        self.mock_routing_config_service.supports_prompt_caching.return_value = True
+
+        self.service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=Mock(),
+            llm_models_config_service=self.mock_llm_models_config_service,
+            features_registry_service=self.mock_features_registry,
+            routing_config_service=self.mock_routing_config_service,
+        )
+
+    async def test_tc031_real_fallback_dispatch_preserves_tool_fields(self):
+        """TC-031: the fallback tier's ainvoke() call receives LangChain
+        messages where the ToolMessage's tool_call_id and the AIMessage's
+        tool_calls are unchanged from the original input, and the
+        cache_control block was stripped -- proven at the actual
+        provider-invocation boundary."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "What's the weather?",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "toolu_1",
+                        "name": "get_weather",
+                        "args": {"location": "NYC"},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "toolu_1", "content": "18C"},
+        ]
+
+        failing_client = Mock()
+        failing_client.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
+        fallback_client = Mock()
+        fallback_client.ainvoke = AsyncMock(
+            return_value=Mock(content="It's 18C in NYC.")
+        )
+
+        def fake_get_client(provider, config):
+            return failing_client if provider == "anthropic" else fallback_client
+
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            side_effect=fake_get_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=messages,
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text, "It's 18C in NYC.")
+        self.assertEqual(result.resolved_provider, "openai")
+
+        fallback_client.ainvoke.assert_awaited_once()
+        sent_messages = fallback_client.ainvoke.call_args.args[0]
+
+        tool_messages = [m for m in sent_messages if isinstance(m, ToolMessage)]
+        self.assertEqual(len(tool_messages), 1)
+        self.assertEqual(tool_messages[0].tool_call_id, "toolu_1")
+        self.assertEqual(tool_messages[0].content, "18C")
+
+        ai_messages = [m for m in sent_messages if isinstance(m, AIMessage)]
+        self.assertEqual(len(ai_messages), 1)
+        self.assertEqual(len(ai_messages[0].tool_calls), 1)
+        self.assertEqual(ai_messages[0].tool_calls[0]["id"], "toolu_1")
+        self.assertEqual(ai_messages[0].tool_calls[0]["name"], "get_weather")
+        self.assertEqual(ai_messages[0].tool_calls[0]["args"], {"location": "NYC"})
+
+        # AC-20 regression: the cache_control block was stripped before the
+        # fallback client ever saw the message (strip_cache_control() ran
+        # for real on this path).
+        human_messages = [m for m in sent_messages if isinstance(m, HumanMessage)]
+        self.assertEqual(len(human_messages), 1)
+        for block in human_messages[0].content:
+            self.assertNotIn("cache_control", block)
 
 
 if __name__ == "__main__":
