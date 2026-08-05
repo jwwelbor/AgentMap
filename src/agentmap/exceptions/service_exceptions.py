@@ -82,10 +82,19 @@ class LLMBudgetExceededError(LLMServiceError):
     fallback ladder, because falling back to a different tier would still
     spend money against the same policy the guard just refused.
 
-    ``LLMService._call_llm_async_direct`` re-raises this exception ahead of
-    its generic ``except Exception`` handler for exactly that reason (see
-    spec.md Component Change 7/8, NFR-F-003 -- pre-dispatch failures fail
-    closed).
+    Not re-raised directly: ``LLMService._check_budget_before_dispatch``
+    wraps whatever a guard raises -- typed (this class) or not -- in the
+    internal ``BudgetGuardRefusal`` marker (``services/llm/_budget_guard_refusal.py``)
+    so it can pass unrecognized through every blanket ``except Exception``
+    net on the async dispatch/fallback path (direct, routing,
+    telemetry-retry, and each ``LLMFallbackHandler`` fallback tier) without
+    being reclassified as a transient provider failure or triggering a
+    further fallback attempt. The wrapper is unwrapped back to the
+    original exception at the single outermost boundary each entrypoint
+    owns (``LLMService._dispatch_call_llm_async`` for ``call_llm_async``;
+    ``LLMService.call_llm_stream_async`` for the streaming sibling) and
+    never surfaces to a caller (see spec.md Component Change 7/8,
+    NFR-F-003 -- pre-dispatch failures fail closed).
     """
 
 
