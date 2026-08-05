@@ -18,8 +18,11 @@ class LLMContainer(containers.DeclarativeContainer):
     # E05-F06 REQ-F-003/REQ-F-004 (Component Change 10): the single canonical
     # registration path for an opt-in LLMBudgetGuardProtocol implementation.
     # Defaults to None (no guard-related code path executes). Hosts register
-    # their guard by overriding this provider:
-    #   container.llm.budget_guard.override(my_guard)
+    # their guard by overriding this provider on the LLM sub-container, e.g.:
+    #   from dependency_injector import providers
+    #   container._llm.budget_guard.override(providers.Object(my_guard))
+    # `llm_service` is a Singleton -- override budget_guard BEFORE the first
+    # `llm_service()` resolution, or the override has no effect.
     # There is deliberately no competing per-call registration path
     # (Decision 4).
     budget_guard = providers.Dependency()
