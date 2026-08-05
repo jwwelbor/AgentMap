@@ -54,7 +54,12 @@ from agentmap.services.config import AppConfigService
 from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
-from agentmap.services.llm._budget_guard_refusal import BudgetGuardRefusal
+from agentmap.services.llm._budget_guard_refusal import (
+    BudgetGuardRefusal,
+    is_budget_guard_refusal,
+    mark_as_budget_guard_refusal,
+    telemetry_safe_marker,
+)
 from agentmap.services.llm.cost_calculator import LLMCostCalculator
 from agentmap.services.llm.stream_seam import stream_provider
 from agentmap.services.llm.tool_call_extraction import (
@@ -594,7 +599,16 @@ class LLMService:
                     self._set_span_status_ok(span)
                     return result
                 except Exception as e:
-                    self._record_span_exception_safe(span, e)
+                    # T-E05-F06-008 round-4 UAT: a BudgetGuardRefusal caught
+                    # here still carries the host guard's raw exception as
+                    # __cause__ (unwrapped one frame up, in
+                    # _dispatch_call_llm_async) -- record a class-name-only
+                    # marker instead of the real chain so span telemetry
+                    # never exports host budget/business data.
+                    if isinstance(e, BudgetGuardRefusal):
+                        self._record_span_exception_safe(span, telemetry_safe_marker(e))
+                    else:
+                        self._record_span_exception_safe(span, e)
                     raise
         except Exception as outer_error:
             if isinstance(
@@ -830,7 +844,14 @@ class LLMService:
         try:
             await self._budget_guard.observe_receipt(response)
         except Exception as e:
-            self._logger.warning(f"Budget guard observe_receipt failed: {e}")
+            # T-E05-F06-008 round-4 UAT: do not echo the host guard's raw
+            # exception message into the application log -- it may carry
+            # host business/budget data (tenant ids, remaining budget,
+            # spend caps). Only the exception's class name is safe to log.
+            self._logger.warning(
+                f"Budget guard observe_receipt failed ({type(e).__name__}); "
+                "result was not affected."
+            )
 
     def _call_llm_with_routing(
         self,
@@ -1583,6 +1604,15 @@ class LLMService:
         (``_dispatch_call_llm_async`` for ``call_llm_async``;
         ``call_llm_stream_async`` for its streaming sibling) and never
         reaches a caller.
+
+        Also stamps ``e`` with the ``is_budget_guard_refusal`` marker
+        (T-E05-F06-008 round-4 UAT) before wrapping it -- the fan-out path
+        (``call_llm_many_async`` -> ``_execute_fan_out_item`` -> this method,
+        via ``call_llm_async``) only ever observes the *unwrapped* ``.original``
+        once it reaches ``_execute_fan_out_item``'s own exception handling, so
+        the marker is the only way that per-item classification can recognize
+        a budget refusal deterministically rather than by chance of exception
+        type.
         """
         if self._budget_guard is None:
             return
@@ -1596,6 +1626,7 @@ class LLMService:
         try:
             await self._budget_guard.check_before_dispatch(check)
         except Exception as e:
+            mark_as_budget_guard_refusal(e)
             raise BudgetGuardRefusal(e) from e
 
     async def _invoke_with_resilience_async(
@@ -2439,6 +2470,27 @@ class LLMService:
             except LLMResolvedCallError as exc:
                 # Failure occurred after routing/fallback resolved a concrete
                 # provider/model — preserve that identity in the result record.
+                #
+                # A budget-guard refusal cannot surface as LLMResolvedCallError
+                # (T-E05-F06-008 round-4 UAT investigation; verified by tracing
+                # the direct and fallback-ladder paths as they exist at this
+                # rework, not assumed): _check_budget_before_dispatch always
+                # wraps the guard's exception in BudgetGuardRefusal before it
+                # goes anywhere, and BudgetGuardRefusal is not an LLMServiceError
+                # subclass, so it is never caught by the except-Exception /
+                # except-LLMServiceError nets in _call_llm_async_direct,
+                # _try_fallback_tier (fallback_ladder.py), or
+                # _dispatch_fallback_ladder that would otherwise wrap a failure
+                # as LLMResolvedCallError -- it propagates past all of them
+                # unmodified. The wrapper is only ever unwrapped back to
+                # .original at the single outermost boundary
+                # (_dispatch_call_llm_async), which sits above this fan-out
+                # exception handling in the call stack. So exc.cause here is
+                # never a guard exception and no is_budget_guard_refusal check
+                # is needed. If this stack ever changes such that a guard
+                # exception could be wrapped as LLMResolvedCallError, this
+                # comment (and this branch's missing marker check) is the
+                # first place to revisit.
                 return LLMFanoutResult(
                     request_id=spec.request_id,
                     status="failed",
@@ -2454,8 +2506,31 @@ class LLMService:
                 )
             except Exception as exc:
                 # Failure occurred before any provider/model was resolved
-                # (e.g., validation error, routing service unavailable).
-                # Echo spec values — may be None. Do not fabricate.
+                # (e.g., validation error, routing service unavailable, or a
+                # budget-guard refusal -- REQ-F-003 covers fan-out, "once per
+                # item", per spec.md's Budget guard contract table; this is
+                # NOT out of scope). Echo spec values — may be None. Do not
+                # fabricate.
+                #
+                # error_type intentionally stays type(exc).__name__ unchanged
+                # (including for a budget refusal) -- every other fan-out
+                # failure path in this file treats error_type as an exact,
+                # unmodified discriminator of the underlying exception class
+                # (see _raise_fallback_exhausted's docstring and
+                # test_tc_ac8_07's "error_type must preserve the original
+                # typed error discriminator"), so rewriting it here for one
+                # failure kind would break that established contract. What
+                # IS made deterministic instead of incidental: retryable is
+                # forced False for a marked guard refusal rather than left to
+                # whatever isinstance(exc, (LLMTimeoutError, LLMRateLimitError))
+                # happens to return for the host's exception type — this is
+                # the concrete form NFR-F-003's "must never be reclassified
+                # as a transient provider failure" takes once the exception
+                # has left the resilience/fallback stack and become a fan-out
+                # result rather than a raised exception (T-E05-F06-008
+                # round-4 UAT finding; dispatch itself is already prevented
+                # by _check_budget_before_dispatch regardless of this flag).
+                retryable = False if is_budget_guard_refusal(exc) else is_retryable(exc)
                 return LLMFanoutResult(
                     request_id=spec.request_id,
                     status="failed",
@@ -2466,7 +2541,7 @@ class LLMService:
                     error=LLMExecutionError(
                         error_type=type(exc).__name__,
                         message=_sanitize_error_message(exc),
-                        retryable=is_retryable(exc),
+                        retryable=retryable,
                     ),
                 )
 
@@ -3591,7 +3666,16 @@ class LLMService:
                 time.monotonic() - t0, resolved_provider or "", resolved_model or ""
             )
         except Exception as e:
-            self._record_span_exception_safe(span, e)
+            # T-E05-F06-008 round-4 UAT: same fix as the non-streaming
+            # telemetry wrapper -- a BudgetGuardRefusal reaching here (from a
+            # fallback tier's pre-first-chunk materialization, see
+            # call_llm_stream_async's docstring) still carries the host
+            # guard's raw exception via __cause__; substitute a class-name
+            # -only marker so span telemetry never exports host budget data.
+            if isinstance(e, BudgetGuardRefusal):
+                self._record_span_exception_safe(span, telemetry_safe_marker(e))
+            else:
+                self._record_span_exception_safe(span, e)
             raise
         finally:
             span_cm.__exit__(None, None, None)

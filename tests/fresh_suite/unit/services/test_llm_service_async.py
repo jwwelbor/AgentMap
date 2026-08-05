@@ -2329,3 +2329,86 @@ class TestLLMServiceBudgetGuard(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(guard.check_before_dispatch.await_count, 1)
         mock_client.ainvoke.assert_not_called()
         mock_client.invoke.assert_not_called()
+
+    # -- T-E05-F06-008 round-4 UAT Finding 2: telemetry/log leakage -----
+
+    @patch("opentelemetry.trace.get_current_span")
+    async def test_span_exception_does_not_leak_guard_message(self, mock_get_span):
+        """A budget-guard refusal's span-exception recording must not carry
+        the host guard's raw exception text (which may contain tenant ids,
+        remaining budget, spend caps) -- only a class-name-only marker.
+
+        Regression for the round-4 UAT finding: pre-fix, ``_record_span_
+        exception_safe`` was called with the raw ``BudgetGuardRefusal``
+        wrapper (caught by the telemetry wrapper's blanket ``except
+        Exception`` before ``_dispatch_call_llm_async`` unwraps it), whose
+        message and ``__cause__`` chain both carried the guard's own text.
+        """
+        sentinel = "tenant=acme-42 remaining_budget=$3.10 spend_cap=$100.00"
+        mock_span = MagicMock()
+        mock_span.is_recording.return_value = True
+        mock_get_span.return_value = mock_span
+        telemetry = MagicMock(name="telemetry_service")
+
+        guard = self._make_guard()
+        guard.check_before_dispatch = AsyncMock(side_effect=RuntimeError(sentinel))
+        service = self._make_simple_service(guard, telemetry_service=telemetry)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="never"))
+        mock_client.invoke = Mock()
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                await service.call_llm_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="anthropic",
+                )
+
+        # The caller of call_llm_async still gets the real, unredacted
+        # guard exception -- only telemetry recording is sanitized.
+        self.assertEqual(str(ctx.exception), sentinel)
+
+        telemetry.record_exception.assert_called_once()
+        _recorded_span, recorded_exc = telemetry.record_exception.call_args[0]
+        self.assertNotIn(sentinel, str(recorded_exc))
+        self.assertIsNone(
+            recorded_exc.__cause__,
+            "a __cause__ chain here would still leak the guard's message "
+            "through OTEL's chained traceback formatting even with a "
+            "sanitized top-level message (the actual round-4 UAT gap)",
+        )
+        self.assertIn("RuntimeError", str(recorded_exc))
+
+    async def test_observe_receipt_failure_log_does_not_leak_message(self):
+        """T-E05-F06-008 round-4 UAT Finding 2: the ``observe_receipt``
+        warning log must not echo the host guard's raw exception message --
+        only its class name. Regression for TC-011's sibling scenario."""
+        sentinel = "tenant=acme-42 remaining_budget=$3.10 spend_cap=$100.00"
+        guard = self._make_guard()
+        guard.observe_receipt = AsyncMock(side_effect=RuntimeError(sentinel))
+        service = self._make_simple_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="ok"))
+
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            result = await service.call_llm_async(
+                messages=[{"role": "user", "content": "hi"}],
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text, "ok")
+        guard.observe_receipt.assert_awaited_once()
+        warning_calls = [c for c in service._logger.calls if c[0] == "warning"]
+        self.assertTrue(warning_calls, "observe_receipt failure must be logged")
+        for _level, message, _args, _kwargs in warning_calls:
+            self.assertNotIn(sentinel, message)
+        self.assertTrue(
+            any("RuntimeError" in message for _l, message, _a, _k in warning_calls),
+            "the warning should still name the exception class for diagnosability",
+        )

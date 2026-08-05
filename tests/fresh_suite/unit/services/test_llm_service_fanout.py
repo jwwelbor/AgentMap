@@ -24,7 +24,11 @@ import unittest
 from unittest.mock import AsyncMock, Mock, create_autospec, patch
 
 from agentmap.exceptions import LLMServiceError
-from agentmap.exceptions.service_exceptions import LLMResolvedCallError
+from agentmap.exceptions.service_exceptions import (
+    LLMBudgetExceededError,
+    LLMResolvedCallError,
+    LLMTimeoutError,
+)
 from agentmap.models.llm_execution import (
     LLMFanoutResult,
     LLMRequest,
@@ -945,6 +949,181 @@ class TestAC008FailureNormalization(unittest.IsolatedAsyncioTestCase):
             r.error.message,
             "API key-like token must be redacted from error message",
         )
+
+
+class TestAC008BudgetGuardRefusalClassification(unittest.IsolatedAsyncioTestCase):
+    """T-E05-F06-008 round-4 UAT Finding 1: a budget-guard refusal reaching
+    the fan-out path must be classified deterministically as non-retryable
+    -- not left to whatever ``is_retryable(exc)`` happens to return for the
+    host guard's chosen exception type.
+
+    Investigation finding (see completion note): budget-guard coverage on
+    ``call_llm_many_async()`` IS in scope. spec.md's Out-of-Scope item 4
+    excludes only the ``cost``/``tool_calls`` *fields* on ``LLMFanoutResult``
+    -- it explicitly states "Budget-guard invocation on the fan-out path is
+    explicitly in scope -- the guard fires once per fan-out item ... do not
+    implement fan-out suppression", and the "Budget guard contract" coverage
+    table lists ``call_llm_many_async() fan-out`` as "Covered, once per
+    item" because ``_execute_fan_out_item`` calls ``call_llm_async`` directly
+    -- the same public entrypoint that drives ``_check_budget_before_
+    dispatch``. This is verified by trace (see llm_service.py comments at
+    the two ``except`` clauses in ``_execute_fan_out_item``), not assumed.
+
+    What these tests do NOT change: ``status`` stays the closed two-value
+    ``"succeeded"``/``"failed"`` set (llm_execution.py:``LLMFanoutResult``
+    docstring), and ``error_type`` stays the real exception class name
+    unchanged (the existing, tested discriminator contract -- see
+    ``TestAC008FailureNormalizationRound2``'s "error_type must preserve the
+    original typed error discriminator"). The dispatch-prevention half of
+    "fail closed" was already intact before this fix (the guard runs before
+    any provider client is invoked, verified below via
+    ``mock_client.ainvoke.assert_not_called()``); this fix closes the
+    remaining gap -- that a fan-out consumer had no deterministic way to
+    avoid treating a refused item as retryable.
+    """
+
+    def _make_guarded_service(self, guard) -> LLMService:
+        mock_logging = MockServiceFactory.create_mock_logging_service()
+        mock_config = MockServiceFactory.create_mock_app_config_service()
+        mock_config.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {"failure_threshold": 5, "reset_timeout": 60},
+        }
+        mock_config.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-default-model",
+            "api_key": "test-key",
+        }
+        mock_models = MockServiceFactory.create_mock_llm_models_config_service()
+        return LLMService(
+            configuration=mock_config,
+            logging_service=mock_logging,
+            routing_service=Mock(),
+            llm_models_config_service=mock_models,
+            budget_guard=guard,
+        )
+
+    async def test_fan_out_item_refused_by_untyped_guard_exception_is_non_retryable(
+        self,
+    ):
+        """The guard protocol explicitly allows raising "any exception" to
+        refuse -- an untyped RuntimeError from check_before_dispatch must
+        still come back retryable=False, guaranteed rather than incidental."""
+        guard = Mock()
+        guard.check_before_dispatch = AsyncMock(
+            side_effect=RuntimeError("tenant=acme-42 remaining_budget=$0.00")
+        )
+        guard.observe_receipt = AsyncMock(return_value=None)
+        service = self._make_guarded_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="never"))
+        mock_client.invoke = Mock()
+
+        spec = _make_spec("budget-refused-untyped", provider="anthropic")
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            results = await service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.status, "failed")
+        self.assertIsNotNone(r.error)
+        self.assertEqual(
+            r.error.error_type,
+            "RuntimeError",
+            "error_type stays the real exception class name unchanged -- "
+            "the existing discriminator contract is not touched by this fix",
+        )
+        self.assertFalse(
+            r.error.retryable,
+            "a budget refusal must never be classified retryable, "
+            "regardless of the host guard's chosen exception type",
+        )
+        mock_client.ainvoke.assert_not_called()
+        mock_client.invoke.assert_not_called()
+
+    async def test_fan_out_item_refused_by_a_normally_retryable_type_is_forced_false(
+        self,
+    ):
+        """Negative control proving the fix does real work: LLMTimeoutError
+        is_retryable()==True for every OTHER failure path in this file
+        (TestAC008FailureNormalizationRound2's TC-AC8-07). A guard that
+        happens to raise this type must still be forced non-retryable here
+        -- proving retryable=False is deliberate for a marked refusal, not
+        an accident of is_retryable's normal type check."""
+        guard = Mock()
+        guard.check_before_dispatch = AsyncMock(
+            side_effect=LLMTimeoutError("guard-side timeout, not a provider one")
+        )
+        guard.observe_receipt = AsyncMock(return_value=None)
+        service = self._make_guarded_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="never"))
+        mock_client.invoke = Mock()
+
+        spec = _make_spec("budget-refused-retryable-type", provider="anthropic")
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            results = await service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.error.error_type, "LLMTimeoutError")
+        self.assertFalse(
+            r.error.retryable,
+            "the marker-based override must win over is_retryable's normal "
+            "type-based classification for a marked budget refusal",
+        )
+
+    async def test_fan_out_item_refused_by_documented_budget_exceeded_type(self):
+        """Using the documented LLMBudgetExceededError convention: error_type
+        already fully identifies the refusal; retryable is still guaranteed
+        False by the marker, not merely incidental to is_retryable."""
+        guard = Mock()
+        guard.check_before_dispatch = AsyncMock(
+            side_effect=LLMBudgetExceededError("over budget")
+        )
+        guard.observe_receipt = AsyncMock(return_value=None)
+        service = self._make_guarded_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="never"))
+        mock_client.invoke = Mock()
+
+        spec = _make_spec("budget-refused-typed", provider="anthropic")
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            results = await service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.status, "failed")
+        self.assertEqual(r.error.error_type, "LLMBudgetExceededError")
+        self.assertFalse(r.error.retryable)
+
+    async def test_ordinary_fan_out_failure_unaffected_by_marker_logic(self):
+        """Sanity/regression: a plain (non-guard) failure keeps its existing
+        is_retryable-derived classification -- the marker check must not
+        change behavior for any failure the guard never touched."""
+        service = _make_service()
+        spec = _make_spec("plain-failure")
+
+        with patch.object(
+            service,
+            "call_llm_async",
+            new=AsyncMock(side_effect=LLMServiceError("plain failure")),
+        ):
+            results = await service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.error.error_type, "LLMServiceError")
+        self.assertFalse(r.error.retryable)
 
 
 # ---------------------------------------------------------------------------
