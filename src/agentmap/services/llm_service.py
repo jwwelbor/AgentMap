@@ -463,6 +463,7 @@ class LLMService:
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
         cache_system_prompt: bool = False,
+        tools: Optional[List[Dict[str, Any]]] = None,
         **kwargs,
     ) -> LLMResponse:
         """
@@ -481,8 +482,16 @@ class LLMService:
             cache_system_prompt: When True, inject provider-specific prompt-caching
                                  metadata into system messages (Anthropic only; no-op
                                  for other providers).
+            tools: Optional JSON-Schema tool definitions (REQ-F-006). When
+                   supplied and non-empty, they are bound to the resolved
+                   provider client before invocation so the provider can
+                   return tool calls. A primary-tier failure on a tool-bound
+                   call raises ``LLMResolvedCallError`` without attempting
+                   the fallback ladder (REQ-F-008) -- a fallback tier is a
+                   different model that may not honor the same tool schema.
         """
         kwargs["cache_system_prompt"] = cache_system_prompt
+        kwargs["tools"] = tools
         if self._telemetry_service is not None:
             return await self._call_llm_async_with_telemetry(
                 messages, provider, model, temperature, routing_context, **kwargs
@@ -1086,6 +1095,8 @@ class LLMService:
             # Extract cache_system_prompt before forwarding kwargs to the provider.
             # Mirrors the sync path (_call_llm_direct) for NFR-F-002 parity.
             cache_system_prompt: bool = kwargs.pop("cache_system_prompt", False)
+            # REQ-F-006: tool definitions to bind to the resolved client below.
+            tools: Optional[List[Dict[str, Any]]] = kwargs.pop("tools", None)
 
             provider = self._provider_utils.normalize_provider(provider)
             self._validate_prompt_caching_support(
@@ -1112,6 +1123,21 @@ class LLMService:
             current_model = config.get("model", "unknown")
             client = self._client_factory.get_or_create_client(provider, config)
 
+            # REQ-F-006: bind tool definitions to the resolved client. The
+            # bound runnable (`RunnableBinding`) is a call-local value --
+            # `get_or_create_client` returns a cached, shared instance, and
+            # writing the bound result back into it would leak one caller's
+            # tool schema into every subsequent call for that provider/model
+            # (AC-21, Decision 8 in Component Change 8).
+            if tools:
+                bind_tools_fn = getattr(client, "bind_tools", None)
+                if not callable(bind_tools_fn):
+                    raise LLMServiceError(
+                        f"Provider '{provider}' does not support tool calling: "
+                        "resolved client exposes no bind_tools() method."
+                    )
+                client = client.bind_tools(tools)
+
             # Inject provider-specific cache metadata (E05-F05).
             # Placed after provider resolution and before LangChain conversion
             # so the correct resolved provider drives injection (Decision 2).
@@ -1130,6 +1156,20 @@ class LLMService:
             raise
         except Exception as e:
             typed_error = classify_llm_error(e, provider)
+
+            if tools:
+                # REQ-F-008 / Decision 9: a fallback tier is a different model
+                # that may not accept the same tool schema. Returning prose
+                # from a fallback tier where the caller's loop expects a
+                # structured tool call is exactly the silent degradation
+                # Scenario 5 forbids, so tool-bound calls never fall back.
+                self._logger.warning(
+                    f"Tool-bound call to {provider}:{current_model} failed - "
+                    "fallback suppressed (tool-bound call, fallback suppressed)"
+                )
+                raise LLMResolvedCallError(
+                    provider, current_model, typed_error
+                ) from typed_error
 
             if isinstance(typed_error, (LLMDependencyError, LLMConfigurationError)):
                 raise LLMResolvedCallError(
