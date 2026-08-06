@@ -46,7 +46,11 @@ class TriggerParser:
 
         # Default: treat as HTTP-like event
         body = event.get("body", event)
-        data = safe_json_loads(body)
+        # ``safe_json_loads`` passes non-str inputs through unchanged, which
+        # means a bare dict ``body`` (e.g. the whole ``event`` when no
+        # "body" key is present) is returned *by reference*. Copy it before
+        # mutating below so we never alias/mutate the caller's event dict.
+        data = dict(safe_json_loads(body))
 
         # Merge path and query parameters if present
         if isinstance(event.get("pathParameters"), dict):

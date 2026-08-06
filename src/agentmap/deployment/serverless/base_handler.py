@@ -37,6 +37,21 @@ from agentmap.runtime_api import (
     run_workflow_async,
 )
 
+# TD-013: Consolidate on the shared strategy-iteration TriggerParser instead of
+# duplicating the "iterate strategies, first match wins" logic locally.
+from agentmap.services.serverless.trigger_parser import TriggerParser
+
+# Default strategy list used when no explicit strategies are supplied.
+DEFAULT_TRIGGER_STRATEGIES = (
+    HttpStrategy(),
+    AwsSqsStrategy(),
+    AwsS3Strategy(),
+    AwsDdbStreamStrategy(),
+    AwsEventBridgeTimerStrategy(),
+    AzureEventGridStrategy(),
+    GcpPubSubStrategy(),
+)
+
 
 # Legacy TriggerType enum for backward compatibility
 class TriggerType(Enum):
@@ -58,35 +73,6 @@ CORS_HEADERS = {
 }
 
 
-class TriggerParser:
-    """Simple trigger parser that determines trigger type and extracts data."""
-
-    def __init__(self, strategies=None):
-        """Initialize with parsing strategies."""
-        self.strategies = strategies or [
-            HttpStrategy(),
-            AwsSqsStrategy(),
-            AwsS3Strategy(),
-            AwsDdbStreamStrategy(),
-            AwsEventBridgeTimerStrategy(),
-            AzureEventGridStrategy(),
-            GcpPubSubStrategy(),
-        ]
-
-    def parse(self, event: Dict[str, Any]) -> tuple[NewTriggerType, Dict[str, Any]]:
-        """Parse event and return trigger type and normalized data."""
-        for strategy in self.strategies:
-            if strategy.matches(event):
-                return strategy.parse(event)
-
-        # Default to HTTP if no strategy matches
-        return NewTriggerType.HTTP, {
-            "graph": event.get("graph"),
-            "state": event.get("state", {}),
-            "csv": event.get("csv"),
-        }
-
-
 class BaseHandler:
     """Serverless handler following facade pattern (run-only)."""
 
@@ -94,8 +80,12 @@ class BaseHandler:
         """Initialize handler using facade pattern."""
         self.config_file = config_file
 
-        # Initialize trigger parser with all strategies
-        self.trigger_parser = TriggerParser()
+        # Initialize trigger parser with all strategies (TD-013: shared
+        # services/serverless/trigger_parser.TriggerParser, not a local
+        # duplicate). Its "no strategy matched" fallback treats the whole
+        # event as the data payload, which is equivalent for the
+        # graph/state/csv keys this handler reads (see handle_request below).
+        self.trigger_parser = TriggerParser(list(DEFAULT_TRIGGER_STRATEGIES))
 
         # ✅ FACADE PATTERN: Ensure runtime is initialized once
         ensure_initialized(config_file=config_file)
@@ -191,6 +181,26 @@ class BaseHandler:
             body = {
                 "success": True,
                 "data": result.get("outputs", {}),
+                "correlation_id": correlation_id,
+                "metadata": result.get("metadata", {}),
+            }
+            return {
+                "statusCode": 200,
+                "headers": CORS_HEADERS,
+                "body": json.dumps(body),
+            }
+        elif result.get("interrupted", False):
+            # TD-014: interrupted (suspended) runs are not failures — they are
+            # awaiting a resume action. Mirror the HTTP adapter's
+            # ``_build_execute_response`` behaviour (200 + thread_id +
+            # interrupt_info) instead of falling through to the generic 500
+            # error branch below.
+            body = {
+                "success": False,
+                "interrupted": True,
+                "thread_id": result.get("thread_id"),
+                "interrupt_info": result.get("interrupt_info", {}),
+                "message": result.get("message"),
                 "correlation_id": correlation_id,
                 "metadata": result.get("metadata", {}),
             }
