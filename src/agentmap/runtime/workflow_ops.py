@@ -801,18 +801,10 @@ async def run_workflow_async(
             _raise_mapped_error(graph_name, error_msg)
 
     except ExecutionInterruptedException as e:
-        return {
-            "success": False,
-            "interrupted": True,
-            "thread_id": e.thread_id,
-            "interaction_request": e.interaction_request,
-            "message": f"Execution interrupted for human interaction in thread: {e.thread_id}",
-            "metadata": {
-                "graph_name": graph_name,
-                "profile": profile,
-                "checkpoint_available": True,
-            },
-        }
+        # TD-031: single canonical mapping lives on GraphRunnerService
+        # (build_legacy_interrupt_result), shared with the streaming facade's
+        # equivalent handler so suspension mapping is not duplicated.
+        return graph_runner.build_legacy_interrupt_result(e, graph_name, profile)
     except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
         raise
     except FileNotFoundError as e:
@@ -894,24 +886,27 @@ async def run_workflow_stream_async(
             yield event
 
     except ExecutionInterruptedException as e:
+        # TD-031 (hardening): defensive-only fallback. In current call graphs this
+        # exception is always intercepted by ``run_stream_async``'s own
+        # except-ExecutionInterruptedException handler (which yields an identical,
+        # correctly-sequenced suspended terminal) before it can reach here — this
+        # branch would only fire if a future pre-stream prelude step (before the
+        # ``async for`` above) raised it directly. ``sequence=0`` is therefore
+        # currently provably correct (no events have been yielded yet on any path
+        # that can reach this handler). Uses the SAME canonical mapping as
+        # ``run_stream_async`` (``GraphRunnerService.build_legacy_interrupt_result``)
+        # so suspension mapping lives in exactly one place — fetched fresh from the
+        # container rather than the loop-local ``graph_runner`` binding, since a
+        # prelude-time raise (before that binding executes) must not raise
+        # UnboundLocalError here.
+        _runner: GraphRunnerService = (
+            RuntimeManager.get_container().graph_runner_service()
+        )
         yield WorkflowProgressEvent(
             event_type="suspended",
             sequence=0,
             is_terminal=True,
-            result={
-                "success": False,
-                "interrupted": True,
-                "thread_id": e.thread_id,
-                "interaction_request": e.interaction_request,
-                "message": (
-                    f"Execution interrupted for human interaction in thread: {e.thread_id}"
-                ),
-                "metadata": {
-                    "graph_name": graph_name,
-                    "profile": profile,
-                    "checkpoint_available": True,
-                },
-            },
+            result=_runner.build_legacy_interrupt_result(e, graph_name, profile),
         )
     except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
         raise

@@ -1823,21 +1823,9 @@ class GraphRunnerService:
                 event_type="suspended",
                 sequence=sequence,
                 is_terminal=True,
-                result={
-                    "success": False,
-                    "interrupted": True,
-                    "thread_id": e.thread_id,
-                    "interaction_request": e.interaction_request,
-                    "message": (
-                        f"Execution interrupted for human interaction in "
-                        f"thread: {e.thread_id}"
-                    ),
-                    "metadata": {
-                        "graph_name": metadata_graph_name,
-                        "profile": profile,
-                        "checkpoint_available": True,
-                    },
-                },
+                result=self.build_legacy_interrupt_result(
+                    e, metadata_graph_name, profile
+                ),
             )
             return
 
@@ -1951,6 +1939,54 @@ class GraphRunnerService:
         return self._shape_streaming_result(
             result, metadata_graph_name, profile=profile
         )
+
+    def build_legacy_interrupt_result(
+        self,
+        error: ExecutionInterruptedException,
+        graph_name: str,
+        profile: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build the resumable 'suspended' result dict for a legacy
+        ``ExecutionInterruptedException`` (B-1 human-interaction pattern) (TD-031).
+
+        Single canonical mapping for this exception -> result-dict shape.
+        Public (not name-mangled with a leading underscore) so it is callable
+        across the module boundary from ``runtime/workflow_ops.py``'s
+        ``run_workflow_stream_async`` facade, which needs the identical mapping
+        for the (currently unreachable, defensive-only) case where the
+        exception is raised in its pre-stream prelude — before
+        ``run_stream_async`` (whose own ``except ExecutionInterruptedException``
+        handler also calls this) is ever entered. Consolidates what was
+        previously duplicated dict-literal construction in both places
+        (TD-031; was scattered between ``graph_runner_service.py`` and
+        ``workflow_ops.py``).
+
+        Args:
+            error: The raised ``ExecutionInterruptedException``.
+            graph_name: Caller-facing graph name to echo in
+                ``metadata.graph_name``.
+            profile: Optional profile/environment name to echo in
+                ``metadata.profile``.
+
+        Returns:
+            Result dict matching the shape ``run_workflow_async``'s own
+            ``except ExecutionInterruptedException`` handler produces (parity).
+        """
+        return {
+            "success": False,
+            "interrupted": True,
+            "thread_id": error.thread_id,
+            "interaction_request": error.interaction_request,
+            "message": (
+                f"Execution interrupted for human interaction in thread: "
+                f"{error.thread_id}"
+            ),
+            "metadata": {
+                "graph_name": graph_name,
+                "profile": profile,
+                "checkpoint_available": True,
+            },
+        }
 
     def _build_graph_interrupt_result(
         self,
