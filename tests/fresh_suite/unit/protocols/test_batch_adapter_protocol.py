@@ -9,10 +9,7 @@ TC-004..007 (full lifecycle) live in tests/fresh_suite/unit/services/.
 
 import pytest
 
-from agentmap.models.llm_execution import (
-    BatchPollResult,
-    LLMBatchStatus,
-)
+from agentmap.models.llm_batch import BatchPollResult, LLMBatchStatus
 from agentmap.services.protocols.service_protocols import BatchAdapterProtocol
 
 # ---------------------------------------------------------------------------

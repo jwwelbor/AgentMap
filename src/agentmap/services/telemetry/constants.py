@@ -95,6 +95,11 @@ GEN_AI_PROVIDER_REQUEST_ID: str = "gen_ai.provider.request_id"
 GEN_AI_SYSTEM_FINGERPRINT: str = "gen_ai.system.fingerprint"
 """System fingerprint returned by the LLM provider (OpenAI-specific)."""
 
+GEN_AI_USAGE_COST: str = "gen_ai.usage.cost"
+"""Deterministic call cost (``float(LLMCostBreakdown.total_cost)``), set only
+when cost was computed -- absence is meaningful, never a fabricated zero
+(E05-F06 REQ-F-010)."""
+
 # ---------------------------------------------------------------------------
 # Routing span attributes
 # ---------------------------------------------------------------------------

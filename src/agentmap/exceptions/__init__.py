@@ -27,6 +27,7 @@ from agentmap.exceptions.runtime_exceptions import (
 )
 from agentmap.exceptions.service_exceptions import (
     FunctionResolutionException,
+    LLMBudgetExceededError,
     LLMConfigurationError,
     LLMDependencyError,
     LLMProviderError,
@@ -76,6 +77,7 @@ __all__ = [
     "LLMTimeoutError",
     "LLMRateLimitError",
     "LLMResolvedCallError",
+    "LLMBudgetExceededError",
     "StorageAuthenticationError",
     "StorageConnectionError",
     "StorageConfigurationError",

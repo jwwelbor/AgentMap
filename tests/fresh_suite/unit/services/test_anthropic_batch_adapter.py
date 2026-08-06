@@ -835,7 +835,7 @@ class TestNormalizedPoll:
         return batch
 
     def test_poll_returns_batch_poll_result_instance(self):
-        from agentmap.models.llm_execution import BatchPollResult
+        from agentmap.models.llm_batch import BatchPollResult
 
         adapter = _make_adapter()
         adapter._client.messages.batches.retrieve.return_value = (
@@ -845,7 +845,7 @@ class TestNormalizedPoll:
         assert isinstance(result, BatchPollResult)
 
     def test_poll_in_progress_maps_to_in_progress(self):
-        from agentmap.models.llm_execution import LLMBatchStatus
+        from agentmap.models.llm_batch import LLMBatchStatus
 
         adapter = _make_adapter()
         adapter._client.messages.batches.retrieve.return_value = (
@@ -855,7 +855,7 @@ class TestNormalizedPoll:
         assert result.status == LLMBatchStatus.IN_PROGRESS
 
     def test_poll_ended_maps_to_ended(self):
-        from agentmap.models.llm_execution import LLMBatchStatus
+        from agentmap.models.llm_batch import LLMBatchStatus
 
         adapter = _make_adapter()
         adapter._client.messages.batches.retrieve.return_value = (
@@ -866,7 +866,7 @@ class TestNormalizedPoll:
         assert result.results_url == "https://example.com/r"
 
     def test_poll_canceling_maps_to_canceling(self):
-        from agentmap.models.llm_execution import LLMBatchStatus
+        from agentmap.models.llm_batch import LLMBatchStatus
 
         adapter = _make_adapter()
         adapter._client.messages.batches.retrieve.return_value = (
@@ -876,7 +876,7 @@ class TestNormalizedPoll:
         assert result.status == LLMBatchStatus.CANCELING
 
     def test_poll_expired_maps_to_expired(self):
-        from agentmap.models.llm_execution import LLMBatchStatus
+        from agentmap.models.llm_batch import LLMBatchStatus
 
         adapter = _make_adapter()
         adapter._client.messages.batches.retrieve.return_value = (
@@ -886,7 +886,7 @@ class TestNormalizedPoll:
         assert result.status == LLMBatchStatus.EXPIRED
 
     def test_poll_unknown_status_maps_to_failed(self):
-        from agentmap.models.llm_execution import LLMBatchStatus
+        from agentmap.models.llm_batch import LLMBatchStatus
 
         adapter = _make_adapter()
         adapter._client.messages.batches.retrieve.return_value = (
@@ -896,7 +896,7 @@ class TestNormalizedPoll:
         assert result.status == LLMBatchStatus.FAILED
 
     def test_poll_request_counts_populated(self):
-        from agentmap.models.llm_execution import LLMBatchRequestCounts
+        from agentmap.models.llm_batch import LLMBatchRequestCounts
 
         adapter = _make_adapter()
         adapter._client.messages.batches.retrieve.return_value = (

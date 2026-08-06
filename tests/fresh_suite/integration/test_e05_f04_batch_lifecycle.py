@@ -23,13 +23,13 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from agentmap.models.llm_execution import (
+from agentmap.models.llm_batch import (
     BatchPollResult,
     LLMBatchHandle,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
-    LLMRequest,
 )
+from agentmap.models.llm_execution import LLMRequest
 from agentmap.services.llm_batch_errors import LLMBatchUnsupportedProviderError
 from agentmap.services.llm_batch_repository import BatchHandleRepository
 from agentmap.services.llm_service import LLMService

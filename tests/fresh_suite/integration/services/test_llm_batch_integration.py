@@ -24,17 +24,15 @@ import os
 import tempfile
 from unittest.mock import MagicMock
 
-from agentmap.models.llm_execution import (
+from agentmap.models.llm_batch import (
     BatchPollResult,
     LLMBatchHandle,
     LLMBatchRequestCounts,
     LLMBatchResult,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
-    LLMExecutionError,
-    LLMRequest,
-    LLMUsage,
 )
+from agentmap.models.llm_execution import LLMExecutionError, LLMRequest, LLMUsage
 from agentmap.services.llm_batch_repository import BatchHandleRepository
 from agentmap.services.llm_service import LLMService
 from agentmap.services.telemetry.constants import (

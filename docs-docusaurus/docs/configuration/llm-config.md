@@ -94,6 +94,52 @@ This prevents wasting time and quota on a provider that is down.
 
 ---
 
+## Pricing
+
+Opt-in price catalog used to compute a deterministic cost receipt (`LLMResponse.cost`) on every async call. Configure under `llm.pricing`:
+
+```yaml
+llm:
+  # ... provider config above ...
+
+  pricing:
+    catalog_version: "2026-01-01"   # travels with every computed receipt for later re-verification
+    currency: "USD"
+    models:
+      anthropic:
+        claude-sonnet-4-6:
+          input_per_1m: 3.00
+          output_per_1m: 15.00
+          cache_write_per_1m: 3.75
+          cache_read_per_1m: 0.30
+      openai:
+        gpt-4.1-mini:
+          input_per_1m: 0.40
+          output_per_1m: 1.60
+```
+
+- `catalog_version` — free-form string recorded on every computed `LLMCostBreakdown.catalog_version`, so a receipt can be traced back to the price list that produced it. `None` when the `pricing` block is absent.
+- `currency` — applies to the whole catalog; defaults to `"USD"` when omitted.
+- `models.<provider>.<model>` — provider and model keys are matched case-insensitively against the resolved provider/model on the call, exact match only (no prefix or fuzzy matching).
+- Rate keys, all optional: `input_per_1m`, `output_per_1m`, `cache_write_per_1m`, `cache_read_per_1m` — price in the catalog `currency` per 1,000,000 tokens.
+- Rate values are parsed with `Decimal(str(value))`, never as binary `float` — write plain numeric YAML literals (e.g. `3.00`), not quoted strings.
+
+### When `cost` is `None`
+
+`LLMResponse.cost` is `None` — never a partial total — whenever:
+
+- No `llm.pricing` block is configured at all
+- The catalog has no entry for the resolved provider/model pair
+- A usage bucket (input, output, cache-write, cache-read) reports a positive token count but its rate key is missing from that catalog entry
+
+A bucket with zero or absent usage does not require a configured rate.
+
+### Not a spend cap
+
+`llm.pricing` (and the `cost` it produces) is purely descriptive — it reports what a completed call cost, after the fact. It does not block, refuse, or throttle a call. `routing_context["max_cost_tier"]` is also not a spend cap: it caps which routing *complexity tier* a call may use, and is entirely unrelated to `llm.pricing`. To actually enforce a budget before a call is dispatched, register a budget guard — see [LLM Service Reference: Budget Guard](../reference/services/llm-service#budget-guard).
+
+---
+
 ## Routing Matrix
 
 The routing matrix maps each provider and complexity level to a specific model. It is used by the routing system and the tiered fallback strategy:

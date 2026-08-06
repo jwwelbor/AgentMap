@@ -12,7 +12,7 @@ Test cases covered:
 
 import pytest
 
-from agentmap.models.llm_execution import (
+from agentmap.models.llm_batch import (
     BatchPollResult,
     LLMBatchHandle,
     LLMBatchRequestCounts,

@@ -11,16 +11,22 @@ Handles multi-tier fallback logic when LLM calls fail, including:
 from typing import Any, Awaitable, Callable, List, Optional
 
 from agentmap.exceptions import LLMServiceError
-from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import LLMMessage, LLMResponse
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
+from agentmap.services.llm.fallback_ladder import LLMFallbackAsyncLadderMixin
 from agentmap.services.llm_message_service import LLMMessageService
 from agentmap.services.logging_service import LoggingService
 
 
-class LLMFallbackHandler:
-    """Handler for tiered LLM fallback strategies."""
+class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
+    """Handler for tiered LLM fallback strategies.
+
+    The async ladder (``try_with_fallback_async`` and its private helpers)
+    lives on ``LLMFallbackAsyncLadderMixin`` (``services/llm/fallback_ladder.py``,
+    NFR-F-006) -- this class supplies the sync ladder, the shared tier-plan
+    builder, and the resilience-layer invocation helpers both ladders use.
+    """
 
     def __init__(
         self,
@@ -257,91 +263,3 @@ class LLMFallbackHandler:
         )
         self._logger.error(error_msg)
         raise LLMServiceError(error_msg)
-
-    async def try_with_fallback_async(
-        self,
-        original_provider: str,
-        original_model: str,
-        messages: List[LLMMessage],
-        error: Exception,
-        get_provider_config_fn: Any,
-        get_or_create_client_fn: Any,
-        convert_messages_fn: Any,
-        **kwargs,
-    ) -> LLMResponse:
-        """Async variant of tiered fallback preserving the sync fallback order.
-
-        Returns ``LLMResponse`` carrying the resolved provider, model, and usage
-        from the winning fallback tier.
-
-        On exhaustion, raises ``LLMResolvedCallError`` carrying the last-attempted
-        tier's identity (policy: last tier wins — the most recent concrete provider
-        invoked is the most relevant for observability and debugging).
-        """
-        self._logger.error(
-            f"Model '{original_model}' failed for provider '{original_provider}': {error}"
-        )
-
-        attempted_fallbacks = []
-        # Strip Anthropic-only cache_control before failover — non-Anthropic
-        # fallback providers can reject it at their API boundary, and prompt-cache
-        # savings are moot on a recovery call.
-        langchain_msgs = convert_messages_fn(
-            LLMMessageService.strip_cache_control(messages)
-        )
-        # Last tier actually invoked.
-        # Updated immediately before _invoke_client_async so it only reflects providers
-        # where an actual network call was attempted (MEDIUM-2 fix).
-        last_attempted_provider = original_provider
-        last_attempted_model = original_model
-        # Last tier's typed exception for use as the cause in LLMResolvedCallError
-        # on exhaustion (MEDIUM-1 fix: preserve the typed error discriminator, not
-        # a synthetic LLMServiceError wrapper).
-        last_error = error
-
-        # Use shared tier plan — keeps sync/async ladders in sync (DRY).
-        for fallback_provider, fallback_model in self._build_tier_plan(
-            original_provider, original_model
-        ):
-            try:
-                self._logger.warning(
-                    f"Fallback tier: trying '{fallback_provider}:{fallback_model}'"
-                )
-                attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
-
-                config = get_provider_config_fn(fallback_provider)
-                config = dict(config)  # defensive copy — avoid mutating shared config
-                config["model"] = fallback_model
-                client = get_or_create_client_fn(fallback_provider, config)
-                last_attempted_provider = fallback_provider
-                last_attempted_model = fallback_model
-                result = await self._invoke_client_async(
-                    client, langchain_msgs, fallback_provider, fallback_model
-                )
-                self._logger.info(
-                    f"Fallback tier '{fallback_provider}:{fallback_model}' successful"
-                )
-                return result
-            except Exception as tier_error:
-                self._logger.warning(
-                    f"Fallback tier '{fallback_provider}:{fallback_model}' failed: {tier_error}"
-                )
-                last_error = tier_error
-
-        error_msg = (
-            f"All fallback strategies exhausted for original request "
-            f"(provider: {original_provider}, model: {original_model}). "
-            f"Attempted fallbacks: {', '.join(attempted_fallbacks) if attempted_fallbacks else 'none'}. "
-            f"Original error: {error}"
-        )
-        self._logger.error(error_msg)
-        # Raise with the last-attempted tier identity and the last tier's typed
-        # error as cause. Using last_error (the actual typed exception from the
-        # last invocation) rather than a synthetic LLMServiceError wrapper preserves
-        # the error discriminator (LLMTimeoutError, LLMRateLimitError, etc.) for
-        # callers that filter on LLMExecutionError.error_type (MEDIUM-1 fix).
-        raise LLMResolvedCallError(
-            resolved_provider=last_attempted_provider,
-            resolved_model=last_attempted_model,
-            cause=last_error,
-        )

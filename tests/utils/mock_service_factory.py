@@ -214,6 +214,18 @@ class MockServiceFactory:
 
         mock_service.get_section.side_effect = get_section
 
+        # Default llm.pricing catalog: structurally valid and empty, matching
+        # AppConfigService.get_llm_pricing_config()'s real "absent block"
+        # default (E05-F06). LLMService.__init__ unconditionally constructs
+        # LLMCostCalculator from this, which iterates catalog["models"], so a
+        # bare Mock() (non-iterable) would break every LLMService() built from
+        # this factory. Tests that need real rates override this explicitly.
+        mock_service.get_llm_pricing_config.return_value = {
+            "catalog_version": None,
+            "currency": "USD",
+            "models": {},
+        }
+
         return mock_service
 
     @staticmethod

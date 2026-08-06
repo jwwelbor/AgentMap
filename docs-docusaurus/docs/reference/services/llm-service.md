@@ -805,6 +805,226 @@ An unsupported cache mode (e.g. requesting prompt caching from a provider that d
 
 ---
 
+## Cost Receipts
+
+`call_llm_async()` — and the async wrappers built on it (`ask_async()`, `ask_vision_async()`) — returns an `LLMResponse` carrying two additive fields (`agentmap.models.llm_execution.LLMResponse`):
+
+| Field | Type | Description |
+|---|---|---|
+| `cost` | `Optional[LLMCostBreakdown]` | Deterministic cost computed from `usage` and the configured `llm.pricing` catalog. `None` when pricing is unconfigured, no catalog entry matches the resolved provider/model, or any positive-count usage bucket lacks a configured rate — never a partial or fabricated total. |
+| `tool_calls` | `Optional[List[LLMToolCall]]` | Normalized tool calls the model requested. `None` when the response carried none — never an empty list. See [Tool Calling](#tool-calling) below. |
+
+`LLMCostBreakdown` (`agentmap.models.llm_cost.LLMCostBreakdown`) fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `total_cost` | `Decimal` | Total cost for the call, quantized to 6 decimal places (`ROUND_HALF_UP`) |
+| `currency` | `str` | Currency code from the catalog (`"USD"` by default) |
+| `catalog_version` | `Optional[str]` | The `llm.pricing.catalog_version` value in effect when this receipt was computed |
+| `input_cost` | `Decimal` | Subtotal for input tokens |
+| `output_cost` | `Decimal` | Subtotal for output tokens |
+| `cache_write_cost` | `Decimal` | Subtotal for cache-write tokens (Anthropic prompt caching) |
+| `cache_read_cost` | `Decimal` | Subtotal for cache-read tokens |
+
+```python
+response = await llm_service.call_llm_async(
+    provider="anthropic",
+    messages=[{"role": "user", "content": "Summarize this document."}],
+)
+
+if response.cost is not None:
+    print(f"{response.cost.total_cost} {response.cost.currency}")
+else:
+    print("unpriced call — no llm.pricing entry for this provider/model")
+```
+
+All monetary fields use `decimal.Decimal`, not `float` — sum receipts with `Decimal` arithmetic when accumulating them into a ledger to avoid binary-float drift across many additions.
+
+Configure the price catalog under `llm.pricing`; see [LLM Configuration: Pricing](../../configuration/llm-config#pricing) for the full YAML reference.
+
+When telemetry is enabled and `cost` was computed, `cost.total_cost` is also recorded as a `gen_ai.usage.cost` span attribute on the LLM call span, alongside the existing token attributes. No attribute is recorded when `cost` is `None` — absence is meaningful, not zero.
+
+**`max_cost_tier` is not a spend cap.** `routing_context["max_cost_tier"]` caps which routing *complexity tier* a call may be routed to — it is unrelated to `llm.pricing` and does not enforce, refuse, or throttle spend. To actually enforce a budget before a call is dispatched, register a [budget guard](#budget-guard).
+
+Sync (`call_llm()`, `ask()`, `ask_vision()`) and streaming (`call_llm_stream_async()`) do not compute or expose `cost` or `tool_calls`. Only `call_llm_async()` and the async convenience wrappers built on it do.
+
+---
+
+## Budget Guard
+
+Hosts that need to enforce an actual spend limit — refusing a call before the provider is invoked — register an `LLMBudgetGuardProtocol` implementation. Import the protocol and payload types from their respective modules:
+
+```python
+from agentmap.services.protocols.service_protocols import LLMBudgetGuardProtocol
+from agentmap.models.llm_cost import LLMBudgetCheck
+from agentmap.models.llm_execution import LLMResponse
+from agentmap.exceptions import LLMBudgetExceededError
+
+
+class MyBudgetGuard:
+    """Implements LLMBudgetGuardProtocol (duck-typed — no base class required)."""
+
+    async def _remaining_budget(self, provider: str) -> float:
+        """Placeholder for your application's own budget-ledger lookup."""
+        raise NotImplementedError
+
+    async def _record_spend(self, amount) -> None:
+        """Placeholder for your application's own budget-ledger write."""
+        raise NotImplementedError
+
+    async def check_before_dispatch(self, check: LLMBudgetCheck) -> None:
+        # Raise to refuse dispatch. LLMBudgetExceededError is the canonical
+        # typed refusal, but any exception (typed or not) refuses the call.
+        # It takes no custom __init__ (a plain message string); use the
+        # standard `raise ... from ...` syntax for cause chaining.
+        if await self._remaining_budget(check.resolved_provider) <= 0:
+            raise LLMBudgetExceededError(
+                f"Budget exceeded for {check.resolved_provider}:{check.resolved_model}"
+            ) from RuntimeError("budget exhausted")
+
+    async def observe_receipt(self, receipt: LLMResponse) -> None:
+        # Record a completed call's spend. Exceptions here are caught and
+        # logged at warning level, never propagated to the caller.
+        if receipt.cost is not None:
+            await self._record_spend(receipt.cost.total_cost)
+```
+
+Register it by overriding the `budget_guard` provider on the internal LLM sub-container, **before** anything resolves `llm_service` for the first time. There is no per-call registration path:
+
+```python
+from dependency_injector import providers
+from agentmap.runtime_api import get_container
+
+container = get_container()
+container._llm.budget_guard.override(providers.Object(MyBudgetGuard()))
+```
+
+`llm_service` is a `providers.Singleton` — once it has been resolved once (by your own code or by AgentMap's own bootstrap), the `LLMService` instance already exists with whatever guard was registered at that time, and a later `.override()` call has no effect on it. Register the guard immediately after `get_container()`, before calling `container.llm_service()` or making any LLM call.
+
+Note the `_llm` attribute name: the LLM sub-container is exposed on `ApplicationContainer` with a leading underscore, not as a public `llm` attribute — despite the `budget_guard` provider's own docstring describing the intended path as `container.llm.budget_guard.override(...)`. That spelling raises `AttributeError` against the real container `get_container()` returns; `container._llm.budget_guard.override(...)` is the path that actually works today.
+
+### `LLMBudgetCheck` fields (passed to `check_before_dispatch`)
+
+| Field | Type | Description |
+|---|---|---|
+| `resolved_provider` | `str` | Provider about to be dispatched to |
+| `resolved_model` | `str` | Model about to be dispatched to |
+| `rates` | `Optional[LLMModelRates]` | Configured rates for this provider/model, or `None` if unpriced |
+| `catalog_version` | `Optional[str]` | Catalog version in effect |
+| `max_output_tokens` | `Optional[int]` | Configured max output tokens for this tier — always `None` on fallback tiers (see limitation below) |
+| `max_possible_output_cost` | `Optional[Decimal]` | `max_output_tokens` priced at `rates.output_per_1m` — `None` whenever either input is `None` |
+| `message_count` | `int` | Number of messages in the request |
+| `input_chars` | `int` | Total character count across message content |
+| `attempt_kind` | `str` | `"primary"` or `"fallback"` |
+
+**Fallback-tier limitation (accepted v1):** on a `"fallback"` attempt, `max_output_tokens` and `max_possible_output_cost` are always `None` — the fallback handler dispatches each tier without carrying the primary tier's resolved `max_tokens` forward. A guard must branch on `attempt_kind` and price from `rates` alone when these fields are absent; it must not assume they are always populated.
+
+### Error contract (asymmetric by design)
+
+| Method | Invoked | Failure mode |
+|---|---|---|
+| `check_before_dispatch` | Once per attempted tier (primary and each fallback), before that tier's first provider invocation. Not re-invoked across retries within a tier. | **Fails closed** — any exception (typed or not) propagates and blocks dispatch for that tier. |
+| `observe_receipt` | Exactly once per successful call, with the winning tier's receipt. Never invoked when the call fails terminally. | **Fails open** — any exception is caught and logged at warning level; the call still succeeds. |
+
+This asymmetry is deliberate: a buggy pre-dispatch guard must never become a silent spend leak, but a buggy post-completion observer must never destroy an already-billed result the host can instead reconcile from its own ledger.
+
+### Scope
+
+- The guard is `async`-only and is invoked exclusively from `call_llm_async()` and the async wrappers built on it (`ask_async()`, `ask_vision_async()`). The synchronous `call_llm()`, `ask()`, and `ask_vision()` are never guard-covered — awaiting an async guard from sync code would require `asyncio.run()`, which breaks inside an already-running event loop.
+- The guard is not invoked on `call_llm_stream_async()`'s primary streaming dispatch. It IS invoked, however, when a pre-first-chunk streaming failure triggers that path's non-streaming fallback recovery — that recovery call is a genuine non-streaming dispatch and inherits the same pre-dispatch guard check as `call_llm_async()`.
+- AgentMap does not own budget identity, durable accounting, or cross-process locking — that state lives behind the protocol on the host side.
+
+---
+
+## Tool Calling
+
+`call_llm_async()` accepts an optional `tools` parameter — JSON-Schema-shaped tool definitions that are bound to the resolved provider client before invocation, so the model can request a tool call instead of (or alongside) a text answer. AgentMap does not execute tools itself: the caller owns the tool-execution loop end to end, and no provider SDK import is required.
+
+```python
+def run_local_tool(name: str, arguments: dict):
+    """Placeholder for your application's own tool dispatch/execution."""
+    if name == "get_weather":
+        return {"city": arguments["city"], "condition": "sunny", "temp_f": 68}
+    raise ValueError(f"Unknown tool: {name}")
+
+
+tools = [
+    {
+        "name": "get_weather",
+        "description": "Get the current weather for a city.",
+        "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    }
+]
+
+messages = [{"role": "user", "content": "What's the weather in Portland?"}]
+
+# Turn 1 — bind the tool definitions; the model decides whether to call one
+response = await llm_service.call_llm_async(
+    provider="anthropic",
+    messages=messages,
+    tools=tools,
+)
+
+if response.tool_calls:
+    # Echo the assistant's tool_calls back so the model sees its own prior turn
+    messages.append({
+        "role": "assistant",
+        "content": response.text,
+        "tool_calls": [
+            {"id": tc.id, "name": tc.name, "args": tc.arguments}
+            for tc in response.tool_calls
+        ],
+    })
+
+    # Execute each requested tool yourself, then reply with role: "tool"
+    for tc in response.tool_calls:
+        result = run_local_tool(tc.name, tc.arguments)  # caller-owned execution
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tc.id,
+            "content": str(result),
+        })
+
+    # Turn 2 — send the tool result(s) back for a final answer
+    response = await llm_service.call_llm_async(
+        provider="anthropic",
+        messages=messages,
+        tools=tools,
+    )
+
+print(response.text)
+```
+
+### `LLMToolCall` fields (`agentmap.models.llm_tool_call.LLMToolCall`)
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `str` | Provider-assigned tool-call identifier. Echo this back as `tool_call_id` on the `role: "tool"` reply. |
+| `name` | `str` | Tool name the model wants to invoke. |
+| `arguments` | `Dict[str, Any]` | Already-parsed argument dict — AgentMap does not re-parse a JSON string. |
+
+### Message contract for the round trip
+
+| Message shape | Required fields | Converts to |
+|---|---|---|
+| `{"role": "tool", "tool_call_id": ..., "content": ...}` | `tool_call_id` | LangChain `ToolMessage`. Missing `tool_call_id` raises `LLMServiceError` — never silently coerced to a `HumanMessage`. |
+| `{"role": "assistant", "content": ..., "tool_calls": [...]}` | — | LangChain `AIMessage` with `tool_calls` preserved. Each entry in `tool_calls` is shaped `{"id", "name", "args"}` — the same shape LangChain itself uses, not `LLMToolCall`'s `arguments` field name. |
+
+### Failure behavior
+
+- If the resolved client exposes no callable `bind_tools()` method, `call_llm_async()` raises `LLMServiceError` before any provider invocation.
+- A tool-bound call (`tools` non-empty) whose primary tier fails raises `LLMResolvedCallError` **without** attempting any fallback tier — a fallback tier is a different model that may not honor the same tool schema, so silently falling back could hide a tool-schema mismatch as a generic provider failure. Non-tool-bound calls are unaffected and still traverse the normal fallback ladder.
+- `tools=None` or `tools=[]` never calls `bind_tools()` — the zero-cost path is preserved when no tools are supplied.
+- The client instance cached by the internal client factory is never mutated by a tool-bound call — `bind_tools()`'s output is used for that call only.
+
+`ask_async()` also accepts `tools=` and still returns a plain `str` (extracting `.text`) — use `call_llm_async()` directly when you need to read `response.tool_calls`.
+
+---
+
 ## External Usage
 
 ```python

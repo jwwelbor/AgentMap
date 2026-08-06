@@ -196,6 +196,14 @@ class AppConfigService:
         """Get LLM resilience configuration (retry + circuit breaker)."""
         return self._llm_manager.get_resilience_config()
 
+    def get_llm_pricing_config(self) -> Dict[str, Any]:
+        """Get the opt-in llm.pricing price-catalog configuration.
+
+        Architecturally separate from get_routing_config()'s
+        cost_optimization / max_cost_tier surface (Decision 6, E05-F06).
+        """
+        return self._llm_manager.get_pricing_config()
+
     # Routing accessors
     def get_routing_config(self) -> Dict[str, Any]:
         """Get the routing configuration with default values."""

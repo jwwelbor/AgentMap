@@ -63,3 +63,31 @@ class LLMConfigManager(BaseConfigManager):
         }
 
         return self._merge_with_defaults(resilience_config, defaults)
+
+    def get_pricing_config(self) -> Dict[str, Any]:
+        """
+        Get the opt-in ``llm.pricing`` price-catalog configuration.
+
+        Architecturally separate from ``routing.cost_optimization`` /
+        ``max_cost_tier`` (Decision 6) -- this method loads a distinct
+        config surface and does not touch routing config in any way.
+
+        Unlike ``get_resilience_config()``, this method supplies **no rate
+        defaults** -- only structural defaults (``currency: "USD"``,
+        ``models: {}``). No prices ship as defaults (Out of Scope 8): an
+        absent ``llm.pricing`` block yields an empty catalog with
+        ``catalog_version`` of ``None``, never fabricated rates.
+
+        Returns:
+            Dictionary shaped ``{"catalog_version": ..., "currency": ...,
+            "models": {...}}``.
+        """
+        pricing_config = self.get_value("llm.pricing", {})
+
+        defaults = {
+            "catalog_version": None,
+            "currency": "USD",
+            "models": {},
+        }
+
+        return self._merge_with_defaults(pricing_config, defaults)

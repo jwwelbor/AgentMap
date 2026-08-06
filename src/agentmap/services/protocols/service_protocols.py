@@ -18,11 +18,14 @@ from typing import (
     runtime_checkable,
 )
 
-from agentmap.models.llm_execution import (
+from agentmap.models.llm_batch import (
     BatchPollResult,
     LLMBatchHandle,
     LLMBatchResult,
     LLMBatchSubmitRequest,
+)
+from agentmap.models.llm_cost import LLMBudgetCheck
+from agentmap.models.llm_execution import (
     LLMFanoutResult,
     LLMMessage,
     LLMRequest,
@@ -527,6 +530,51 @@ class LLMServiceProtocol(Protocol):
         Args:
             submitted_request_ids: The request_ids supplied at submit time.
             records: Records returned by :meth:`fetch_batch_results`.
+        """
+        ...
+
+
+@runtime_checkable
+class LLMBudgetGuardProtocol(Protocol):
+    """Opt-in host hook for pre-dispatch budget refusal and post-completion
+    receipt observation (E05-F06 REQ-F-003/REQ-F-004).
+
+    Registered once via constructor injection (``LLMService(budget_guard=...)``,
+    wired through ``di/container_parts/llm.py``'s single ``budget_guard``
+    provider) -- there is no competing per-call registration path.
+
+    Both methods are ``async`` because the motivating host case is a
+    row-lock budget backed by a database; a sync protocol would force that
+    host to block the event loop inside AgentMap's dispatch path.
+
+    Error contract is deliberately asymmetric (NFR-F-003):
+    - ``check_before_dispatch`` fails **closed** -- any exception it raises
+      (typed or not) propagates and blocks dispatch for that tier. A buggy
+      guard must not become a silent spend leak.
+    - ``observe_receipt`` fails **open** -- any exception it raises is
+      caught and logged at warning level. The provider has already been
+      paid for the call; raising here would destroy an already-billed
+      result the host can instead reconcile from its own ledger.
+    """
+
+    async def check_before_dispatch(self, check: LLMBudgetCheck) -> None:
+        """Refuse an about-to-be-dispatched call by raising.
+
+        Invoked once per resolved provider/model tier (primary and each
+        attempted fallback tier), after the circuit-breaker admission check
+        and before that tier's first provider invocation. Not re-invoked
+        across retries within a tier. Raise ``LLMBudgetExceededError`` (or
+        any exception) to refuse; returning normally allows dispatch.
+        """
+        ...
+
+    async def observe_receipt(self, receipt: LLMResponse) -> None:
+        """Observe a completed call's receipt after a successful dispatch.
+
+        Invoked exactly once per successful public async call, with the
+        winning tier's ``LLMResponse`` -- not once per attempted tier. Never
+        invoked when the call fails terminally. Exceptions raised here are
+        caught and logged, never propagated to the caller.
         """
         ...
 

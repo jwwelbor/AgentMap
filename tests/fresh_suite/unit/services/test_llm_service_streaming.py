@@ -435,6 +435,299 @@ class TestCallLLMStreamAsyncDispatch(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(chunks[0].is_final)
 
 
+class TestCallLLMStreamAsyncBudgetGuardRefusalUnwrap(unittest.IsolatedAsyncioTestCase):
+    """T-E05-F06-008 rework (code-review Finding 1 sweep): ``call_llm_stream_async``
+    must unwrap a ``BudgetGuardRefusal`` back to the guard's original exception,
+    mirroring ``_dispatch_call_llm_async``'s non-streaming unwrap boundary.
+
+    A ``BudgetGuardRefusal`` can reach here from the pre-first-chunk fallback
+    path (``_call_llm_stream_async_direct`` re-enters the guarded non-streaming
+    resilience seam via ``LLMFallbackHandler.try_with_fallback_async`` when
+    materializing a fallback tier). Without this unwrap, the internal marker
+    type would leak to a stream caller instead of the guard's own exception --
+    the same defect class as the non-streaming fail-closed fix, on the
+    streaming entrypoint's own outermost boundary.
+    """
+
+    async def test_budget_guard_refusal_unwrapped_to_original_exception(self):
+        """Caller-Path Contract (T-E05-F06-008 round-3 rework, strengthened
+        from a ``_call_llm_stream_async_core`` fake to the real dispatch
+        chain):
+          - Entrypoint: ``LLMService(..., budget_guard=guard).call_llm_stream_async(
+            messages, provider=..., model=...)``.
+          - Lowest allowed mock seams: ``agentmap.services.llm_service.stream_provider``
+            (forces the pre-first-chunk primary failure that makes the
+            ladder fallback-eligible) and ``_client_factory.get_or_create_client``
+            (never a real network client); ``guard.check_before_dispatch`` is
+            an ``AsyncMock`` -- the declared ``LLMBudgetGuardProtocol`` seam.
+          - Forbidden mocks: ``_call_llm_stream_async_core``,
+            ``LLMFallbackHandler``/``try_with_fallback_async``, and
+            ``_invoke_with_resilience_async`` are never mocked -- the real
+            fallback ladder and real budget-guard pre-dispatch check must
+            drive the assertion.
+
+        Streaming's primary attempt (``_invoke_with_resilience_stream_async``)
+        never calls the budget guard -- only a fallback tier re-enters the
+        guarded non-streaming resilience seam (``_invoke_with_resilience_async``,
+        ``attempt_kind="fallback"``). So: primary ``openai`` fails with a
+        plain provider error before any chunk (fallback-eligible per
+        REQ-F-006); the ladder resolves exactly one fallback tier
+        (``anthropic``, configured as ``routing.fallback.default_provider``);
+        that tier's own pre-dispatch guard check raises. The guard's raw
+        exception must reach the caller of ``call_llm_stream_async``
+        unwrapped -- not the internal ``BudgetGuardRefusal`` marker, and not
+        absorbed as an ordinary tier failure that exhausts the ladder into
+        ``LLMResolvedCallError``.
+        """
+        from agentmap.services.llm._budget_guard_refusal import BudgetGuardRefusal
+        from agentmap.services.llm_service import LLMService
+
+        mock_logging = MagicMock()
+        mock_logging.get_class_logger.return_value = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 60,
+            },
+        }
+        mock_config.get_llm_config.return_value = {
+            "model": "test-model",
+            "temperature": 0.7,
+            "api_key": "test-key",
+        }
+
+        mock_models_config = MagicMock()
+        mock_routing_service = MagicMock()
+
+        # Concrete (not auto-Mock) routing config: one fallback tier,
+        # openai -> anthropic, mirrors test_llm_service_async.py's
+        # TestLLMServiceBudgetGuard._make_fallback_service.
+        mock_routing_config = MagicMock()
+        mock_routing_config.supports_prompt_caching.return_value = False
+        mock_routing_config.fallback = {"default_provider": "anthropic"}
+        mock_routing_config.routing_matrix = {"anthropic": {"low": "claude-haiku"}}
+
+        mock_features_registry = MagicMock()
+        mock_features_registry.is_provider_available.return_value = True
+        mock_features_registry.get_available_providers.return_value = [
+            "openai",
+            "anthropic",
+        ]
+
+        budget_error = RuntimeError("fallback tier over budget")
+        guard = MagicMock()
+        guard.check_before_dispatch = AsyncMock(side_effect=budget_error)
+        guard.observe_receipt = AsyncMock(return_value=None)
+
+        svc = LLMService(
+            configuration=mock_config,
+            logging_service=mock_logging,
+            routing_service=mock_routing_service,
+            llm_models_config_service=mock_models_config,
+            routing_config_service=mock_routing_config,
+            features_registry_service=mock_features_registry,
+            telemetry_service=None,
+            budget_guard=guard,
+        )
+
+        cb_mock = MagicMock()
+        cb_mock.is_open.return_value = False
+        cb_mock.reset = 60
+        svc._circuit_breaker = cb_mock
+
+        # Fallback-tier client -- resolved but must never be invoked, since
+        # the guard refuses before any dispatch.
+        fallback_client = Mock()
+        fallback_client.ainvoke = AsyncMock()
+        fallback_client.invoke = Mock()
+        svc._client_factory.get_or_create_client = Mock(return_value=fallback_client)
+
+        async def primary_fails_pre_first_chunk(
+            provider, messages, params, *, client, credentials
+        ):
+            raise RuntimeError("primary provider unavailable")
+            yield  # pragma: no cover -- makes this an async generator
+
+        with (
+            patch(
+                "agentmap.services.llm_service.stream_provider",
+                side_effect=primary_fails_pre_first_chunk,
+            ),
+            patch("agentmap.services.llm_service.asyncio.sleep", new=AsyncMock()),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                async for _ in svc.call_llm_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="openai",
+                    model="gpt-4o-mini",
+                ):
+                    pass
+
+        # Must be the guard's own original exception, unwrapped -- not the
+        # internal BudgetGuardRefusal marker leaking to the caller, and not
+        # LLMResolvedCallError (which is what a buggy implementation that
+        # treats the refusal as an ordinary tier failure and exhausts the
+        # ladder would raise instead).
+        self.assertIs(ctx.exception, budget_error)
+        self.assertNotIsInstance(ctx.exception, BudgetGuardRefusal)
+
+        # The fallback client was resolved (client_resolved=True — MEDIUM-2
+        # semantics) but never invoked: the guard blocked dispatch before
+        # any network call on this tier.
+        fallback_client.ainvoke.assert_not_called()
+        fallback_client.invoke.assert_not_called()
+
+        # Guard awaited exactly once, for the fallback tier -- streaming's
+        # primary attempt never re-enters the guarded seam.
+        guard.check_before_dispatch.assert_awaited_once()
+        check = guard.check_before_dispatch.await_args.args[0]
+        self.assertEqual(check.attempt_kind, "fallback")
+        self.assertEqual(check.resolved_provider, "anthropic")
+        self.assertEqual(check.resolved_model, "claude-haiku")
+
+
+# ---------------------------------------------------------------------------
+# T-E05-F06-008 round-5 kickback item 4: streaming sibling of
+# test_span_exception_does_not_leak_guard_message (test_llm_service_async.py)
+# ---------------------------------------------------------------------------
+
+
+class TestCallLLMStreamAsyncTelemetryDoesNotLeakGuardMessage(
+    unittest.IsolatedAsyncioTestCase
+):
+    """T-E05-F06-008 round-4 UAT Finding 2, streaming sibling (round-5
+    kickback item 4): ``_call_llm_stream_async_with_telemetry``'s own
+    span-exception recording must not carry the host guard's raw exception
+    text -- mirrors ``test_span_exception_does_not_leak_guard_message``
+    (test_llm_service_async.py) for the streaming telemetry wrapper's own
+    ``isinstance(e, BudgetGuardRefusal)`` branch (llm_service.py, inside
+    ``_call_llm_stream_async_with_telemetry``'s ``except Exception`` net).
+
+    Same fallback-tier setup as
+    ``TestCallLLMStreamAsyncBudgetGuardRefusalUnwrap`` (primary fails
+    pre-first-chunk; the resolved fallback tier's guard check refuses), with
+    a telemetry service wired so the ``BudgetGuardRefusal`` reaches
+    ``_call_llm_stream_async_with_telemetry``'s own ``except Exception`` net
+    (llm_service.py:3668) before the outer ``call_llm_stream_async``
+    boundary unwraps it back to ``.original`` (llm_service.py:3595-3596).
+    """
+
+    async def test_stream_span_exception_does_not_leak_guard_message(self):
+        sentinel = "tenant=acme-42 remaining_budget=$3.10 spend_cap=$100.00"
+        from agentmap.services.llm_service import LLMService
+
+        telemetry = MagicMock(name="telemetry_service")
+
+        mock_logging = MagicMock()
+        mock_logging.get_class_logger.return_value = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 60,
+            },
+        }
+        mock_config.get_llm_config.return_value = {
+            "model": "test-model",
+            "temperature": 0.7,
+            "api_key": "test-key",
+        }
+
+        mock_models_config = MagicMock()
+        mock_routing_service = MagicMock()
+
+        mock_routing_config = MagicMock()
+        mock_routing_config.supports_prompt_caching.return_value = False
+        mock_routing_config.fallback = {"default_provider": "anthropic"}
+        mock_routing_config.routing_matrix = {"anthropic": {"low": "claude-haiku"}}
+
+        mock_features_registry = MagicMock()
+        mock_features_registry.is_provider_available.return_value = True
+        mock_features_registry.get_available_providers.return_value = [
+            "openai",
+            "anthropic",
+        ]
+
+        guard = MagicMock()
+        guard.check_before_dispatch = AsyncMock(side_effect=RuntimeError(sentinel))
+        guard.observe_receipt = AsyncMock(return_value=None)
+
+        svc = LLMService(
+            configuration=mock_config,
+            logging_service=mock_logging,
+            routing_service=mock_routing_service,
+            llm_models_config_service=mock_models_config,
+            routing_config_service=mock_routing_config,
+            features_registry_service=mock_features_registry,
+            telemetry_service=telemetry,
+            budget_guard=guard,
+        )
+
+        cb_mock = MagicMock()
+        cb_mock.is_open.return_value = False
+        cb_mock.reset = 60
+        svc._circuit_breaker = cb_mock
+
+        # Fallback-tier client -- resolved but must never be invoked, since
+        # the guard refuses before any dispatch.
+        fallback_client = Mock()
+        fallback_client.ainvoke = AsyncMock()
+        fallback_client.invoke = Mock()
+        svc._client_factory.get_or_create_client = Mock(return_value=fallback_client)
+
+        async def primary_fails_pre_first_chunk(
+            provider, messages, params, *, client, credentials
+        ):
+            raise RuntimeError("primary provider unavailable")
+            yield  # pragma: no cover -- makes this an async generator
+
+        with (
+            patch(
+                "agentmap.services.llm_service.stream_provider",
+                side_effect=primary_fails_pre_first_chunk,
+            ),
+            patch("agentmap.services.llm_service.asyncio.sleep", new=AsyncMock()),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                async for _ in svc.call_llm_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="openai",
+                    model="gpt-4o-mini",
+                ):
+                    pass
+
+        # The caller of call_llm_stream_async still gets the real,
+        # unredacted guard exception -- only telemetry recording is
+        # sanitized.
+        self.assertEqual(str(ctx.exception), sentinel)
+
+        telemetry.record_exception.assert_called_once()
+        _recorded_span, recorded_exc = telemetry.record_exception.call_args[0]
+        self.assertNotIn(sentinel, str(recorded_exc))
+        self.assertIsNone(
+            recorded_exc.__cause__,
+            "a __cause__ chain here would still leak the guard's message "
+            "through OTEL's chained traceback formatting even with a "
+            "sanitized top-level message",
+        )
+        self.assertIn("RuntimeError", str(recorded_exc))
+
+
 # ---------------------------------------------------------------------------
 # TC-F03-005: Routing dispatch mirrors the non-streaming core
 # ---------------------------------------------------------------------------

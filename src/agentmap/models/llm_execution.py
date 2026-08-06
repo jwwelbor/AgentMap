@@ -7,8 +7,10 @@ no business logic lives here.
 """
 
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Dict, List, Optional
+
+from agentmap.models.llm_cost import LLMCostBreakdown
+from agentmap.models.llm_tool_call import LLMToolCall
 
 # Structured message block for LLM calls.  Content values may be plain strings
 # (text-only messages) or structured dicts/lists (vision, cache-control blocks,
@@ -40,6 +42,16 @@ class LLMResponse:
     (e.g. Anthropic ``stop_reason`` / OpenAI/Google ``finish_reason``), read
     from the response metadata. It is ``None`` when the provider did not report
     one. Callers use it to detect truncation (``"max_tokens"`` / ``"length"``).
+
+    ``cost`` is the deterministic receipt derived from ``usage`` and the
+    configured price catalog (E05-F06). It is ``None`` whenever pricing is
+    unconfigured, no catalog entry matches the resolved provider/model, or any
+    positive-count usage bucket lacks a configured rate — never a fabricated
+    or partial total (REQ-F-001/REQ-F-002).
+
+    ``tool_calls`` is the normalized tool-call list extracted from the
+    provider response (E05-F06). It is ``None`` when the response carried no
+    tool calls; it is never an empty list (REQ-F-005).
     """
 
     text: str
@@ -47,6 +59,8 @@ class LLMResponse:
     resolved_model: str
     usage: Optional["LLMUsage"] = None
     finish_reason: Optional[str] = None
+    cost: Optional["LLMCostBreakdown"] = None
+    tool_calls: Optional[List["LLMToolCall"]] = None
 
 
 @dataclass
@@ -63,6 +77,13 @@ class LLMStreamChunk:
 
     ``chunk_index`` is a zero-based, monotonically increasing counter assigned
     by the seam. It is NOT the provider's sequence number.
+
+    Deliberately mirrors ``LLMResponse``'s terminal fields but does **not**
+    gain ``cost`` or ``tool_calls`` (E05-F06). That is intentional, not an
+    oversight: E06 owns the streaming seam and ``stream_seam.py`` filters
+    tool-call events by design, so a streaming chunk never carries a
+    tool-call channel to normalize, and cost is out of scope for the
+    streaming path (E05-F06 spec.md Out of Scope 3).
 
     Non-frozen by design (deviation from ``LLMResponse``): the seam accumulates
     the terminal chunk's fields progressively as native events arrive (input
@@ -123,11 +144,22 @@ class LLMExecutionError:
 
     Replaces raw uncaught exceptions so callers can inspect failure details
     without catching submission-level exceptions.
+
+    ``is_budget_refusal`` is an additive discriminator (E05-F06,
+    T-E05-F06-008 round-5 rework, UAT Finding 1) mirroring
+    ``LLMResponse.cost``/``.tool_calls``'s additive-field pattern: ``True``
+    when the failure was a budget-guard refusal (``is_budget_guard_refusal``
+    in ``services/llm/_budget_guard_refusal.py``), ``None`` otherwise. Lets
+    a caller recognize a budget refusal deterministically regardless of the
+    host guard's chosen exception type, without relying on ``error_type``
+    (which intentionally stays the raw, unmodified exception class name for
+    every fan-out failure, refusal or not).
     """
 
     error_type: str
     message: str
     retryable: bool
+    is_budget_refusal: Optional[bool] = None
 
 
 @dataclass
@@ -151,196 +183,3 @@ class LLMFanoutResult:
     text: Optional[str] = None
     usage: Optional[LLMUsage] = None
     error: Optional[LLMExecutionError] = None
-
-
-# ---------------------------------------------------------------------------
-# Batch execution models (E05-F03)
-# ---------------------------------------------------------------------------
-
-
-class LLMBatchStatus(str, Enum):
-    """
-    Normalized batch lifecycle status.
-
-    AgentMap-owned superset of Anthropic's processing_status values.
-    ``submitted`` and ``failed`` are AgentMap-side derivations;
-    ``in_progress``, ``canceling``, ``ended``, and ``expired`` map 1:1
-    from the provider.
-    """
-
-    SUBMITTED = "submitted"
-    IN_PROGRESS = "in_progress"
-    CANCELING = "canceling"
-    ENDED = "ended"
-    EXPIRED = "expired"
-    CANCELED = "canceled"
-    FAILED = "failed"
-
-
-@dataclass
-class LLMBatchRequestCounts:
-    """
-    Normalized snapshot of per-item outcome counts for a batch poll result.
-
-    Fields are optional because counts may not be available for all providers
-    or at all lifecycle stages.
-    """
-
-    processing: Optional[int] = None
-    succeeded: Optional[int] = None
-    errored: Optional[int] = None
-    canceled: Optional[int] = None
-    expired: Optional[int] = None
-
-
-@dataclass
-class LLMBatchSubmitRequest:
-    """
-    Caller-owned submission descriptor for a provider-native batch call.
-
-    ``requests`` must be non-empty and contain unique ``request_id`` values.
-    ``provider`` must be one of ``"anthropic"``, ``"openai"``, or ``"google"``.
-    No ``api_key`` field — credentials are injected at adapter level.
-    """
-
-    provider: str
-    model: str
-    requests: List[LLMRequest]
-    max_tokens: Optional[int] = None
-    request_options: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class LLMBatchHandle:
-    """
-    Opaque, serializable reference to a submitted provider-native batch.
-
-    Contains only AgentMap-owned types — no ``anthropic.*`` SDK objects.
-    Provides ``to_dict()`` / ``from_dict()`` for file-backed persistence
-    without carrying credentials.
-
-    ``agentmap_batch_id`` is generated by AgentMap (``amatch_<uuid>``).
-    ``provider_batch_id`` is the provider-assigned identifier.
-    ``request_id_map`` maps caller ``request_id`` values to the ``custom_id``
-    sent to the provider (sanitized for provider constraints).
-    """
-
-    agentmap_batch_id: str
-    provider_batch_id: str
-    status: LLMBatchStatus
-    provider: str
-    model: str
-    request_id_map: Dict[str, str]
-    results_url: Optional[str] = None
-    result_ref: Optional[str] = None
-    expires_at: Optional[str] = None
-    ended_at: Optional[str] = None
-    request_counts: Optional[LLMBatchRequestCounts] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Return a plain serializable dict suitable for json.dumps().
-
-        No ``api_key`` is included. ``status`` is serialized as its string
-        value so the dict round-trips through JSON without enum awareness.
-        """
-        counts: Optional[Dict[str, Any]] = None
-        if self.request_counts is not None:
-            counts = {
-                "processing": self.request_counts.processing,
-                "succeeded": self.request_counts.succeeded,
-                "errored": self.request_counts.errored,
-                "canceled": self.request_counts.canceled,
-                "expired": self.request_counts.expired,
-            }
-        return {
-            "agentmap_batch_id": self.agentmap_batch_id,
-            "provider_batch_id": self.provider_batch_id,
-            "status": (
-                self.status.value
-                if isinstance(self.status, LLMBatchStatus)
-                else self.status
-            ),
-            "provider": self.provider,
-            "model": self.model,
-            "request_id_map": dict(self.request_id_map),
-            "results_url": self.results_url,
-            "result_ref": self.result_ref,
-            "expires_at": self.expires_at,
-            "ended_at": self.ended_at,
-            "request_counts": counts,
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "LLMBatchHandle":
-        """
-        Reconstruct an ``LLMBatchHandle`` from a serialized dict.
-
-        Inverse of ``to_dict()``. Restores ``status`` as ``LLMBatchStatus``.
-        """
-        counts: Optional[LLMBatchRequestCounts] = None
-        raw_counts = data.get("request_counts")
-        if raw_counts is not None:
-            counts = LLMBatchRequestCounts(
-                processing=raw_counts.get("processing"),
-                succeeded=raw_counts.get("succeeded"),
-                errored=raw_counts.get("errored"),
-                canceled=raw_counts.get("canceled"),
-                expired=raw_counts.get("expired"),
-            )
-        return cls(
-            agentmap_batch_id=data["agentmap_batch_id"],
-            provider_batch_id=data["provider_batch_id"],
-            status=LLMBatchStatus(data["status"]),
-            provider=data["provider"],
-            model=data["model"],
-            request_id_map=dict(data["request_id_map"]),
-            results_url=data.get("results_url"),
-            result_ref=data.get("result_ref"),
-            expires_at=data.get("expires_at"),
-            ended_at=data.get("ended_at"),
-            request_counts=counts,
-        )
-
-
-@dataclass
-class LLMBatchResult:
-    """
-    Per-item result from a completed provider-native batch.
-
-    ``request_id`` is the caller-provided identifier from ``LLMRequest``.
-    ``status`` is one of: ``"succeeded"``, ``"errored"``, ``"canceled"``,
-    ``"expired"``.  ``text`` and ``usage`` are populated on success;
-    ``error`` is populated on failure.
-
-    Field names mirror ``LLMResponse``. ``resolved_model`` stays optional —
-    the Gemini batch adapter legitimately omits it.
-    """
-
-    request_id: str
-    status: str  # "succeeded" | "errored" | "canceled" | "expired"
-    resolved_provider: Optional[str] = None
-    resolved_model: Optional[str] = None
-    text: Optional[str] = None
-    usage: Optional[LLMUsage] = None
-    error: Optional[LLMExecutionError] = None
-
-
-@dataclass
-class BatchPollResult:
-    """
-    Normalized poll result returned by all adapter ``poll()`` implementations.
-
-    All adapters return this dataclass so ``LLMService.poll_batch`` can read
-    ``status`` directly without performing its own provider-specific mapping.
-    ``result_ref`` carries the provider file/object reference used to fetch
-    results (e.g. OpenAI output_file_id); it is ``None`` for providers that
-    use URL-based or inline result delivery.
-    """
-
-    status: LLMBatchStatus
-    request_counts: Optional[LLMBatchRequestCounts] = None
-    result_ref: Optional[str] = None
-    results_url: Optional[str] = None
-    ended_at: Optional[str] = None
-    expires_at: Optional[str] = None

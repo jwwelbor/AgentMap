@@ -11,6 +11,8 @@ import copy
 import logging
 from typing import Any, Dict, List
 
+from agentmap.exceptions import LLMServiceError
+
 logger = logging.getLogger(__name__)
 
 # Cached LangChain message classes — resolved once to avoid retrying a
@@ -23,13 +25,23 @@ def _resolve_langchain_message_classes():
     if _langchain_message_classes is not None:
         return _langchain_message_classes
     try:
-        from langchain.schema import AIMessage, HumanMessage, SystemMessage
+        from langchain.schema import (
+            AIMessage,
+            HumanMessage,
+            SystemMessage,
+            ToolMessage,
+        )
     except ImportError:
         try:
-            from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+            from langchain_core.messages import (
+                AIMessage,
+                HumanMessage,
+                SystemMessage,
+                ToolMessage,
+            )
         except ImportError:
             return None
-    _langchain_message_classes = (AIMessage, HumanMessage, SystemMessage)
+    _langchain_message_classes = (AIMessage, HumanMessage, SystemMessage, ToolMessage)
     return _langchain_message_classes
 
 
@@ -133,6 +145,41 @@ class LLMMessageService:
         return " ".join(prompt_parts)
 
     @staticmethod
+    def _convert_single_message_to_langchain(
+        msg: Dict[str, Any], classes: tuple
+    ) -> Any:
+        """Convert one message dict to its LangChain message class by role.
+
+        Isolated from convert_messages_to_langchain() so that method stays
+        under the 50-line ceiling once the tool-loop round-trip branches
+        (T-E05-F06-007) are added.
+
+        Raises:
+            LLMServiceError: role == "tool" with no ``tool_call_id`` — no
+                silent coercion to a HumanMessage (REQ-F-007).
+        """
+        AIMessage, HumanMessage, SystemMessage, ToolMessage = classes
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+
+        if role == "system":
+            return SystemMessage(content=content)
+        if role == "tool":
+            tool_call_id = msg.get("tool_call_id")
+            if not tool_call_id:
+                raise LLMServiceError(
+                    "Message with role='tool' is missing required field "
+                    "'tool_call_id' — cannot convert to ToolMessage."
+                )
+            return ToolMessage(content=content, tool_call_id=tool_call_id)
+        if role == "assistant":
+            tool_calls = msg.get("tool_calls")
+            if tool_calls:
+                return AIMessage(content=content, tool_calls=tool_calls)
+            return AIMessage(content=content)
+        return HumanMessage(content=content)  # default to user
+
+    @staticmethod
     def convert_messages_to_langchain(messages: List[Dict[str, Any]]) -> List[Any]:
         """
         Convert messages to LangChain message format.
@@ -142,32 +189,35 @@ class LLMMessageService:
         LangChain message constructor — LangChain chat models handle multimodal
         content blocks natively.
 
+        Also supports the two message shapes a caller-owned tool loop sends
+        back (REQ-F-007): a ``role: "tool"`` result (requires ``tool_call_id``,
+        converted to ``ToolMessage``) and an assistant message carrying prior
+        ``tool_calls`` (preserved on the resulting ``AIMessage``). An
+        unrecognized role with neither shape still falls back to
+        ``HumanMessage``, but ``role: "tool"`` never silently does.
+
         Args:
             messages: List of message dictionaries
 
         Returns:
             List of LangChain message objects
+
+        Raises:
+            LLMServiceError: A ``role: "tool"`` message is missing
+                ``tool_call_id``.
         """
         classes = _resolve_langchain_message_classes()
         if classes is None:
             return messages
-        AIMessage, HumanMessage, SystemMessage = classes
 
         langchain_messages = []
-
         for msg in messages:
             if not isinstance(msg, dict):
                 langchain_messages.append(msg)
                 continue
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-
-            if role == "system":
-                langchain_messages.append(SystemMessage(content=content))
-            elif role == "assistant":
-                langchain_messages.append(AIMessage(content=content))
-            else:  # default to user
-                langchain_messages.append(HumanMessage(content=content))
+            langchain_messages.append(
+                LLMMessageService._convert_single_message_to_langchain(msg, classes)
+            )
 
         return langchain_messages
 

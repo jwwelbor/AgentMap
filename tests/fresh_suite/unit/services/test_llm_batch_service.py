@@ -23,17 +23,15 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from agentmap.exceptions import LLMServiceError
-from agentmap.models.llm_execution import (
+from agentmap.models.llm_batch import (
     BatchPollResult,
     LLMBatchHandle,
     LLMBatchRequestCounts,
     LLMBatchResult,
     LLMBatchStatus,
     LLMBatchSubmitRequest,
-    LLMExecutionError,
-    LLMRequest,
-    LLMUsage,
 )
+from agentmap.models.llm_execution import LLMExecutionError, LLMRequest, LLMUsage
 from agentmap.services.llm_batch_errors import (
     LLMBatchCancelNotSupportedError,
     LLMBatchExpiredError,

@@ -72,6 +72,32 @@ class LLMResolvedCallError(LLMServiceError):
         )
 
 
+class LLMBudgetExceededError(LLMServiceError):
+    """Raised by a host-registered budget guard to refuse a call before dispatch.
+
+    Canonical typed refusal for ``LLMBudgetGuardProtocol.check_before_dispatch``
+    (E05-F06 REQ-F-003). Subclassing ``LLMServiceError`` means a refusal is a
+    non-retryable service error, not a transient provider failure: it must
+    propagate to the caller unconditionally and never be routed into the
+    fallback ladder, because falling back to a different tier would still
+    spend money against the same policy the guard just refused.
+
+    Not re-raised directly: ``LLMService._check_budget_before_dispatch``
+    wraps whatever a guard raises -- typed (this class) or not -- in the
+    internal ``BudgetGuardRefusal`` marker (``services/llm/_budget_guard_refusal.py``)
+    so it can pass unrecognized through every blanket ``except Exception``
+    net on the async dispatch/fallback path (direct, routing,
+    telemetry-retry, and each ``LLMFallbackHandler`` fallback tier) without
+    being reclassified as a transient provider failure or triggering a
+    further fallback attempt. The wrapper is unwrapped back to the
+    original exception at the single outermost boundary each entrypoint
+    owns (``LLMService._dispatch_call_llm_async`` for ``call_llm_async``;
+    ``LLMService.call_llm_stream_async`` for the streaming sibling) and
+    never surfaces to a caller (see spec.md Component Change 7/8,
+    NFR-F-003 -- pre-dispatch failures fail closed).
+    """
+
+
 class StorageConfigurationNotAvailableException(ConfigurationException):
     """Exception raised when storage configuration is not available or invalid."""
 

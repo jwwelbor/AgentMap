@@ -98,11 +98,12 @@ class TestLLMService(unittest.TestCase):
         self.assertEqual(self.service._logger.name, "agentmap.llm")
 
         # Verify get_class_logger was called for main service and helper classes
-        # After refactoring, LLMService creates 4 loggers (main + 3 helpers)
+        # After refactoring, LLMService creates 5 loggers (main + 4 helpers,
+        # including LLMCostCalculator added by E05-F06 T-E05-F06-004)
         calls = self.mock_logging_service.get_class_logger.call_args_list
         logger_names = [call[0][0] for call in calls]
         self.assertIn("agentmap.llm", logger_names)
-        self.assertEqual(len(calls), 4)  # Main service + 3 helpers
+        self.assertEqual(len(calls), 5)  # Main service + 4 helpers
 
     # =============================================================================
     # 2. Core LLM Call Tests
