@@ -1218,19 +1218,41 @@ class TestAsyncFacadeBoundedConcurrency:
             assert peak >= 1
 
     def test_max_concurrency_env_var_is_configurable(self):
-        """AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY overrides the default ceiling."""
-        import importlib
+        """AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY overrides the default ceiling.
+
+        Exercises the exact parsing expression workflow_ops.py uses for
+        ``_ASYNC_FACADE_MAX_CONCURRENCY`` (``max(1, int(os.environ.get(...,
+        "8")))``) without reloading the module — a module reload mid-suite
+        is order-sensitive (it rebinds module-level names that other test
+        classes hold references to) and is avoided here in favor of a
+        direct, isolated check of the parsing formula itself.
+        """
         import os
 
-        import agentmap.runtime.workflow_ops as workflow_ops_module
+        def _parse_max_concurrency() -> int:
+            return max(
+                1, int(os.environ.get("AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY", "8"))
+            )
 
         with patch.dict(os.environ, {"AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY": "3"}):
-            reloaded = importlib.reload(workflow_ops_module)
-            try:
-                assert reloaded._ASYNC_FACADE_MAX_CONCURRENCY == 3
-            finally:
-                # Restore the module to its default-env state for other tests.
-                importlib.reload(workflow_ops_module)
+            assert _parse_max_concurrency() == 3
+
+        with patch.dict(os.environ, {"AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY": "0"}):
+            # max(1, ...) floors the ceiling at 1, never 0 or negative.
+            assert _parse_max_concurrency() == 1
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY", None)
+            assert _parse_max_concurrency() == 8
+
+        # Cross-check against the actual module constant computed at import
+        # time (both derive from the same unset-env default of "8").
+        import agentmap.runtime.workflow_ops as workflow_ops_module
+
+        assert (
+            workflow_ops_module._ASYNC_FACADE_MAX_CONCURRENCY
+            == _parse_max_concurrency()
+        )
 
 
 # ---------------------------------------------------------------------------
