@@ -2368,6 +2368,107 @@ class TestCallLLMStreamAsyncDirectFallback(unittest.IsolatedAsyncioTestCase):
                     pass
 
 
+class TestCallLLMStreamAsyncDirectDependencyConfigShortCircuit(
+    unittest.IsolatedAsyncioTestCase
+):
+    """TD-029: streaming direct error path parity with the non-streaming sibling.
+
+    ``_call_llm_async_direct``'s exception handler
+    (``_handle_direct_call_exception``, :1329) short-circuits
+    ``LLMDependencyError``/``LLMConfigurationError`` straight to
+    ``LLMResolvedCallError`` -- BEFORE checking fallback eligibility --
+    because a missing dependency or invalid config is not a transient
+    provider failure that a fallback tier could plausibly fix differently.
+    ``_call_llm_stream_async_direct`` was missing this short-circuit: a
+    pre-first-chunk ``LLMDependencyError``/``LLMConfigurationError`` fell
+    through to the fallback ladder and churned through tiers before
+    failing, instead of failing fast.
+    """
+
+    async def _run_with_error(self, svc, error):
+        async def always_fails(provider, messages, params, *, client, credentials):
+            raise error
+            yield  # pragma: no cover - make it a generator
+
+        collected = []
+        with patch(
+            "agentmap.services.llm_service.stream_provider",
+            side_effect=always_fails,
+        ):
+            async for chunk in svc._call_llm_stream_async_direct(
+                "anthropic",
+                [{"role": "user", "content": "hi"}],
+                model="test-model",
+            ):
+                collected.append(chunk)
+        return collected
+
+    async def test_dependency_error_short_circuits_to_resolved_call_error(self):
+        from agentmap.exceptions import LLMDependencyError, LLMResolvedCallError
+
+        svc, _cb = _make_svc_for_direct(max_attempts=2)
+        svc._fallback_handler = MagicMock()
+        svc._fallback_handler.try_with_fallback_async = AsyncMock(
+            side_effect=AssertionError(
+                "fallback ladder must NOT be invoked for a dependency error"
+            )
+        )
+
+        with self.assertRaises(LLMResolvedCallError) as ctx:
+            await self._run_with_error(
+                svc, LLMDependencyError("missing optional package")
+            )
+
+        self.assertIsInstance(ctx.exception.__cause__, LLMDependencyError)
+        svc._fallback_handler.try_with_fallback_async.assert_not_called()
+
+    async def test_configuration_error_short_circuits_to_resolved_call_error(self):
+        from agentmap.exceptions import LLMConfigurationError, LLMResolvedCallError
+
+        svc, _cb = _make_svc_for_direct(max_attempts=2)
+        svc._fallback_handler = MagicMock()
+        svc._fallback_handler.try_with_fallback_async = AsyncMock(
+            side_effect=AssertionError(
+                "fallback ladder must NOT be invoked for a configuration error"
+            )
+        )
+
+        with self.assertRaises(LLMResolvedCallError) as ctx:
+            await self._run_with_error(svc, LLMConfigurationError("invalid config"))
+
+        self.assertIsInstance(ctx.exception.__cause__, LLMConfigurationError)
+        svc._fallback_handler.try_with_fallback_async.assert_not_called()
+
+    async def test_other_provider_error_still_uses_fallback_ladder(self):
+        """Regression guard: the short-circuit must be scoped to Dependency/Config
+        errors only — other provider errors still go through the fallback ladder
+        exactly as before."""
+        from agentmap.exceptions import LLMRateLimitError
+        from agentmap.models.llm_execution import LLMResponse
+
+        svc, _cb = _make_svc_for_direct(max_attempts=2)
+        svc._fallback_handler = MagicMock()
+        fallback_resp = LLMResponse(
+            text="fallback text",
+            resolved_provider="openai",
+            resolved_model="gpt-4o",
+            finish_reason="stop",
+            usage=None,
+        )
+        svc._fallback_handler.try_with_fallback_async = AsyncMock(
+            return_value=fallback_resp
+        )
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            collected = await self._run_with_error(
+                svc, LLMRateLimitError("rate limited")
+            )
+
+        svc._fallback_handler.try_with_fallback_async.assert_called_once()
+        self.assertEqual(len(collected), 2)
+        self.assertEqual(collected[0].text_delta, "fallback text")
+
+
 # ---------------------------------------------------------------------------
 # TC-F03-026: get_or_create_client called with streaming=True
 # ---------------------------------------------------------------------------
