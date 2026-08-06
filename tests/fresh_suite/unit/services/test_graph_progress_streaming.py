@@ -2851,7 +2851,10 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
         fake_container = self._make_fake_container_raising(exc)
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized") as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as _mock_init,
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -2878,7 +2881,10 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
         fake_container = self._make_fake_container_raising(exc)
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized") as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as _mock_init,
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -2902,7 +2908,8 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
         from agentmap.runtime.workflow_ops import run_workflow_stream_async
 
         with patch(
-            "agentmap.runtime.workflow_ops.ensure_initialized",
+            "agentmap.runtime.workflow_ops.ensure_initialized_async",
+            new_callable=AsyncMock,
             side_effect=AgentMapNotInitialized("not initialized"),
         ):
             with self.assertRaises(AgentMapNotInitialized):
@@ -4793,7 +4800,10 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
         fake_container.app_config_service.return_value = fake_config_service
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -4952,7 +4962,10 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
         fake_container.app_config_service.return_value = fake_config_service
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -5181,7 +5194,10 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
         fake_container.app_config_service.return_value = fake_config_service
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -5340,7 +5356,10 @@ class TestNonStreamingRegression(unittest.IsolatedAsyncioTestCase):
         fake_container.app_config_service.return_value = fake_config_service
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized") as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as _mock_init,
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -5414,7 +5433,10 @@ class TestNonStreamingRegression(unittest.IsolatedAsyncioTestCase):
         fake_container.app_config_service.return_value = fake_config_service
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,

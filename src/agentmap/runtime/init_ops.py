@@ -1,5 +1,7 @@
 """Runtime initialization and container access."""
 
+import asyncio
+
 from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
 from agentmap.runtime.runtime_manager import RuntimeManager
 
@@ -34,6 +36,25 @@ def ensure_initialized(
         if isinstance(e, AgentMapNotInitialized):
             raise
         raise AgentMapNotInitialized(f"Initialization failed: {e}")
+
+
+async def ensure_initialized_async(
+    *, refresh: bool = False, config_file: str | None = None
+) -> None:
+    """Async sibling of :func:`ensure_initialized` (TD-018, TD-049).
+
+    ``ensure_initialized`` does synchronous filesystem I/O on every call
+    (``RuntimeManager.initialize()``'s idempotent fast-path still calls
+    ``_is_cache_initialized()`` -> ``Path.exists()``), so it is not a
+    "one-time" cost from an async caller's perspective. Offload it behind a
+    thread boundary rather than blocking the event loop. Single canonical
+    wrapper for the ``await asyncio.to_thread(ensure_initialized, ...)``
+    idiom that was previously duplicated at 7 call sites across
+    ``execute.py``, ``workflows.py``, and ``workflow_ops.py``.
+    """
+    await asyncio.to_thread(
+        ensure_initialized, refresh=refresh, config_file=config_file
+    )
 
 
 def get_container():

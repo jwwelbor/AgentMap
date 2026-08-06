@@ -11,7 +11,6 @@ Framework: pytest + unittest.IsolatedAsyncioTestCase for async dispatch tests.
 No real API calls — seam classes are stubbed via sys.modules patching.
 """
 
-import io
 import sys
 import unittest
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -2333,25 +2332,30 @@ class TestAdditivityRegressionGate:
     paths — the existing test suites must all pass.
 
     This guard test programmatically verifies that the three non-streaming
-    LLM test modules are importable and their test classes instantiable
-    (i.e. the modules' public surface has not changed from F01's edits).
+    LLM test modules are importable and their test classes/cases are still
+    present and loadable (i.e. the modules' public surface has not changed
+    from F01's edits, and nothing has broken collection).
 
-    The actual pass/fail of the tests themselves is confirmed by running
-    the full regression suite as part of this task's quality gate.
+    TD-023/TD-048: this gate intentionally does NOT execute those suites via
+    a nested ``unittest.TextTestRunner`` — doing so duplicates pytest's own
+    collection of those (separately collected) test files, inflates this
+    module's runtime, and misattributes any failure to test_stream_seam.py
+    instead of the module that actually broke. The suites' real pass/fail
+    signal comes from pytest collecting and running them normally as part of
+    the full regression suite (they are not skipped or excluded anywhere);
+    this gate only proves their public surface — the specific structural
+    precondition F01 could plausibly have broken — is intact.
     Reference: spec.md REQ-NF-002 / AC-18.
     """
 
     @staticmethod
-    def _run_module_suite(module_name: str) -> "unittest.TestResult":
-        """Import *module_name* and actually execute its unittest suite.
+    def _load_module_suite(module_name: str) -> "unittest.TestSuite":
+        """Import *module_name* and load (but do not run) its test suite.
 
-        TD-023: TC-F01-NF-4 must gate on the non-streaming suites actually
-        passing, not merely on the module being importable — importing a
-        module proves nothing about whether its tests still pass.  This
-        loads every ``unittest.TestCase`` in the module via
-        ``TestLoader.loadTestsFromModule`` and runs it with
-        ``TextTestRunner``, returning the ``TestResult`` so callers can
-        assert ``wasSuccessful()``.
+        Loading via ``TestLoader.loadTestsFromModule`` exercises collection —
+        it fails the same way pytest's own collection would if a class body,
+        decorator, or import at module scope were broken — without actually
+        executing any test method.
         """
         import importlib
 
@@ -2359,38 +2363,23 @@ class TestAdditivityRegressionGate:
         suite = unittest.TestLoader().loadTestsFromModule(mod)
         assert (
             suite.countTestCases() > 0
-        ), f"{module_name} must contain at least one runnable test case."
-        runner = unittest.TextTestRunner(verbosity=0, stream=io.StringIO())
-        return runner.run(suite)
+        ), f"{module_name} must contain at least one collectible test case."
+        return suite
 
     def test_nf4_llm_service_test_module_importable_and_unchanged(self):
-        """TC-F01-NF-4: test_llm_service.py's suite actually runs and passes."""
-        result = self._run_module_suite(
-            "tests.fresh_suite.unit.services.test_llm_service"
-        )
-        assert result.wasSuccessful(), (
-            "test_llm_service.py suite must pass unmodified; "
-            f"failures={result.failures}, errors={result.errors}"
-        )
+        """TC-F01-NF-4: test_llm_service.py's suite still collects cleanly."""
+        self._load_module_suite("tests.fresh_suite.unit.services.test_llm_service")
 
     def test_nf4_llm_service_async_test_module_importable_and_unchanged(self):
-        """TC-F01-NF-4: test_llm_service_async.py's suite actually runs and passes."""
-        result = self._run_module_suite(
+        """TC-F01-NF-4: test_llm_service_async.py's suite still collects cleanly."""
+        self._load_module_suite(
             "tests.fresh_suite.unit.services.test_llm_service_async"
-        )
-        assert result.wasSuccessful(), (
-            "test_llm_service_async.py suite must pass unmodified; "
-            f"failures={result.failures}, errors={result.errors}"
         )
 
     def test_nf4_llm_client_factory_test_module_importable_and_unchanged(self):
-        """TC-F01-NF-4: test_llm_client_factory.py's suite actually runs and passes."""
-        result = self._run_module_suite(
+        """TC-F01-NF-4: test_llm_client_factory.py's suite still collects cleanly."""
+        self._load_module_suite(
             "tests.fresh_suite.unit.services.test_llm_client_factory"
-        )
-        assert result.wasSuccessful(), (
-            "test_llm_client_factory.py suite must pass unmodified; "
-            f"failures={result.failures}, errors={result.errors}"
         )
 
     def test_nf4_f01_did_not_modify_llm_service_source(self):

@@ -104,6 +104,32 @@ class TestTriggerParserDefaultFallback(unittest.TestCase):
         self.assertNotIn("injected", event)
         self.assertEqual(event, original_event_copy)
 
+    def test_fallback_non_dict_json_array_body_does_not_raise(self):
+        """TD-047: safe_json_loads() returns whatever json.loads() yields for
+        a JSON string body, including a bare list for a JSON array body.
+        Coercing that directly via dict(...) raises TypeError; the fallback
+        must instead wrap it under a "raw" key.
+
+        Counter-factual: pre-fix, dict(safe_json_loads(body)) raised
+        ``TypeError: cannot convert dictionary update sequence element #0
+        to a sequence`` for this exact input.
+        """
+        event = {"body": "[1, 2, 3]"}
+
+        trigger_type, data = self.parser.parse(event)
+
+        self.assertEqual(trigger_type, TriggerType.HTTP)
+        self.assertEqual(data, {"raw": [1, 2, 3]})
+
+    def test_fallback_non_dict_json_scalar_body_does_not_raise(self):
+        """TD-047: a JSON scalar body (e.g. a bare number) must also be
+        wrapped, not raise, at this external-input deserialization boundary."""
+        event = {"body": "42"}
+
+        _, data = self.parser.parse(event)
+
+        self.assertEqual(data, {"raw": 42})
+
 
 if __name__ == "__main__":
     unittest.main()

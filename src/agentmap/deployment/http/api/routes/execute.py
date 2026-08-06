@@ -4,7 +4,6 @@ These routes mirror the runtime facade that powers the CLI, including
 the richer suspend/resume behavior (status reporting, summaries, thread ids).
 """
 
-import asyncio
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -21,7 +20,7 @@ from agentmap.exceptions.runtime_exceptions import (
 )
 from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
 from agentmap.runtime_api import (
-    ensure_initialized,
+    ensure_initialized_async,
     resume_workflow_async,
     run_workflow_async,
 )
@@ -252,11 +251,12 @@ async def _execute_workflow_internal(
 ) -> ExecuteResponse:
     """Internal execution logic shared by all endpoints."""
     try:
-        # TD-018: ensure_initialized() does synchronous filesystem I/O (a
-        # Path.exists() cache check) on every call, not just the first, so
-        # calling it inline here blocks the event loop on every request.
-        # Offload it behind a thread boundary (REQ-NF-001).
-        await asyncio.to_thread(ensure_initialized, config_file=config_file)
+        # TD-018/TD-049: ensure_initialized_async offloads the synchronous
+        # filesystem I/O (a Path.exists() cache check, on every call, not
+        # just the first) behind a thread boundary so it doesn't block the
+        # event loop (REQ-NF-001). Single canonical wrapper — see
+        # runtime.init_ops.ensure_initialized_async.
+        await ensure_initialized_async(config_file=config_file)
 
         # Normalize identifier
         graph_identifier = normalize_graph_identifier(graph_identifier)
@@ -378,8 +378,8 @@ async def resume_execution(
     """
     try:
         config_file = getattr(request.app.state, "config_file", None)
-        # TD-018: see _execute_workflow_internal above.
-        await asyncio.to_thread(ensure_initialized, config_file=config_file)
+        # TD-018/TD-049: see _execute_workflow_internal above.
+        await ensure_initialized_async(config_file=config_file)
 
         # Validate thread_id
         if not thread_id or len(thread_id) < 10:

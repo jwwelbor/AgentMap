@@ -678,7 +678,10 @@ class TestAsyncFacadeExports:
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
     @patch("agentmap.runtime.workflow_ops.RuntimeManager")
-    @patch("agentmap.runtime.workflow_ops.ensure_initialized")
+    @patch(
+        "agentmap.runtime.workflow_ops.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     async def test_run_workflow_async_success_preserves_envelope(
         self, mock_ensure_init, mock_runtime_manager
     ):
@@ -759,7 +762,10 @@ class TestAsyncFacadeExports:
     # TC-006: resume_workflow_async preserves suspend/human-response parity
     # ------------------------------------------------------------------
     @pytest.mark.asyncio
-    @patch("agentmap.runtime.workflow_ops.ensure_initialized")
+    @patch(
+        "agentmap.runtime.workflow_ops.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch("agentmap.runtime.workflow_ops.RuntimeManager")
     @patch(
         "agentmap.services.workflow_orchestration_service._rehydrate_bundle_from_metadata"
@@ -824,7 +830,10 @@ class TestAsyncFacadeExports:
         mock_graph_runner.resume_from_checkpoint_async.assert_awaited_once()
 
     @pytest.mark.asyncio
-    @patch("agentmap.runtime.workflow_ops.ensure_initialized")
+    @patch(
+        "agentmap.runtime.workflow_ops.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch("agentmap.runtime.workflow_ops.RuntimeManager")
     @patch(
         "agentmap.services.workflow_orchestration_service._rehydrate_bundle_from_metadata"

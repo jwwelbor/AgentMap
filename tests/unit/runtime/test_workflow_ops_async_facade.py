@@ -138,7 +138,10 @@ class TestRunWorkflowAsyncUsesNativeRunner:
         container, graph_runner = _make_mock_container(run_result)
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -165,7 +168,10 @@ class TestRunWorkflowAsyncUsesNativeRunner:
         container, graph_runner = _make_mock_container(run_result)
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -195,7 +201,10 @@ class TestRunWorkflowAsyncUsesNativeRunner:
         container, graph_runner = _make_mock_container(run_result)
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -253,7 +262,10 @@ class TestRunWorkflowAsyncUsesNativeRunner:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -277,7 +289,10 @@ class TestRunWorkflowAsyncUsesNativeRunner:
         container, graph_runner = _make_mock_container(run_result)
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -306,7 +321,10 @@ class TestRunWorkflowAsyncUsesNativeRunner:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -354,7 +372,10 @@ class TestRunWorkflowAsyncNoToThread:
             )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -438,7 +459,10 @@ class TestRunWorkflowAsyncHeartbeat:
         hb_task = asyncio.ensure_future(_heartbeat())
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -490,7 +514,10 @@ class TestResumeWorkflowAsyncUsesNativeRunner:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             (
                 patch(
                     "agentmap.runtime.workflow_ops._resume_workflow_async_core",
@@ -528,7 +555,10 @@ class TestResumeWorkflowAsyncUsesNativeRunner:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -565,7 +595,10 @@ class TestResumeWorkflowAsyncUsesNativeRunner:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -617,7 +650,10 @@ class TestResumeWorkflowAsyncUsesNativeRunner:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -646,7 +682,10 @@ class TestResumeWorkflowAsyncUsesNativeRunner:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -682,7 +721,10 @@ class TestResumeWorkflowAsyncUsesNativeRunner:
         # which runs before any container/service access.
         resume_token = json.dumps({"response_action": "approve"})
 
-        with patch("agentmap.runtime.workflow_ops.ensure_initialized"):
+        with patch(
+            "agentmap.runtime.workflow_ops.ensure_initialized_async",
+            new_callable=AsyncMock,
+        ):
             with pytest.raises(InvalidInputs):
                 await resume_workflow_async(resume_token)
 
@@ -761,7 +803,10 @@ class TestResumeWorkflowAsyncCancelledErrorNotWedged:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -810,7 +855,10 @@ class TestResumeWorkflowAsyncCancelledErrorNotWedged:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -852,7 +900,10 @@ class TestResumeWorkflowAsyncCancelledErrorNotWedged:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -1018,7 +1069,10 @@ class TestResumeWorkflowAsyncB3FacadeDefersUnmarkToManager:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -1049,7 +1103,10 @@ class TestResumeWorkflowAsyncB3FacadeDefersUnmarkToManager:
         )
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -1276,30 +1333,30 @@ class TestAsyncFacadeBoundedConcurrency:
     def test_max_concurrency_env_var_is_configurable(self):
         """AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY overrides the default ceiling.
 
-        Exercises the exact parsing expression workflow_ops.py uses for
-        ``_ASYNC_FACADE_MAX_CONCURRENCY`` (``max(1, int(os.environ.get(...,
-        "8")))``) without reloading the module — a module reload mid-suite
-        is order-sensitive (it rebinds module-level names that other test
-        classes hold references to) and is avoided here in favor of a
-        direct, isolated check of the parsing formula itself.
+        TD-050: calls the real ``_parse_async_facade_max_concurrency()``
+        production function directly (not a duplicated local closure), so a
+        typo'd env-var key or an inverted floor in the real implementation
+        would fail this test. Does not reload the module — a module reload
+        mid-suite is order-sensitive (it rebinds module-level names other
+        test classes hold references to); calling the parsing function
+        itself sidesteps that without losing coverage, since
+        ``_ASYNC_FACADE_MAX_CONCURRENCY`` is computed by calling this exact
+        function at import time.
         """
         import os
 
-        def _parse_max_concurrency() -> int:
-            return max(
-                1, int(os.environ.get("AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY", "8"))
-            )
+        from agentmap.runtime.workflow_ops import _parse_async_facade_max_concurrency
 
         with patch.dict(os.environ, {"AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY": "3"}):
-            assert _parse_max_concurrency() == 3
+            assert _parse_async_facade_max_concurrency() == 3
 
         with patch.dict(os.environ, {"AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY": "0"}):
             # max(1, ...) floors the ceiling at 1, never 0 or negative.
-            assert _parse_max_concurrency() == 1
+            assert _parse_async_facade_max_concurrency() == 1
 
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY", None)
-            assert _parse_max_concurrency() == 8
+            assert _parse_async_facade_max_concurrency() == 8
 
         # Cross-check against the actual module constant computed at import
         # time (both derive from the same unset-env default of "8").
@@ -1307,7 +1364,7 @@ class TestAsyncFacadeBoundedConcurrency:
 
         assert (
             workflow_ops_module._ASYNC_FACADE_MAX_CONCURRENCY
-            == _parse_max_concurrency()
+            == _parse_async_facade_max_concurrency()
         )
 
 
@@ -1317,9 +1374,12 @@ class TestAsyncFacadeBoundedConcurrency:
 
 
 class TestEnsureInitializedOffloadedFromAsyncFacade:
-    """TD-018: run_workflow_async / run_workflow_stream_async /
-    resume_workflow_async must dispatch ensure_initialized() through
-    asyncio.to_thread rather than calling it inline on the event loop.
+    """TD-018/TD-049: run_workflow_async / run_workflow_stream_async /
+    resume_workflow_async must await the shared ensure_initialized_async()
+    wrapper rather than calling ensure_initialized() inline on the event
+    loop. The wrapper's own asyncio.to_thread dispatch is covered directly
+    in tests/unit/runtime/test_init_ops.py — these tests only need to prove
+    each facade function awaits it, with the right kwargs forwarded.
 
     Counter-factual: pre-fix, ``ensure_initialized(config_file=config_file)``
     was the first statement inside each async function, called directly
@@ -1327,22 +1387,17 @@ class TestEnsureInitializedOffloadedFromAsyncFacade:
     """
 
     @pytest.mark.asyncio
-    async def test_run_workflow_async_dispatches_ensure_initialized_via_to_thread(
+    async def test_run_workflow_async_awaits_ensure_initialized_async(
         self,
     ):
         run_result = _make_execution_result(success=True)
         container, graph_runner = _make_mock_container(run_result)
 
-        calls = []
-
-        async def spy_to_thread(func, *args, **kwargs):
-            calls.append((func, args, kwargs))
-            return func(*args, **kwargs)
-
         with (
             patch(
-                "agentmap.runtime.workflow_ops.ensure_initialized"
-            ) as mock_ensure_initialized,
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as mock_ensure_initialized_async,
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -1351,34 +1406,23 @@ class TestEnsureInitializedOffloadedFromAsyncFacade:
                 "agentmap.runtime.workflow_ops._resolve_csv_path",
                 return_value=(MagicMock(), "test_graph"),
             ),
-            patch("agentmap.runtime.workflow_ops.asyncio.to_thread", spy_to_thread),
         ):
             await run_workflow_async("test_graph", {}, config_file="cfg.yaml")
 
-        assert any(
-            func is mock_ensure_initialized for func, _, _ in calls
-        ), "run_workflow_async must dispatch ensure_initialized via asyncio.to_thread"
-        # The forwarded kwarg must be preserved through the thread dispatch.
-        ensure_call = next((c for c in calls if c[0] is mock_ensure_initialized), None)
-        assert ensure_call[2] == {"config_file": "cfg.yaml"}
+        mock_ensure_initialized_async.assert_awaited_once_with(config_file="cfg.yaml")
 
     @pytest.mark.asyncio
-    async def test_resume_workflow_async_dispatches_ensure_initialized_via_to_thread(
+    async def test_resume_workflow_async_awaits_ensure_initialized_async(
         self,
     ):
         resume_result = _make_execution_result(success=True)
         container, graph_runner, bundle = _make_mock_container_for_resume(resume_result)
 
-        calls = []
-
-        async def spy_to_thread(func, *args, **kwargs):
-            calls.append((func, args, kwargs))
-            return func(*args, **kwargs)
-
         with (
             patch(
-                "agentmap.runtime.workflow_ops.ensure_initialized"
-            ) as mock_ensure_initialized,
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as mock_ensure_initialized_async,
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=container,
@@ -1388,13 +1432,10 @@ class TestEnsureInitializedOffloadedFromAsyncFacade:
                 "_rehydrate_bundle_from_metadata",
                 return_value=bundle,
             ),
-            patch("agentmap.runtime.workflow_ops.asyncio.to_thread", spy_to_thread),
         ):
             import json
 
             resume_token = json.dumps({"thread_id": "thread-abc"})
             await resume_workflow_async(resume_token, config_file="cfg.yaml")
 
-        assert any(
-            func is mock_ensure_initialized for func, _, _ in calls
-        ), "resume_workflow_async must dispatch ensure_initialized via asyncio.to_thread"
+        mock_ensure_initialized_async.assert_awaited_once_with(config_file="cfg.yaml")

@@ -9,7 +9,7 @@ import json
 from typing import Any, Dict
 
 
-def safe_json_loads(s: Any) -> Dict[str, Any]:
+def safe_json_loads(s: Any) -> Any:
     """
     Safely parse JSON string, returning dict or fallback for invalid JSON.
 
@@ -17,7 +17,12 @@ def safe_json_loads(s: Any) -> Dict[str, Any]:
         s: Input to parse (string or other type)
 
     Returns:
-        Dict parsed from JSON, or original dict, or fallback dict with raw content
+        The value parsed from JSON (dict, list, str, int, float, bool, or
+        None — whatever ``json.loads`` yields for the given string), the
+        original non-str input, or a fallback dict with raw content if the
+        string was not valid JSON. Callers that require a dict must check
+        the shape themselves (TD-047) rather than assume this always
+        returns one.
     """
     if not isinstance(s, str):
         return s or {}

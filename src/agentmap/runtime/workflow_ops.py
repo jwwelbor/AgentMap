@@ -18,7 +18,7 @@ from agentmap.runtime.runtime_manager import RuntimeManager
 from agentmap.services.graph.graph_bundle_service import GraphBundleService
 from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
-from .init_ops import ensure_initialized
+from .init_ops import ensure_initialized, ensure_initialized_async
 
 
 def _resolve_csv_path(graph_identifier: str, container) -> tuple[Path, str]:
@@ -742,12 +742,12 @@ async def run_workflow_async(
     execution via GraphRunnerService.run_async (T-E04-F04-004, REQ-NF-007).
     Argument and return shape are identical to run_workflow.
     """
-    # TD-018: ensure_initialized() does synchronous filesystem I/O on every
-    # call (RuntimeManager.initialize()'s idempotent fast-path still runs
-    # _is_cache_initialized() -> Path.exists()), so it is not a "one-time"
-    # cost from an async caller's perspective. Offload it behind a thread
-    # boundary (REQ-NF-001) rather than blocking the event loop.
-    await asyncio.to_thread(ensure_initialized, config_file=config_file)
+    # TD-018/TD-049: ensure_initialized_async offloads the synchronous
+    # filesystem I/O (RuntimeManager.initialize()'s idempotent fast-path
+    # still runs _is_cache_initialized() -> Path.exists() on every call, so
+    # it is not a "one-time" cost from an async caller's perspective) behind
+    # a thread boundary (REQ-NF-001) rather than blocking the event loop.
+    await ensure_initialized_async(config_file=config_file)
 
     try:
         container = RuntimeManager.get_container()
@@ -865,9 +865,9 @@ async def run_workflow_stream_async(
     """
     from agentmap.models.execution import WorkflowProgressEvent  # noqa: F401
 
-    # TD-018: see run_workflow_async — offload the blocking init check
-    # behind a thread boundary instead of running it inline on the loop.
-    await asyncio.to_thread(ensure_initialized, config_file=config_file)
+    # TD-018/TD-049: see run_workflow_async — offload the blocking init
+    # check behind a thread boundary instead of running it inline on the loop.
+    await ensure_initialized_async(config_file=config_file)
 
     try:
         container = RuntimeManager.get_container()
@@ -942,9 +942,9 @@ async def resume_workflow_async(
     (T-E04-F04-004, REQ-NF-007).
     Argument and return shape are identical to resume_workflow.
     """
-    # TD-018: see run_workflow_async — offload the blocking init check
-    # behind a thread boundary instead of running it inline on the loop.
-    await asyncio.to_thread(ensure_initialized, config_file=config_file)
+    # TD-018/TD-049: see run_workflow_async — offload the blocking init
+    # check behind a thread boundary instead of running it inline on the loop.
+    await ensure_initialized_async(config_file=config_file)
 
     # Sentinel: tracks whether THIS facade call performed the mark_thread_resuming
     # transition.  Needed so the CancelledError handler below can safely undo
@@ -1140,9 +1140,20 @@ async def resume_workflow_async(
 # stay literally ``asyncio.to_thread(...)``).
 # ---------------------------------------------------------------------------
 
-_ASYNC_FACADE_MAX_CONCURRENCY = max(
-    1, int(os.environ.get("AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY", "8"))
-)
+
+def _parse_async_facade_max_concurrency() -> int:
+    """Parse AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY, floored at 1 (TD-050).
+
+    Extracted as a standalone, importable function (rather than an inline
+    module-level expression) so tests can exercise the actual parsing
+    formula directly instead of duplicating it in a local closure — a
+    duplicated closure would not catch a typo'd env-var key or an inverted
+    floor in this function.
+    """
+    return max(1, int(os.environ.get("AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY", "8")))
+
+
+_ASYNC_FACADE_MAX_CONCURRENCY = _parse_async_facade_max_concurrency()
 
 # Lazily constructed: asyncio.Semaphore() should not be instantiated at
 # import time in a way that binds it to a specific event loop.
