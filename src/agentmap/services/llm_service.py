@@ -4023,6 +4023,19 @@ class LLMService:
                 # Post-first-chunk error: terminal, no retry, no fallback (REQ-F-004).
                 raise
 
+            # TD-029: dependency/config short-circuit, parity with the
+            # non-streaming sibling's ``_handle_direct_call_exception``
+            # (:1329). ``_invoke_with_resilience_stream_async`` already
+            # classifies pre-first-chunk errors via ``classify_llm_error``
+            # before re-raising, so ``e`` here is already typed. A missing
+            # optional dependency or invalid config is not a transient
+            # provider failure -- retrying via the fallback ladder just
+            # churns through tiers that will fail identically. Fail fast
+            # with the same ``LLMResolvedCallError`` wrapping the
+            # non-streaming path uses.
+            if isinstance(e, (LLMDependencyError, LLMConfigurationError)):
+                raise LLMResolvedCallError(provider, current_model, e) from e
+
             # Pre-first-chunk error: check fallback eligibility (mirrors :1124).
             if self.features_registry and self.routing_config:
                 resp = await self._fallback_handler.try_with_fallback_async(

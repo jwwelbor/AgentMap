@@ -2624,7 +2624,10 @@ class TestSSEStreamRegressionNonStreaming(IsolatedAsyncioTestCase):
         app = _make_test_app()
 
         with (
-            patch("agentmap.deployment.http.api.routes.execute.ensure_initialized"),
+            patch(
+                "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.deployment.http.api.routes.execute.run_workflow_async",
                 new_callable=AsyncMock,
@@ -2657,7 +2660,10 @@ class TestSSEStreamRegressionNonStreaming(IsolatedAsyncioTestCase):
         app = _make_test_app()
 
         with (
-            patch("agentmap.deployment.http.api.routes.execute.ensure_initialized"),
+            patch(
+                "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.deployment.http.api.routes.execute.run_workflow_async",
                 new_callable=AsyncMock,
@@ -2688,7 +2694,10 @@ class TestSSEStreamRegressionNonStreaming(IsolatedAsyncioTestCase):
         app = _make_test_app()
 
         with (
-            patch("agentmap.deployment.http.api.routes.execute.ensure_initialized"),
+            patch(
+                "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.deployment.http.api.routes.execute.run_workflow_async",
                 new_callable=AsyncMock,

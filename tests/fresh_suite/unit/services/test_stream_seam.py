@@ -1057,7 +1057,13 @@ class TestOpenAIStreamSeam(unittest.IsolatedAsyncioTestCase):
         assert non_final[1].text_delta == " world"
 
     async def test_oai2_none_content_yields_empty_string_text_delta(self):
-        """TC-F01-OAI-2: chunk with choices[0].delta.content=None yields text_delta=='' (no crash)."""
+        """TC-F01-OAI-2: chunk with choices[0].delta.content=None emits NO chunk (no crash).
+
+        TD-022: reconciled with OpenAI's actual streaming behavior — a
+        finish-reason-only chunk (``delta.content is None``) never crashes
+        and never propagates a ``None`` text_delta, but it also does not
+        produce a separate emitted chunk (spec.md AC-8, reconciled).
+        """
         mock_sdk, mock_client = _make_mock_openai_module()
 
         oai_chunks = [
@@ -1071,13 +1077,20 @@ class TestOpenAIStreamSeam(unittest.IsolatedAsyncioTestCase):
         seam = self._make_seam(mock_sdk)
         chunks = await self._collect_chunks(seam, mock_sdk, oai_chunks)
 
-        # The finish-reason chunk has None content; it must not crash and must
-        # yield text_delta=="" if it yields at all, but typically it yields nothing
-        # since it only carries finish_reason and content=None → ""
-        all_text_deltas = [c.text_delta for c in chunks if not c.is_final]
-        for delta in all_text_deltas:
-            assert delta is not None, "text_delta must never be None"
-            assert isinstance(delta, str), "text_delta must be a str"
+        # No chunk must ever carry a None text_delta (defensive, all chunks).
+        for chunk in chunks:
+            assert chunk.text_delta is not None, "text_delta must never be None"
+            assert isinstance(chunk.text_delta, str), "text_delta must be a str"
+
+        # The None-content (finish-reason-only) chunk must NOT produce its own
+        # emitted non-final chunk: exactly one non-final chunk ("Hello") plus
+        # the terminal chunk — not two non-final chunks.
+        non_final = [c for c in chunks if not c.is_final]
+        assert len(non_final) == 1, (
+            "A None-content chunk must emit no LLMStreamChunk (emit-nothing "
+            f"behavior); expected 1 non-final chunk, got {len(non_final)}"
+        )
+        assert non_final[0].text_delta == "Hello"
 
     async def test_oai3_terminal_chunk_usage_finish_reason_provider_model(self):
         """TC-F01-OAI-3: terminal chunk has correct usage, finish_reason, resolved fields."""
@@ -1187,6 +1200,46 @@ class TestOpenAIStreamSeam(unittest.IsolatedAsyncioTestCase):
             terminal.usage is None
         ), f"usage must be None when no usage chunk arrived, got {terminal.usage}"
         assert terminal.finish_reason == "stop"
+
+    async def test_oai7_cache_control_rejected_before_any_chunk_td021(self):
+        """TD-021: OpenAI native seam rejects cache_control defensively (belt-and-suspenders).
+
+        OpenAI's streaming API has no equivalent of Anthropic's cache_control
+        blocks. The broader provider/mode gate lives at the LLMService entry
+        point (F03's scope), but the seam itself must not silently forward a
+        cache_control block to the SDK where it would be silently ignored.
+        """
+        from agentmap.exceptions import LLMServiceError
+
+        mock_sdk, mock_client = _make_mock_openai_module()
+        seam = self._make_seam(mock_sdk)
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Long system context...",
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {"type": "text", "text": "Tell me a joke."},
+                ],
+            }
+        ]
+
+        gen = seam.stream(messages, {"model": "gpt-4o"}, client=None, credentials=None)
+        with patch.dict(sys.modules, {"openai": mock_sdk}):
+            with pytest.raises(LLMServiceError):
+                try:
+                    await gen.__anext__()
+                except StopAsyncIteration:
+                    pytest.fail(
+                        "Generator stopped cleanly — LLMServiceError was not raised"
+                    )
+
+        # The SDK call must never have been made — zero chunks, no silent forward.
+        mock_client.chat.completions.create.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -2279,52 +2332,54 @@ class TestAdditivityRegressionGate:
     paths — the existing test suites must all pass.
 
     This guard test programmatically verifies that the three non-streaming
-    LLM test modules are importable and their test classes instantiable
-    (i.e. the modules' public surface has not changed from F01's edits).
+    LLM test modules are importable and their test classes/cases are still
+    present and loadable (i.e. the modules' public surface has not changed
+    from F01's edits, and nothing has broken collection).
 
-    The actual pass/fail of the tests themselves is confirmed by running
-    the full regression suite as part of this task's quality gate.
+    TD-023/TD-048: this gate intentionally does NOT execute those suites via
+    a nested ``unittest.TextTestRunner`` — doing so duplicates pytest's own
+    collection of those (separately collected) test files, inflates this
+    module's runtime, and misattributes any failure to test_stream_seam.py
+    instead of the module that actually broke. The suites' real pass/fail
+    signal comes from pytest collecting and running them normally as part of
+    the full regression suite (they are not skipped or excluded anywhere);
+    this gate only proves their public surface — the specific structural
+    precondition F01 could plausibly have broken — is intact.
     Reference: spec.md REQ-NF-002 / AC-18.
     """
 
-    def test_nf4_llm_service_test_module_importable_and_unchanged(self):
-        """TC-F01-NF-4 (structural): test_llm_service.py is importable with its test classes."""
+    @staticmethod
+    def _load_module_suite(module_name: str) -> "unittest.TestSuite":
+        """Import *module_name* and load (but do not run) its test suite.
+
+        Loading via ``TestLoader.loadTestsFromModule`` exercises collection —
+        it fails the same way pytest's own collection would if a class body,
+        decorator, or import at module scope were broken — without actually
+        executing any test method.
+        """
         import importlib
 
-        mod = importlib.import_module(
-            "tests.fresh_suite.unit.services.test_llm_service"
-        )
-        # The module must expose at least one test class.
-        test_classes = [name for name in dir(mod) if name.startswith("Test")]
-        assert len(test_classes) > 0, (
-            "test_llm_service.py must contain at least one Test* class; "
-            "F01 must not have modified the non-streaming LLM test surface."
-        )
+        mod = importlib.import_module(module_name)
+        suite = unittest.TestLoader().loadTestsFromModule(mod)
+        assert (
+            suite.countTestCases() > 0
+        ), f"{module_name} must contain at least one collectible test case."
+        return suite
+
+    def test_nf4_llm_service_test_module_importable_and_unchanged(self):
+        """TC-F01-NF-4: test_llm_service.py's suite still collects cleanly."""
+        self._load_module_suite("tests.fresh_suite.unit.services.test_llm_service")
 
     def test_nf4_llm_service_async_test_module_importable_and_unchanged(self):
-        """TC-F01-NF-4 (structural): test_llm_service_async.py is importable with its test classes."""
-        import importlib
-
-        mod = importlib.import_module(
+        """TC-F01-NF-4: test_llm_service_async.py's suite still collects cleanly."""
+        self._load_module_suite(
             "tests.fresh_suite.unit.services.test_llm_service_async"
-        )
-        test_classes = [name for name in dir(mod) if name.startswith("Test")]
-        assert len(test_classes) > 0, (
-            "test_llm_service_async.py must contain at least one Test* class; "
-            "F01 must not have modified the non-streaming async LLM test surface."
         )
 
     def test_nf4_llm_client_factory_test_module_importable_and_unchanged(self):
-        """TC-F01-NF-4 (structural): test_llm_client_factory.py is importable with its test classes."""
-        import importlib
-
-        mod = importlib.import_module(
+        """TC-F01-NF-4: test_llm_client_factory.py's suite still collects cleanly."""
+        self._load_module_suite(
             "tests.fresh_suite.unit.services.test_llm_client_factory"
-        )
-        test_classes = [name for name in dir(mod) if name.startswith("Test")]
-        assert len(test_classes) > 0, (
-            "test_llm_client_factory.py must contain at least one Test* class; "
-            "F01 must not have modified the LLM client factory test surface."
         )
 
     def test_nf4_f01_did_not_modify_llm_service_source(self):

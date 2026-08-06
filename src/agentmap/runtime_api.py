@@ -9,7 +9,11 @@ It re-exports the public functions from the split runtime modules.
 """
 
 from .runtime.bundle_ops import scaffold_agents, update_bundle
-from .runtime.init_ops import ensure_initialized, get_container
+from .runtime.init_ops import (
+    ensure_initialized,
+    ensure_initialized_async,
+    get_container,
+)
 from .runtime.system_ops import (
     diagnose_system,
     get_config,
@@ -35,6 +39,7 @@ agentmap_initialize = ensure_initialized
 
 __all__ = [
     "ensure_initialized",  # Internal/legacy name
+    "ensure_initialized_async",
     "agentmap_initialize",  # Recommended external name
     "get_container",
     "run_workflow",

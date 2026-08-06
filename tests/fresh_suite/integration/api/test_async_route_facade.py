@@ -150,7 +150,10 @@ class TestExecuteRouteAwaitsAsyncFacade:
 
         return TestClient(_make_app_with_auth_disabled(router))
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.run_workflow_async",
         new_callable=AsyncMock,
@@ -207,7 +210,10 @@ class TestExecuteRouteAwaitsAsyncFacade:
             execute_module, "run_workflow"
         ), "sync run_workflow is still imported in execute.py — route regression"
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.run_workflow_async",
         new_callable=AsyncMock,
@@ -233,7 +239,10 @@ class TestExecuteRouteAwaitsAsyncFacade:
         assert data["thread_id"] == "thread-xyz-999"
         mock_run_workflow_async.assert_awaited_once()
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.run_workflow_async",
         new_callable=AsyncMock,
@@ -255,7 +264,131 @@ class TestExecuteRouteAwaitsAsyncFacade:
         call_kwargs = mock_run_workflow_async.call_args
         assert "customer_service::support_flow" in str(call_kwargs)
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+        new_callable=AsyncMock,
+    )
+    def test_execute_route_forwards_config_file_to_run_workflow_async(
+        self, mock_run_workflow_async, mock_ensure_initialized
+    ):
+        """TD-012: the route's app.state.config_file must be forwarded as the
+        ``config_file`` kwarg on the run_workflow_async call, not silently
+        dropped in favor of the default config.
+
+        Counter-factual: a buggy _execute_workflow_internal that omits
+        config_file=config_file from the run_workflow_async(...) call would
+        leave this kwarg missing or None even though app.state.config_file
+        was set, so this test would fail against that regression.
+        """
+        mock_ensure_initialized.return_value = None
+        mock_run_workflow_async.return_value = _make_execute_success_payload()
+
+        from agentmap.deployment.http.api.routes.execute import router
+
+        app = FastAPI()
+        app.include_router(router)
+        mock_container = MagicMock()
+        mock_auth_service = MagicMock()
+        mock_auth_service.is_authentication_enabled.return_value = False
+        mock_container.auth_service.return_value = mock_auth_service
+        app.state.container = mock_container
+        app.state.config_file = "/configs/custom_agentmap_config.yaml"
+
+        client = TestClient(app)
+        response = client.post(
+            "/execute/customer_service::support_flow",
+            json={"inputs": {}},
+        )
+
+        assert response.status_code == 200
+        mock_run_workflow_async.assert_awaited_once()
+        _, call_kwargs = mock_run_workflow_async.call_args
+        assert (
+            call_kwargs.get("config_file") == "/configs/custom_agentmap_config.yaml"
+        ), f"config_file was not forwarded to run_workflow_async: {call_kwargs}"
+
+        # Also verify ensure_initialized received the same config_file (already
+        # correct pre-fix, but asserted here for completeness of the request path).
+        mock_ensure_initialized.assert_called_once_with(
+            config_file="/configs/custom_agentmap_config.yaml"
+        )
+
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+        new_callable=AsyncMock,
+    )
+    def test_execute_route_nested_workflow_path_does_not_produce_double_colon(
+        self, mock_run_workflow_async, mock_ensure_initialized
+    ):
+        """TD-015: a nested workflow subfolder path must not be blanket-converted
+        into multiple "::" tokens.
+
+        Counter-factual: the pre-fix ``_normalize_graph_identifier`` replaced
+        every "/" with "::", turning "subfolder/inner/graph" into
+        "subfolder::inner::graph" (two "::" tokens), which trips the
+        ``count("::") > 1`` validation and returns 400 instead of routing to
+        the facade with the (workflow-with-subfolder, graph) split that
+        ``_resolve_csv_path`` uses (rsplit on the last "/").
+        """
+        mock_ensure_initialized.return_value = None
+        mock_run_workflow_async.return_value = _make_execute_success_payload()
+
+        client = self._make_client()
+        response = client.post(
+            "/execute/subfolder/inner/graph",
+            json={"inputs": {}},
+        )
+
+        assert response.status_code == 200, response.text
+        mock_run_workflow_async.assert_awaited_once()
+        _, call_kwargs = mock_run_workflow_async.call_args
+        assert call_kwargs.get("graph_name") == "subfolder/inner::graph"
+
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+        new_callable=AsyncMock,
+    )
+    def test_execute_route_two_segment_path_reaches_two_param_route(
+        self, mock_run_workflow_async, mock_ensure_initialized
+    ):
+        """TD-015: the specific "/execute/{workflow}/{graph}" route must not be
+        shadowed by the "{graph_id:path}" catch-all for two-segment paths.
+
+        Counter-factual: pre-fix route registration order put the catch-all
+        first, so Starlette always matched it before the more specific
+        two-param route (which then became dead code for any two-segment
+        request path).
+        """
+        mock_ensure_initialized.return_value = None
+        mock_run_workflow_async.return_value = _make_execute_success_payload()
+
+        client = self._make_client()
+        response = client.post(
+            "/execute/customer_service/support_flow",
+            json={"inputs": {"a": 1}},
+        )
+
+        assert response.status_code == 200
+        mock_run_workflow_async.assert_awaited_once()
+        _, call_kwargs = mock_run_workflow_async.call_args
+        assert call_kwargs.get("graph_name") == "customer_service::support_flow"
+
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.run_workflow_async",
         new_callable=AsyncMock,
@@ -292,7 +425,10 @@ class TestResumeRouteAwaitsAsyncFacade:
 
         return TestClient(_make_app_with_auth_disabled(router))
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.resume_workflow_async",
         new_callable=AsyncMock,
@@ -356,7 +492,10 @@ class TestListWorkflowsAwaitsAsyncFacade:
 
         return TestClient(_make_app_with_auth_disabled(router))
 
-    @patch("agentmap.deployment.http.api.routes.workflows.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.workflows.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.workflows.list_graphs_async",
         new_callable=AsyncMock,
@@ -388,7 +527,10 @@ class TestListWorkflowsAwaitsAsyncFacade:
             workflows_module, "list_graphs"
         ), "sync list_graphs is still imported in workflows.py — route regression"
 
-    @patch("agentmap.deployment.http.api.routes.workflows.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.workflows.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.workflows.list_graphs_async",
         new_callable=AsyncMock,
@@ -409,7 +551,10 @@ class TestListWorkflowsAwaitsAsyncFacade:
         assert data["workflows"] == []
         mock_list_graphs_async.assert_awaited_once()
 
-    @patch("agentmap.deployment.http.api.routes.workflows.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.workflows.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.workflows.list_graphs_async",
         new_callable=AsyncMock,
@@ -452,7 +597,10 @@ class TestGetWorkflowDetailsAwaitsAsyncFacade:
 
         return TestClient(_make_app_with_auth_disabled(router))
 
-    @patch("agentmap.deployment.http.api.routes.workflows.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.workflows.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.workflows.inspect_graph_async",
         new_callable=AsyncMock,
@@ -493,7 +641,10 @@ class TestGetWorkflowDetailsAwaitsAsyncFacade:
             workflows_module, "inspect_graph"
         ), "sync inspect_graph is still imported in workflows.py — route regression"
 
-    @patch("agentmap.deployment.http.api.routes.workflows.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.workflows.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.workflows.inspect_graph_async",
         new_callable=AsyncMock,
@@ -514,7 +665,10 @@ class TestGetWorkflowDetailsAwaitsAsyncFacade:
 
         assert response.status_code == 404
 
-    @patch("agentmap.deployment.http.api.routes.workflows.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.workflows.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.workflows.inspect_graph_async",
         new_callable=AsyncMock,
@@ -533,3 +687,144 @@ class TestGetWorkflowDetailsAwaitsAsyncFacade:
         data = response.json()
         assert data["workflow"] == "customer_service"
         assert data["graph"] == "support_flow"
+
+    @patch(
+        "agentmap.deployment.http.api.routes.workflows.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "agentmap.deployment.http.api.routes.workflows.inspect_graph_async",
+        new_callable=AsyncMock,
+    )
+    def test_get_workflow_details_nested_workflow_path_does_not_produce_double_colon(
+        self, mock_inspect_graph_async, mock_ensure_initialized
+    ):
+        """TD-015 sibling fix: a nested workflow subfolder path must not be
+        blanket-converted into multiple "::" tokens on the workflows route.
+
+        Counter-factual: the pre-fix inline ``.replace("/", "::")`` turned
+        "subfolder/inner/graph" into "subfolder::inner::graph" (two "::"
+        tokens), which trips ``_resolve_csv_path``'s ``count("::") != 1``
+        guard and returns 404 instead of resolving to the
+        (workflow-with-subfolder, graph) split.
+        """
+        mock_ensure_initialized.return_value = None
+        mock_inspect_graph_async.return_value = _make_inspect_graph_payload()
+
+        client = self._make_client()
+        response = client.get("/workflows/subfolder/inner/graph")
+
+        assert response.status_code == 200, response.text
+        mock_inspect_graph_async.assert_awaited_once()
+        (called_graph_id,), _ = mock_inspect_graph_async.call_args
+        assert called_graph_id == "subfolder/inner::graph"
+
+
+# ---------------------------------------------------------------------------
+# TD-018: route-level ensure_initialized() must not block the event loop
+# ---------------------------------------------------------------------------
+
+
+class TestRouteEnsureInitializedOffloaded:
+    """TD-018/TD-049/TD-051: the execute/resume/workflows routes must await
+    the shared ensure_initialized_async() wrapper rather than calling
+    ensure_initialized() inline on the async request path. The wrapper's own
+    asyncio.to_thread dispatch is covered directly in
+    tests/unit/runtime/test_init_ops.py — these tests only need to prove
+    each route awaits it, for all 4 routes TD-018 touched (previously only
+    execute_workflow and list_workflows had this coverage; TD-051 added
+    resume_execution and get_workflow_details).
+    """
+
+    def test_execute_route_awaits_ensure_initialized_async(self):
+        from agentmap.deployment.http.api.routes.execute import router
+
+        with (
+            patch(
+                "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as mock_ensure_initialized_async,
+            patch(
+                "agentmap.deployment.http.api.routes.execute.run_workflow_async",
+                new_callable=AsyncMock,
+                return_value=_make_execute_success_payload(),
+            ),
+        ):
+            client = TestClient(_make_app_with_auth_disabled(router))
+            response = client.post(
+                "/execute/customer_service::support_flow", json={"inputs": {}}
+            )
+
+        assert response.status_code == 200
+        mock_ensure_initialized_async.assert_awaited_once()
+
+    def test_resume_route_awaits_ensure_initialized_async(self):
+        from agentmap.deployment.http.api.routes.execute import router
+
+        with (
+            patch(
+                "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as mock_ensure_initialized_async,
+            patch(
+                "agentmap.deployment.http.api.routes.execute.resume_workflow_async",
+                new_callable=AsyncMock,
+                return_value={
+                    "success": True,
+                    "outputs": {"resumed": "result"},
+                    "execution_summary": None,
+                    "metadata": {
+                        "thread_id": "thread-resume-001",
+                        "response_action": "approve",
+                    },
+                },
+            ),
+        ):
+            client = TestClient(_make_app_with_auth_disabled(router))
+            response = client.post(
+                "/resume/thread-resume-001",
+                json={"action": "approve", "data": {"comment": "looks good"}},
+            )
+
+        assert response.status_code == 200
+        mock_ensure_initialized_async.assert_awaited_once()
+
+    def test_list_workflows_route_awaits_ensure_initialized_async(self):
+        from agentmap.deployment.http.api.routes.workflows import router
+
+        with (
+            patch(
+                "agentmap.deployment.http.api.routes.workflows.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as mock_ensure_initialized_async,
+            patch(
+                "agentmap.deployment.http.api.routes.workflows.list_graphs_async",
+                new_callable=AsyncMock,
+                return_value=_make_list_graphs_payload(empty=True),
+            ),
+        ):
+            client = TestClient(_make_app_with_auth_disabled(router))
+            response = client.get("/workflows")
+
+        assert response.status_code == 200
+        mock_ensure_initialized_async.assert_awaited_once()
+
+    def test_get_workflow_details_route_awaits_ensure_initialized_async(self):
+        from agentmap.deployment.http.api.routes.workflows import router
+
+        with (
+            patch(
+                "agentmap.deployment.http.api.routes.workflows.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as mock_ensure_initialized_async,
+            patch(
+                "agentmap.deployment.http.api.routes.workflows.inspect_graph_async",
+                new_callable=AsyncMock,
+                return_value=_make_inspect_graph_payload(),
+            ),
+        ):
+            client = TestClient(_make_app_with_auth_disabled(router))
+            response = client.get("/workflows/customer_service::support_flow")
+
+        assert response.status_code == 200
+        mock_ensure_initialized_async.assert_awaited_once()

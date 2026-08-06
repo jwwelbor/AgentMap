@@ -24,6 +24,29 @@ class LLMClientFactory:
         self._clients = {}  # Cache for LangChain clients
         self._logger = logging_service.get_class_logger("agentmap.llm.factory")
 
+    @staticmethod
+    def _validate_streaming_flag(streaming: Any) -> bool:
+        """Reject non-bool ``streaming`` values (TD-024).
+
+        ``streaming`` selects the cache-key suffix AND (via truthiness) the
+        provider construction branch.  A non-bool value that is also
+        string-truthy — e.g. the literal string ``"False"`` — renders
+        identically to ``streaming=False`` in the cache key (``f"..._{streaming}"``
+        stringifies both to ``"...False"``) while taking the truthy
+        construction branch, aliasing a streaming-aware client and a
+        non-streaming client under the same cache key. Reject explicitly
+        rather than silently misbehaving.
+
+        ``bool`` is a subclass of ``int`` but ``isinstance(streaming, bool)``
+        still correctly excludes plain ``int``/``str``/``None`` values.
+        """
+        if not isinstance(streaming, bool):
+            raise TypeError(
+                "streaming must be a bool, got "
+                f"{type(streaming).__name__}: {streaming!r}"
+            )
+        return streaming
+
     def get_or_create_client(
         self, provider: str, config: Dict[str, Any], streaming: bool = False
     ) -> Any:
@@ -40,7 +63,12 @@ class LLMClientFactory:
 
         Returns:
             LangChain client instance
+
+        Raises:
+            TypeError: If ``streaming`` is not a ``bool`` (TD-024).
         """
+        streaming = self._validate_streaming_flag(streaming)
+
         # Create cache key based on provider and critical config.
         # The streaming dimension is appended last so streaming and non-streaming
         # clients for the same (provider, config) are cached separately.
@@ -93,7 +121,10 @@ class LLMClientFactory:
         Raises:
             LLMConfigurationError: If configuration is invalid
             LLMDependencyError: If required dependencies are missing
+            TypeError: If ``streaming`` is not a ``bool`` (TD-024).
         """
+        streaming = self._validate_streaming_flag(streaming)
+
         api_key = config.get("api_key")
         if not api_key:
             raise LLMConfigurationError(f"No API key found for provider: {provider}")

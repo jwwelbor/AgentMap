@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from agentmap.deployment.http.api.dependencies import requires_auth
+from agentmap.deployment.http.api.routes._shared import normalize_graph_identifier
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
@@ -19,7 +20,7 @@ from agentmap.exceptions.runtime_exceptions import (
 )
 from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
 from agentmap.runtime_api import (
-    ensure_initialized,
+    ensure_initialized_async,
     resume_workflow_async,
     run_workflow_async,
 )
@@ -121,12 +122,6 @@ class ResumeResponse(BaseModel):
 router = APIRouter(tags=["Execution"])
 
 
-def _normalize_graph_identifier(identifier: str) -> str:
-    """Normalize graph identifier to standard format."""
-    # Handle URL encoding and alternative separators
-    return identifier.replace("%3A%3A", "::").replace("/", "::")
-
-
 def _to_serializable(value: Any) -> Any:
     """Convert dataclasses, datetimes, and nested structures into JSON-friendly values."""
     if value is None:
@@ -192,6 +187,16 @@ def _build_execute_response(
     success = bool(runtime_result.get("success")) and not interrupted
     status = "completed" if success else "suspended" if interrupted else "failed"
 
+    # Two interrupt producers feed this response with different payload
+    # keys: the native GraphInterrupt suspend path sets "interrupt_info"
+    # (type/node_name dict), while the legacy ExecutionInterruptedException
+    # path (GraphRunnerService.build_legacy_interrupt_result) sets
+    # "interaction_request" instead. Read whichever is present so neither
+    # producer's payload is silently dropped.
+    interrupt_payload = runtime_result.get("interrupt_info")
+    if interrupt_payload is None:
+        interrupt_payload = runtime_result.get("interaction_request")
+
     response = ExecuteResponse(
         success=success,
         status=status,
@@ -200,7 +205,7 @@ def _build_execute_response(
         outputs=_sanitize_outputs(runtime_result),
         execution_summary=_extract_execution_summary(runtime_result),
         metadata=_to_serializable(runtime_result.get("metadata")),
-        interrupt_info=_to_serializable(runtime_result.get("interrupt_info")),
+        interrupt_info=_to_serializable(interrupt_payload),
         error=runtime_result.get("error"),
         execution_id=execution_id,
     )
@@ -246,10 +251,15 @@ async def _execute_workflow_internal(
 ) -> ExecuteResponse:
     """Internal execution logic shared by all endpoints."""
     try:
-        ensure_initialized(config_file=config_file)
+        # TD-018/TD-049: ensure_initialized_async offloads the synchronous
+        # filesystem I/O (a Path.exists() cache check, on every call, not
+        # just the first) behind a thread boundary so it doesn't block the
+        # event loop (REQ-NF-001). Single canonical wrapper — see
+        # runtime.init_ops.ensure_initialized_async.
+        await ensure_initialized_async(config_file=config_file)
 
         # Normalize identifier
-        graph_identifier = _normalize_graph_identifier(graph_identifier)
+        graph_identifier = normalize_graph_identifier(graph_identifier)
 
         # Validate format
         if not graph_identifier or graph_identifier.count("::") > 1:
@@ -277,21 +287,16 @@ async def _execute_workflow_internal(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/execute/{graph_id:path}", response_model=ExecuteResponse)
-@requires_auth("execute")
-async def execute_workflow(
-    graph_id: str, request_body: ExecuteRequest, request: Request
-):
-    """
-    Execute a workflow using its graph identifier.
-
-    Graph ID format: workflow::graph (e.g., customer_service::support_flow)
-    Also accepts: workflow/graph or URL-encoded workflow%3A%3Agraph
-    """
-    config_file = getattr(request.app.state, "config_file", None)
-    return await _execute_workflow_internal(graph_id, request_body, config_file)
-
-
+# TD-015: route registration order matters. FastAPI/Starlette match routes in
+# registration order, and a ``{param:path}`` converter matches every segment
+# (including "/") after the prefix — so a catch-all registered before a more
+# specific "/execute/{workflow}/{graph}" route would shadow it for every
+# two-segment path. The two-param route is therefore registered first here.
+# ``execute_workflow`` (single ``:path`` catch-all) stays registered next so
+# it keeps handling single-segment and "::"-form identifiers exactly as
+# before. ``execute_workflow_single_param`` is a second ``:path`` catch-all
+# on the same prefix, so it remains unreachable either way (pre-existing;
+# left in place as a documented public route rather than removed here).
 @router.post("/execute/{workflow}/{graph}", response_model=ExecuteResponse)
 @requires_auth("execute")
 async def execute_workflow_two_param(
@@ -312,6 +317,21 @@ async def execute_workflow_two_param(
     graph_identifier = f"{workflow}::{graph}"
     config_file = getattr(request.app.state, "config_file", None)
     return await _execute_workflow_internal(graph_identifier, request_body, config_file)
+
+
+@router.post("/execute/{graph_id:path}", response_model=ExecuteResponse)
+@requires_auth("execute")
+async def execute_workflow(
+    graph_id: str, request_body: ExecuteRequest, request: Request
+):
+    """
+    Execute a workflow using its graph identifier.
+
+    Graph ID format: workflow::graph (e.g., customer_service::support_flow)
+    Also accepts: workflow/graph or URL-encoded workflow%3A%3Agraph
+    """
+    config_file = getattr(request.app.state, "config_file", None)
+    return await _execute_workflow_internal(graph_id, request_body, config_file)
 
 
 @router.post("/execute/{workflow_graph:path}", response_model=ExecuteResponse)
@@ -358,7 +378,8 @@ async def resume_execution(
     """
     try:
         config_file = getattr(request.app.state, "config_file", None)
-        ensure_initialized(config_file=config_file)
+        # TD-018/TD-049: see _execute_workflow_internal above.
+        await ensure_initialized_async(config_file=config_file)
 
         # Validate thread_id
         if not thread_id or len(thread_id) < 10:

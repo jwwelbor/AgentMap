@@ -2851,7 +2851,10 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
         fake_container = self._make_fake_container_raising(exc)
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized") as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as _mock_init,
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -2878,7 +2881,10 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
         fake_container = self._make_fake_container_raising(exc)
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized") as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as _mock_init,
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -2902,7 +2908,8 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
         from agentmap.runtime.workflow_ops import run_workflow_stream_async
 
         with patch(
-            "agentmap.runtime.workflow_ops.ensure_initialized",
+            "agentmap.runtime.workflow_ops.ensure_initialized_async",
+            new_callable=AsyncMock,
             side_effect=AgentMapNotInitialized("not initialized"),
         ):
             with self.assertRaises(AgentMapNotInitialized):
@@ -3039,6 +3046,130 @@ class TestRunWorkflowStreamAsyncCancellation(unittest.IsolatedAsyncioTestCase):
             0,
             "After aclose(), no further events must be produced",
         )
+
+
+# ---------------------------------------------------------------------------
+# TestRunStreamAsyncTD033NoDoubleFinalize — TD-033
+# ---------------------------------------------------------------------------
+
+
+class TestRunStreamAsyncTD033NoDoubleFinalize(unittest.IsolatedAsyncioTestCase):
+    """TD-033: run_stream_async must not double-finalize the execution tracker
+    when the consuming task is cancelled mid-stream.
+
+    ENTRYPOINT:
+      GraphRunnerService.run_stream_async(bundle, initial_state, validate_agents=False)
+
+    LOWEST ALLOWED MOCK SEAM:
+      Fake compiled graph whose .astream() raises asyncio.CancelledError mid-stream
+      (simulating the consuming task being cancelled while awaiting the next node);
+      real GraphExecutionService.stream_compiled_graph_async is exercised so its own
+      ``except asyncio.CancelledError`` finalize path actually runs.
+
+    BUG (pre-fix): GraphExecutionService.stream_compiled_graph_async finalizes the
+    tracker on CancelledError (graph_execution_service.py ~562) and re-raises; then
+    GraphRunnerService.run_stream_async's own ``except asyncio.CancelledError``
+    unconditionally called ``_finalize_tracker_safe`` again — double-finalizing.
+
+    COUNTER-FACTUAL: A pre-fix impl unconditionally calls
+    ``self._finalize_tracker_safe(execution_tracker)`` in the outer
+    ``except asyncio.CancelledError`` handler regardless of whether the inner
+    ``stream_compiled_graph_async`` already finalized. That means
+    ``mocks["runner_tracking"].complete_execution.call_count`` would be ``1``
+    (not ``0``) against the buggy code, failing the assertEqual below.
+    """
+
+    async def test_cancellation_mid_stream_finalizes_tracker_exactly_once(
+        self,
+    ) -> None:
+        """CancelledError raised mid-astream must finalize the tracker exactly once.
+
+        The inner GraphExecutionService finalizes via its own tracking service
+        (``mocks["tracking"]``) and re-raises; the outer GraphRunnerService must
+        propagate without re-finalizing via its own tracking service
+        (``mocks["runner_tracking"]``).
+        """
+        import asyncio as _asyncio
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        async def cancelling_astream(initial_state):
+            yield {"n1": {"output": "v1"}}
+            raise _asyncio.CancelledError()
+
+        mocks["set_astream_factory"](cancelling_astream)
+        bundle = _make_mock_bundle_for_streaming("td033-cancel-graph")
+
+        gen = runner.run_stream_async(
+            bundle, initial_state={"input": "x"}, validate_agents=False
+        )
+
+        from agentmap.models.execution import WorkflowProgressEvent
+
+        n1_event = await gen.__anext__()
+        self.assertIsInstance(n1_event, WorkflowProgressEvent)
+        self.assertEqual(n1_event.event_type, "node_progress")
+
+        # The next __anext__() drives the CancelledError through
+        # stream_compiled_graph_async (inner finalize) and then run_stream_async's
+        # own except asyncio.CancelledError (must NOT re-finalize).
+        with self.assertRaises(_asyncio.CancelledError):
+            await gen.__anext__()
+
+        # Inner GraphExecutionService finalized exactly once via its own tracking
+        # service (proves the fix didn't just delete finalization entirely).
+        self.assertEqual(
+            mocks["tracking"].complete_execution.call_count,
+            1,
+            "GraphExecutionService.stream_compiled_graph_async must finalize the "
+            "tracker exactly once on CancelledError",
+        )
+
+        # Outer GraphRunnerService must NOT re-finalize — this is the TD-033
+        # regression assertion: it fails (call_count == 1) against pre-fix code.
+        self.assertEqual(
+            mocks["runner_tracking"].complete_execution.call_count,
+            0,
+            "TD-033: run_stream_async must not re-finalize the tracker when "
+            "stream_compiled_graph_async already finalized it on cancellation",
+        )
+
+    async def test_cancellation_before_streaming_phase_leaves_tracker_none(
+        self,
+    ) -> None:
+        """Cancellation during assembly (before streaming starts) touches neither
+        tracking service, because ``execution_tracker`` in ``run_stream_async``'s
+        scope is only bound once ``_assemble_for_async_run`` *returns* — a
+        cancellation that interrupts assembly itself leaves it at its
+        pre-declared ``None`` (``_finalize_tracker_safe`` no-ops on ``None``).
+
+        This documents why the ``entered_streaming_phase`` guard's "finalize"
+        branch is a safety net rather than a live path under the current
+        assembly structure: by the time the guard could matter, there is no
+        ``await`` boundary between assembly completing and the streaming loop
+        starting, so ``entered_streaming_phase`` is always accurate.
+        """
+        import asyncio as _asyncio
+
+        runner, mocks = _make_graph_runner_for_streaming()
+
+        async def _raise_cancelled(*args, **kwargs):
+            raise _asyncio.CancelledError()
+
+        runner._assemble_for_async_run = _raise_cancelled  # type: ignore[method-assign]
+
+        bundle = _make_mock_bundle_for_streaming("td033-preassembly-cancel-graph")
+
+        gen = runner.run_stream_async(
+            bundle, initial_state={"input": "x"}, validate_agents=False
+        )
+
+        with self.assertRaises(_asyncio.CancelledError):
+            await gen.__anext__()
+
+        # Neither tracking service is touched — nothing to finalize yet.
+        self.assertEqual(mocks["tracking"].complete_execution.call_count, 0)
+        self.assertEqual(mocks["runner_tracking"].complete_execution.call_count, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -3322,6 +3453,66 @@ class TestTelemetrySpanLifecycle(unittest.IsolatedAsyncioTestCase):
                 0,
                 "Telemetry span must be closed (via finally or GeneratorExit handler) "
                 "even when consumer calls aclose() mid-stream",
+            )
+
+    # ------------------------------------------------------------------
+    # Sub-case E: GC-driven abandonment (no explicit aclose())
+    # ------------------------------------------------------------------
+
+    async def test_telemetry_span_closes_on_gc_driven_abandonment(self) -> None:
+        """TD-032 follow-up: TC-F04-011-D only covers an explicit ``aclose()``.
+
+        TD-032 replaced the manual ``span_cm.__enter__()``/``span_cm.__exit__()``
+        pattern with ``AsyncExitStack`` + ``await telemetry_stack.aclose()`` in
+        the generator's ``finally`` block. Explicit ``aclose()`` reliably drives
+        an async generator's ``finally`` (including ``await`` expressions inside
+        it, per PEP 525). This test instead drops the last reference to the
+        generator and forces garbage collection -- exercising asyncio's
+        async-generator finalization hook (``sys.set_asyncgen_hooks``) rather
+        than an explicit close call, to confirm the now-``await``-ing ``finally``
+        block does not emit "coroutine was never awaited" / "async generator
+        ignored GeneratorExit" RuntimeWarnings and still closes the span.
+        """
+        import asyncio as _asyncio
+        import gc
+        import warnings
+
+        runner, mocks, fake_telemetry = self._get_runner_with_fake_telemetry()
+
+        gate = _asyncio.Event()
+
+        async def gated_two_node(initial_state):
+            yield {"n1": {"output": "v1"}}
+            await gate.wait()
+            yield {"n2": {"output": "v2"}}
+
+        mocks["set_astream_factory"](gated_two_node)
+        bundle = _make_mock_bundle_for_streaming("telemetry-gc-abandoned")
+
+        gen = runner.run_stream_async(bundle, initial_state={}, validate_agents=False)
+        await gen.__anext__()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+
+            # Drop the only reference and force collection -- this is what an
+            # abandoned generator (no explicit aclose()/break-without-cleanup)
+            # looks like in real consumer code.
+            del gen
+            gc.collect()
+            # Let the event loop run the scheduled async-generator finalizer
+            # (asyncio schedules it as a task via the asyncgen hooks).
+            await _asyncio.sleep(0)
+            await _asyncio.sleep(0)
+
+        open_count = fake_telemetry.start_span.call_count
+        if open_count > 0:
+            cm = fake_telemetry.start_span.return_value
+            self.assertGreater(
+                cm.__exit__.call_count,
+                0,
+                "Telemetry span must be closed even when the generator is "
+                "abandoned via GC rather than an explicit aclose() call",
             )
 
 
@@ -4609,7 +4800,10 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
         fake_container.app_config_service.return_value = fake_config_service
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -4768,7 +4962,10 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
         fake_container.app_config_service.return_value = fake_config_service
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -4997,7 +5194,10 @@ class TestRunWorkflowStreamAsyncParityWithAsync(unittest.IsolatedAsyncioTestCase
         fake_container.app_config_service.return_value = fake_config_service
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -5156,7 +5356,10 @@ class TestNonStreamingRegression(unittest.IsolatedAsyncioTestCase):
         fake_container.app_config_service.return_value = fake_config_service
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized") as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as _mock_init,
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,
@@ -5230,7 +5433,10 @@ class TestNonStreamingRegression(unittest.IsolatedAsyncioTestCase):
         fake_container.app_config_service.return_value = fake_config_service
 
         with (
-            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
             patch(
                 "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
                 return_value=fake_container,

@@ -528,6 +528,31 @@ class TestAsyncSuspendResumeRoundTrip(unittest.TestCase):
             "resumed result must carry final_state",
         )
 
+        # TD-019 / AC-005 state-continuity: the round trip must prove state
+        # preservation through the checkpoint boundary, not just wiring.
+        # AgentMap's state schema accumulates fields rather than dropping
+        # them, so seed_input (seeded before suspend, never overwritten by
+        # SuspendNode or FinalizeNode) must still be present verbatim in the
+        # resumed final_state.
+        #
+        # Counter-factual: an implementation that rehydrates the checkpoint
+        # from a fresh/partial state (e.g. only the fields the resuming node
+        # touches) instead of the accumulated pre-suspend state would drop
+        # seed_input here even though thread_id/success assertions above
+        # still pass — this assertion is what actually catches that class of
+        # bug.
+        self.assertIn(
+            "seed_input",
+            resume_result.final_state,
+            "resumed final_state must preserve seed_input across the "
+            "checkpoint boundary, not just report success",
+        )
+        self.assertEqual(
+            resume_result.final_state["seed_input"],
+            "integration-test-seed-value",
+            "seed_input must survive the suspend/resume round trip unchanged",
+        )
+
         # The final_state must record the thread_id and resume origin
         self.assertEqual(
             resume_result.final_state.get("__thread_id"),

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, NoReturn, Optional
@@ -17,7 +18,7 @@ from agentmap.runtime.runtime_manager import RuntimeManager
 from agentmap.services.graph.graph_bundle_service import GraphBundleService
 from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
-from .init_ops import ensure_initialized
+from .init_ops import ensure_initialized, ensure_initialized_async
 
 
 def _resolve_csv_path(graph_identifier: str, container) -> tuple[Path, str]:
@@ -355,10 +356,21 @@ def resume_workflow(
             },
         }
 
+    except (InvalidInputs, AgentMapNotInitialized):
+        # TD-017: re-raise typed exceptions instead of collapsing them into
+        # the generic success=False envelope below, so callers (HTTP/CLI
+        # adapters) can map them the same way they map run/list/inspect/
+        # validate failures (InvalidInputs -> 400, AgentMapNotInitialized ->
+        # 503), rather than seeing an opaque success=False payload.
+        raise
     except Exception as e:
+        # Workflow-level resume failures (thread not found, checkpoint
+        # rehydration errors, etc.) still envelope, but now preserve the
+        # exception type so callers/log consumers don't lose that detail.
         return {
             "success": False,
             "error": str(e),
+            "error_type": type(e).__name__,
             "metadata": {
                 "resume_token": resume_token,
                 "profile": profile,
@@ -730,7 +742,12 @@ async def run_workflow_async(
     execution via GraphRunnerService.run_async (T-E04-F04-004, REQ-NF-007).
     Argument and return shape are identical to run_workflow.
     """
-    ensure_initialized(config_file=config_file)
+    # TD-018/TD-049: ensure_initialized_async offloads the synchronous
+    # filesystem I/O (RuntimeManager.initialize()'s idempotent fast-path
+    # still runs _is_cache_initialized() -> Path.exists() on every call, so
+    # it is not a "one-time" cost from an async caller's perspective) behind
+    # a thread boundary (REQ-NF-001) rather than blocking the event loop.
+    await ensure_initialized_async(config_file=config_file)
 
     try:
         container = RuntimeManager.get_container()
@@ -784,18 +801,19 @@ async def run_workflow_async(
             _raise_mapped_error(graph_name, error_msg)
 
     except ExecutionInterruptedException as e:
-        return {
-            "success": False,
-            "interrupted": True,
-            "thread_id": e.thread_id,
-            "interaction_request": e.interaction_request,
-            "message": f"Execution interrupted for human interaction in thread: {e.thread_id}",
-            "metadata": {
-                "graph_name": graph_name,
-                "profile": profile,
-                "checkpoint_available": True,
-            },
-        }
+        # TD-031: single canonical mapping lives on GraphRunnerService
+        # (build_legacy_interrupt_result), shared with the streaming facade's
+        # equivalent handler so suspension mapping is not duplicated.
+        # Re-fetched (rather than reusing the `graph_runner` local) because
+        # ExecutionInterruptedException can only originate from
+        # graph_runner.run_async, but a fresh lookup keeps this handler
+        # correct even if that invariant changes.
+        graph_runner_service: GraphRunnerService = (
+            RuntimeManager.get_container().graph_runner_service()
+        )
+        return graph_runner_service.build_legacy_interrupt_result(
+            e, graph_name, profile
+        )
     except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
         raise
     except FileNotFoundError as e:
@@ -847,7 +865,9 @@ async def run_workflow_stream_async(
     """
     from agentmap.models.execution import WorkflowProgressEvent  # noqa: F401
 
-    ensure_initialized(config_file=config_file)
+    # TD-018/TD-049: see run_workflow_async — offload the blocking init
+    # check behind a thread boundary instead of running it inline on the loop.
+    await ensure_initialized_async(config_file=config_file)
 
     try:
         container = RuntimeManager.get_container()
@@ -875,24 +895,27 @@ async def run_workflow_stream_async(
             yield event
 
     except ExecutionInterruptedException as e:
+        # TD-031 (hardening): defensive-only fallback. In current call graphs this
+        # exception is always intercepted by ``run_stream_async``'s own
+        # except-ExecutionInterruptedException handler (which yields an identical,
+        # correctly-sequenced suspended terminal) before it can reach here — this
+        # branch would only fire if a future pre-stream prelude step (before the
+        # ``async for`` above) raised it directly. ``sequence=0`` is therefore
+        # currently provably correct (no events have been yielded yet on any path
+        # that can reach this handler). Uses the SAME canonical mapping as
+        # ``run_stream_async`` (``GraphRunnerService.build_legacy_interrupt_result``)
+        # so suspension mapping lives in exactly one place — fetched fresh from the
+        # container rather than the loop-local ``graph_runner`` binding, since a
+        # prelude-time raise (before that binding executes) must not raise
+        # UnboundLocalError here.
+        _runner: GraphRunnerService = (
+            RuntimeManager.get_container().graph_runner_service()
+        )
         yield WorkflowProgressEvent(
             event_type="suspended",
             sequence=0,
             is_terminal=True,
-            result={
-                "success": False,
-                "interrupted": True,
-                "thread_id": e.thread_id,
-                "interaction_request": e.interaction_request,
-                "message": (
-                    f"Execution interrupted for human interaction in thread: {e.thread_id}"
-                ),
-                "metadata": {
-                    "graph_name": graph_name,
-                    "profile": profile,
-                    "checkpoint_available": True,
-                },
-            },
+            result=_runner.build_legacy_interrupt_result(e, graph_name, profile),
         )
     except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
         raise
@@ -919,7 +942,9 @@ async def resume_workflow_async(
     (T-E04-F04-004, REQ-NF-007).
     Argument and return shape are identical to resume_workflow.
     """
-    ensure_initialized(config_file=config_file)
+    # TD-018/TD-049: see run_workflow_async — offload the blocking init
+    # check behind a thread boundary instead of running it inline on the loop.
+    await ensure_initialized_async(config_file=config_file)
 
     # Sentinel: tracks whether THIS facade call performed the mark_thread_resuming
     # transition.  Needed so the CancelledError handler below can safely undo
@@ -1077,10 +1102,16 @@ async def resume_workflow_async(
                 )
         raise
 
+    except (InvalidInputs, AgentMapNotInitialized):
+        # TD-017: same rationale as the sync resume_workflow() above — these
+        # are typed exceptions the HTTP/CLI adapters map explicitly (400 /
+        # 503) and must not be collapsed into the generic envelope below.
+        raise
     except Exception as e:
         return {
             "success": False,
             "error": str(e),
+            "error_type": type(e).__name__,
             "metadata": {
                 "resume_token": resume_token,
                 "profile": profile,
@@ -1088,15 +1119,70 @@ async def resume_workflow_async(
         }
 
 
+# ---------------------------------------------------------------------------
+# TD-016: bounded concurrency for the asyncio.to_thread-backed facade wrappers.
+#
+# ``asyncio.to_thread`` dispatches onto the running loop's *default*
+# executor (``run_in_executor(None, ...)``), which is process-wide and
+# shared with any other code that also uses the default executor. Since
+# Python 3.8 that default executor is itself bounded to
+# ``min(32, os.cpu_count() + 4)`` workers -- so "unbounded" undersells the
+# existing behavior -- but it is not *explicit*: nothing here declares an
+# intentional, configurable limit for this facade's own load, and a burst of
+# concurrent list/inspect/validate calls competes for the same shared pool
+# used elsewhere in the process.
+#
+# A semaphore scoped to these three wrappers gives an explicit, configurable
+# concurrency ceiling for facade-triggered filesystem/bundle work without
+# touching ``asyncio.to_thread`` itself (an existing test,
+# ``TestAsyncWrapperNonBlocking.test_list_graphs_async_uses_thread_for_sync_io``,
+# patches ``asyncio.to_thread`` directly as its mock seam, so the call must
+# stay literally ``asyncio.to_thread(...)``).
+# ---------------------------------------------------------------------------
+
+
+def _parse_async_facade_max_concurrency() -> int:
+    """Parse AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY, floored at 1 (TD-050).
+
+    Extracted as a standalone, importable function (rather than an inline
+    module-level expression) so tests can exercise the actual parsing
+    formula directly instead of duplicating it in a local closure — a
+    duplicated closure would not catch a typo'd env-var key or an inverted
+    floor in this function.
+    """
+    return max(1, int(os.environ.get("AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY", "8")))
+
+
+_ASYNC_FACADE_MAX_CONCURRENCY = _parse_async_facade_max_concurrency()
+
+# Lazily constructed: asyncio.Semaphore() should not be instantiated at
+# import time in a way that binds it to a specific event loop.
+_async_facade_semaphore: Optional[asyncio.Semaphore] = None
+_async_facade_semaphore_lock = threading.Lock()
+
+
+def _get_async_facade_semaphore() -> asyncio.Semaphore:
+    """Return the process-wide bounded semaphore for facade to_thread calls."""
+    global _async_facade_semaphore
+    if _async_facade_semaphore is None:
+        with _async_facade_semaphore_lock:
+            if _async_facade_semaphore is None:
+                _async_facade_semaphore = asyncio.Semaphore(
+                    _ASYNC_FACADE_MAX_CONCURRENCY
+                )
+    return _async_facade_semaphore
+
+
 async def list_graphs_async(
     *, profile: Optional[str] = None, config_file: Optional[str] = None
 ) -> Dict[str, Any]:
     """Async sibling of list_graphs.  Isolates filesystem scanning in a thread."""
-    return await asyncio.to_thread(
-        list_graphs,
-        profile=profile,
-        config_file=config_file,
-    )
+    async with _get_async_facade_semaphore():
+        return await asyncio.to_thread(
+            list_graphs,
+            profile=profile,
+            config_file=config_file,
+        )
 
 
 async def inspect_graph_async(
@@ -1107,13 +1193,14 @@ async def inspect_graph_async(
     config_file: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Async sibling of inspect_graph.  Argument and return shape are identical."""
-    return await asyncio.to_thread(
-        inspect_graph,
-        graph_name,
-        csv_file=csv_file,
-        node=node,
-        config_file=config_file,
-    )
+    async with _get_async_facade_semaphore():
+        return await asyncio.to_thread(
+            inspect_graph,
+            graph_name,
+            csv_file=csv_file,
+            node=node,
+            config_file=config_file,
+        )
 
 
 async def validate_workflow_async(
@@ -1122,8 +1209,9 @@ async def validate_workflow_async(
     config_file: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Async sibling of validate_workflow.  Argument and return shape are identical."""
-    return await asyncio.to_thread(
-        validate_workflow,
-        graph_name,
-        config_file=config_file,
-    )
+    async with _get_async_facade_semaphore():
+        return await asyncio.to_thread(
+            validate_workflow,
+            graph_name,
+            config_file=config_file,
+        )

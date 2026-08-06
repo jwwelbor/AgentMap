@@ -490,3 +490,139 @@ class TestTC004B_BaseHandlerResumeAsyncAndWrappers:
                 event = {"graph": "my_graph", "state": {}}
                 handler.handle_request_sync(event, None)
                 assert init_mock.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# TD-014: interrupted (suspended) runs must not be mapped to HTTP 500
+# ---------------------------------------------------------------------------
+
+
+def _make_interrupted_payload():
+    """Return a representative interrupted run_workflow_async/resume payload."""
+    return {
+        "success": False,
+        "interrupted": True,
+        "thread_id": "thread-suspend-001",
+        "message": "Execution interrupted in thread: thread-suspend-001",
+        "interrupt_info": {"type": "human", "node_name": "approve_node"},
+        "execution_summary": None,
+        "metadata": {"graph_name": "suspend_resume::SuspendResume"},
+    }
+
+
+class TestTD014InterruptedRunsMapTo200:
+    """
+    TD-014: BaseHandler._format_http_response must map interrupted runs
+    (success=False, interrupted=True) to a 200 response carrying thread_id
+    and interrupt_info, not the generic 500 error branch.
+
+    Counter-factual: pre-fix, _format_http_response only checked
+    result['success'] so an interrupted run fell through to
+    _format_error_response(..., 500, ...) and lost thread_id/interrupt_info.
+    """
+
+    @pytest.mark.asyncio
+    async def test_handle_request_interrupted_run_returns_200_with_thread_id(self):
+        from agentmap.deployment.serverless.base_handler import BaseHandler
+
+        run_async_mock = AsyncMock(return_value=_make_interrupted_payload())
+
+        with (
+            patch("agentmap.deployment.serverless.base_handler.ensure_initialized"),
+            patch(
+                "agentmap.deployment.serverless.base_handler.run_workflow_async",
+                run_async_mock,
+            ),
+        ):
+            handler = BaseHandler(config_file=None)
+            event = {"graph": "suspend_resume::SuspendResume", "state": {}}
+            result = await handler.handle_request(event, None)
+
+        assert result["statusCode"] == 200
+        body = json.loads(result["body"])
+        assert body["success"] is False
+        assert body["interrupted"] is True
+        assert body["thread_id"] == "thread-suspend-001"
+        assert body["interrupt_info"] == {"type": "human", "node_name": "approve_node"}
+
+    @pytest.mark.asyncio
+    async def test_handle_resume_action_interrupted_returns_200_with_thread_id(self):
+        """Interrupted result on the resume path (re-suspend) also maps to 200."""
+        from agentmap.deployment.serverless.base_handler import BaseHandler
+
+        resume_async_mock = AsyncMock(return_value=_make_interrupted_payload())
+
+        with (
+            patch("agentmap.deployment.serverless.base_handler.ensure_initialized"),
+            patch(
+                "agentmap.deployment.serverless.base_handler.resume_workflow_async",
+                resume_async_mock,
+            ),
+        ):
+            handler = BaseHandler(config_file=None)
+            event = {
+                "action": "resume",
+                "thread_id": "thread-suspend-001",
+                "resume_value": "continue",
+            }
+            result = await handler.handle_request(event, None)
+
+        assert result["statusCode"] == 200
+        body = json.loads(result["body"])
+        assert body["interrupted"] is True
+        assert body["thread_id"] == "thread-suspend-001"
+
+    def test_format_http_response_interrupted_unit(self):
+        """Direct unit check of _format_http_response for the interrupted branch."""
+        from agentmap.deployment.serverless.base_handler import BaseHandler
+
+        with patch("agentmap.deployment.serverless.base_handler.ensure_initialized"):
+            handler = BaseHandler(config_file=None)
+
+        response = handler._format_http_response(
+            _make_interrupted_payload(), correlation_id="corr-1"
+        )
+
+        assert response["statusCode"] == 200
+        body = json.loads(response["body"])
+        assert body["interrupted"] is True
+        assert body["thread_id"] == "thread-suspend-001"
+        assert body["interrupt_info"]["node_name"] == "approve_node"
+
+    def test_format_http_response_legacy_interrupt_shape_populates_interrupt_info(
+        self,
+    ):
+        """Deep-review F1: the legacy ExecutionInterruptedException path
+        (GraphRunnerService.build_legacy_interrupt_result) produces
+        "interaction_request", never "interrupt_info". _format_http_response
+        must not silently drop that payload into an empty interrupt_info.
+
+        Counter-factual: pre-fix, ``result.get("interrupt_info", {})`` always
+        returned ``{}`` for this payload shape since the key is absent.
+        """
+        from agentmap.deployment.serverless.base_handler import BaseHandler
+
+        legacy_payload = {
+            "success": False,
+            "interrupted": True,
+            "thread_id": "thread-legacy-001",
+            "interaction_request": {"prompt": "Approve?", "options": ["yes", "no"]},
+            "message": "Execution interrupted for human interaction in thread: thread-legacy-001",
+            "metadata": {"graph_name": "legacy::LegacyFlow"},
+        }
+
+        with patch("agentmap.deployment.serverless.base_handler.ensure_initialized"):
+            handler = BaseHandler(config_file=None)
+
+        response = handler._format_http_response(
+            legacy_payload, correlation_id="corr-2"
+        )
+
+        assert response["statusCode"] == 200
+        body = json.loads(response["body"])
+        assert body["interrupted"] is True
+        assert body["thread_id"] == "thread-legacy-001"
+        assert body["interrupt_info"] == {
+            "prompt": "Approve?",
+            "options": ["yes", "no"],
+        }

@@ -28,6 +28,7 @@ from agentmap.deployment.http.api.dependencies import (
     get_app_config_service,
     requires_auth,
 )
+from agentmap.deployment.http.api.routes._shared import normalize_graph_identifier
 from agentmap.deployment.http.api.routes.execute import ExecuteRequest
 
 # SSE wire helpers + projection live in sse.py and the concurrency limiter in
@@ -81,11 +82,6 @@ _EVENT_POLL_INTERVAL_SECONDS = 1.0
 # Floor for the per-iteration wait budget (heartbeat_interval may be 0 in tests);
 # clamps ``asyncio.wait_for`` so it cannot busy-spin.
 _MIN_WAIT_BUDGET_SECONDS = 0.01
-
-
-def _normalize_graph_identifier(identifier: str) -> str:
-    """Normalize graph identifier to standard :: format (mirrors execute.py)."""
-    return identifier.replace("%3A%3A", "::").replace("/", "::")
 
 
 async def _sse_generator(
@@ -256,7 +252,7 @@ async def stream_workflow(
     heartbeat live in the generator.
     """
     config_file = getattr(request.app.state, "config_file", None)
-    graph_name = _normalize_graph_identifier(graph_id)
+    graph_name = normalize_graph_identifier(graph_id)
 
     # Validate graph identifier format (mirrors execute.py pre-flight check).
     if not graph_name or graph_name.count("::") > 1:

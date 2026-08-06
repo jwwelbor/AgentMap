@@ -40,7 +40,10 @@ class TestExecutionRoutes(TestCase):
             },
         }
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.run_workflow_async",
         new_callable=AsyncMock,
@@ -93,7 +96,10 @@ class TestExecutionRoutes(TestCase):
             config_file=None,
         )
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.run_workflow_async",
         new_callable=AsyncMock,
@@ -141,7 +147,10 @@ class TestExecutionRoutes(TestCase):
         mock_ensure_initialized.assert_called_once()
         mock_run_workflow_async.assert_awaited_once()
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.run_workflow_async",
         new_callable=AsyncMock,
@@ -201,7 +210,10 @@ class TestExecutionRoutes(TestCase):
             config_file=None,
         )
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.run_workflow_async",
         new_callable=AsyncMock,
@@ -241,7 +253,10 @@ class TestExecutionRoutes(TestCase):
         data = response.json()
         assert "not found" in data["detail"].lower()
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.run_workflow_async",
         new_callable=AsyncMock,
@@ -300,7 +315,10 @@ class TestExecutionRoutes(TestCase):
             config_file=None,
         )
 
-    @patch("agentmap.deployment.http.api.routes.execute.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.execute.ensure_initialized_async",
+        new_callable=AsyncMock,
+    )
     @patch(
         "agentmap.deployment.http.api.routes.execute.resume_workflow_async",
         new_callable=AsyncMock,
