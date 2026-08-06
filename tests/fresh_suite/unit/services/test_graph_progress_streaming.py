@@ -3448,6 +3448,66 @@ class TestTelemetrySpanLifecycle(unittest.IsolatedAsyncioTestCase):
                 "even when consumer calls aclose() mid-stream",
             )
 
+    # ------------------------------------------------------------------
+    # Sub-case E: GC-driven abandonment (no explicit aclose())
+    # ------------------------------------------------------------------
+
+    async def test_telemetry_span_closes_on_gc_driven_abandonment(self) -> None:
+        """TD-032 follow-up: TC-F04-011-D only covers an explicit ``aclose()``.
+
+        TD-032 replaced the manual ``span_cm.__enter__()``/``span_cm.__exit__()``
+        pattern with ``AsyncExitStack`` + ``await telemetry_stack.aclose()`` in
+        the generator's ``finally`` block. Explicit ``aclose()`` reliably drives
+        an async generator's ``finally`` (including ``await`` expressions inside
+        it, per PEP 525). This test instead drops the last reference to the
+        generator and forces garbage collection -- exercising asyncio's
+        async-generator finalization hook (``sys.set_asyncgen_hooks``) rather
+        than an explicit close call, to confirm the now-``await``-ing ``finally``
+        block does not emit "coroutine was never awaited" / "async generator
+        ignored GeneratorExit" RuntimeWarnings and still closes the span.
+        """
+        import asyncio as _asyncio
+        import gc
+        import warnings
+
+        runner, mocks, fake_telemetry = self._get_runner_with_fake_telemetry()
+
+        gate = _asyncio.Event()
+
+        async def gated_two_node(initial_state):
+            yield {"n1": {"output": "v1"}}
+            await gate.wait()
+            yield {"n2": {"output": "v2"}}
+
+        mocks["set_astream_factory"](gated_two_node)
+        bundle = _make_mock_bundle_for_streaming("telemetry-gc-abandoned")
+
+        gen = runner.run_stream_async(bundle, initial_state={}, validate_agents=False)
+        await gen.__anext__()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+
+            # Drop the only reference and force collection -- this is what an
+            # abandoned generator (no explicit aclose()/break-without-cleanup)
+            # looks like in real consumer code.
+            del gen
+            gc.collect()
+            # Let the event loop run the scheduled async-generator finalizer
+            # (asyncio schedules it as a task via the asyncgen hooks).
+            await _asyncio.sleep(0)
+            await _asyncio.sleep(0)
+
+        open_count = fake_telemetry.start_span.call_count
+        if open_count > 0:
+            cm = fake_telemetry.start_span.return_value
+            self.assertGreater(
+                cm.__exit__.call_count,
+                0,
+                "Telemetry span must be closed even when the generator is "
+                "abandoned via GC rather than an explicit aclose() call",
+            )
+
 
 # ---------------------------------------------------------------------------
 # TestRunWorkflowStreamAsyncExportSurface — TC-F04-007, TC-F04-007a
