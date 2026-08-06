@@ -1656,6 +1656,10 @@ class GraphRunnerService:
         executable_graph: Any = None
         execution_config: Optional[Dict[str, Any]] = None
         requires_checkpoint: bool = False
+        # TD-033: tracks whether the streaming phase (which finalizes the tracker
+        # itself on cancellation) was entered — see the ``except asyncio.CancelledError``
+        # handler below.
+        entered_streaming_phase: bool = False
 
         # Telemetry: open span explicitly before the iteration so it wraps
         # the full stream lifetime.  Use explicit open/close (not a `with` block)
@@ -1697,6 +1701,15 @@ class GraphRunnerService:
                 f"[GraphRunnerService] Streaming Phase 6: Executing graph {graph_name}"
             )
 
+            # TD-033: once the streaming phase is entered, any asyncio.CancelledError
+            # observed here has necessarily already passed through
+            # ``stream_compiled_graph_async``'s own ``except asyncio.CancelledError``
+            # (graph_execution_service.py ~562), which finalizes the tracker before
+            # re-raising. Set this flag BEFORE the ``async for`` so cancellation on the
+            # very first ``__anext__`` (before any item is yielded) is still correctly
+            # attributed to the streaming phase. The ``except asyncio.CancelledError``
+            # handler below uses this to skip a redundant re-finalize.
+            entered_streaming_phase = True
             async for item in self.graph_execution.stream_compiled_graph_async(
                 executable_graph=executable_graph,
                 graph_name=graph_name,
@@ -1837,7 +1850,14 @@ class GraphRunnerService:
 
         except asyncio.CancelledError:
             # Task cancellation — finalize tracker, then propagate (REQ-F-006).
-            self._finalize_tracker_safe(execution_tracker)
+            # TD-033: if cancellation occurred once the streaming phase had started,
+            # ``stream_compiled_graph_async`` already finalized the tracker in its own
+            # ``except asyncio.CancelledError`` before re-raising here — skip the
+            # redundant re-finalize. If cancellation occurred earlier (e.g. during
+            # ``_assemble_for_async_run``), the streaming phase was never entered and
+            # the tracker has not been finalized yet, so finalize it here.
+            if not entered_streaming_phase:
+                self._finalize_tracker_safe(execution_tracker)
             raise
 
         except Exception as exc:
