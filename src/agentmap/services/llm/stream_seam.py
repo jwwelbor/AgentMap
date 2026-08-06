@@ -133,6 +133,11 @@ class AnthropicStreamSeam:
         """
         import anthropic  # noqa: PLC0415
 
+        # TD-021 (defense-in-depth, Constraint C4): Anthropic natively supports
+        # ``cache_control`` in streaming (AC-14), so this seam intentionally
+        # carries the block through to the SDK unchanged rather than rejecting
+        # it.  No gate call here is correct behaviour, not an oversight — see
+        # OpenAIStreamSeam.stream() for the sibling seam that DOES reject.
         # Build or reuse the client — credentials consumed here, never logged.
         if client is None:
             api_key = (credentials or {}).get("api_key")
@@ -303,6 +308,16 @@ class OpenAIStreamSeam:
             and metadata.
         """
         import openai  # noqa: PLC0415
+
+        # TD-021 (defense-in-depth, Constraint C4): OpenAI's streaming API has
+        # no equivalent of Anthropic's ``cache_control`` blocks.  The broader
+        # provider/mode gate lives at the LLMService streaming entry point
+        # (F03's scope, spec.md §9 Out-of-Scope item 2); this is a
+        # belt-and-suspenders seam-level reject so a ``cache_control`` block
+        # that reaches this far is never silently forwarded to (and ignored
+        # by) the SDK — mirrors LangChainFallbackStreamSeam's gate below.
+        if _messages_contain_cache_control(messages):
+            _reject_unsupported_cache_control("OpenAIStreamSeam", self.provider_name)
 
         # Build or reuse the client — credentials consumed here, never logged.
         if client is None:

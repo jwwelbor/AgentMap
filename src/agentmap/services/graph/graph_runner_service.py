@@ -15,6 +15,7 @@ Refactored: Large methods extracted to dedicated modules in runner/ package.
 import asyncio
 import re
 import threading
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
 
@@ -1662,10 +1663,18 @@ class GraphRunnerService:
         entered_streaming_phase: bool = False
 
         # Telemetry: open span explicitly before the iteration so it wraps
-        # the full stream lifetime.  Use explicit open/close (not a `with` block)
-        # to avoid closing the span before the stream drains (spec §3.6 telemetry
-        # note; AC-11).
-        span = None
+        # the full stream lifetime.  Use an AsyncExitStack (TD-032) rather
+        # than the previous manual open/close pattern (span_cm.__enter__() /
+        # span_cm.__exit__(None, None, None)), since the span must survive
+        # across the `async for` below's yield-suspension points (spec §3.6
+        # telemetry note; AC-11) — closed explicitly in `finally` via
+        # `stack.aclose()`.  `enter_context` correctly captures and would
+        # return whatever `span_cm.__enter__()` actually yields (not just the
+        # CM object itself, as the old manual pattern assumed); nothing in
+        # this method currently needs that return value, but the stack —
+        # not a bare CM reference — is now the single source of truth for
+        # what needs closing, which is the hardening TD-032 asks for.
+        telemetry_stack = AsyncExitStack()
         if self._telemetry_service is not None:
             try:
                 from agentmap.services.telemetry.constants import (
@@ -1673,14 +1682,13 @@ class GraphRunnerService:
                     WORKFLOW_RUN_SPAN,
                 )
 
-                span = self._telemetry_service.start_span(
+                span_cm = self._telemetry_service.start_span(
                     WORKFLOW_RUN_SPAN,
                     attributes={GRAPH_NAME: graph_name},
                 )
-                # Enter the context manager manually
-                span.__enter__()
+                telemetry_stack.enter_context(span_cm)
             except Exception:
-                span = None
+                pass
 
         try:
             # Phases 2–5: shared assembly (D-7, D-3)
@@ -1884,12 +1892,13 @@ class GraphRunnerService:
             )
 
         finally:
-            # Close the telemetry span on every terminal path including GeneratorExit.
-            if span is not None:
-                try:
-                    span.__exit__(None, None, None)
-                except Exception:
-                    pass
+            # Close the telemetry span on every terminal path including
+            # GeneratorExit — AsyncExitStack.aclose() unwinds any entered
+            # context managers (TD-032).
+            try:
+                await telemetry_stack.aclose()
+            except Exception:
+                pass
 
     def _finalize_tracker_safe(self, execution_tracker: Any) -> None:
         """Finalize the execution tracker without raising (best-effort).
