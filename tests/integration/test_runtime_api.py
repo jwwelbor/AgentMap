@@ -421,16 +421,20 @@ class TestResumeWorkflow:
             {"thread_id": "valid_thread_123", "response_action": "continue"}
         )
 
-        # This should return success: False because the exception is caught
+        # Untyped, workflow-level failures still return success: False
+        # (TD-017: now with an error_type field preserving the exception type).
         result = resume_workflow(token_with_valid_structure)
         assert result["success"] is False
         assert "Resume service failed" in result["error"]
+        assert result["error_type"] == "RuntimeError"
 
-        # Test with missing thread_id - this should return success: False because exception is caught
+        # Test with missing thread_id - TD-017: InvalidInputs is a typed
+        # exception the runtime facade contract requires callers (HTTP/CLI
+        # adapters) be able to map explicitly (400 / exit code 2), so it must
+        # now propagate rather than collapse into the generic envelope.
         token = json.dumps({"response_action": "continue"})
-        result = resume_workflow(token)
-        assert result["success"] is False
-        assert "valid thread_id" in result["error"]
+        with pytest.raises(InvalidInputs, match="valid thread_id"):
+            resume_workflow(token)
 
 
 class TestListGraphs:

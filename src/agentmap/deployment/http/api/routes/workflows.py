@@ -2,6 +2,7 @@
 Workflow query routes - Simple and clean.
 """
 
+import asyncio
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -72,7 +73,10 @@ router = APIRouter(prefix="/workflows", tags=["Workflows"])
 async def list_workflows(request: Request):
     """List all available workflows."""
     try:
-        ensure_initialized()
+        # TD-018: ensure_initialized() does synchronous filesystem I/O on
+        # every call; offload it behind a thread boundary (REQ-NF-001)
+        # instead of blocking the event loop on this async request path.
+        await asyncio.to_thread(ensure_initialized)
 
         result = await list_graphs_async()
         if not result.get("success"):
@@ -151,7 +155,8 @@ async def list_workflows(request: Request):
 async def get_workflow_details(graph_id: str, request: Request):
     """Get details for a specific workflow."""
     try:
-        ensure_initialized()
+        # TD-018: see list_workflows above.
+        await asyncio.to_thread(ensure_initialized)
 
         # Handle URL encoding and alternative separators
         graph_id = graph_id.replace("%3A%3A", "::").replace("/", "::")
