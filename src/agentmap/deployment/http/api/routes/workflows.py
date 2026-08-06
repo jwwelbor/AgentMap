@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from agentmap.deployment.http.api.dependencies import requires_auth
+from agentmap.deployment.http.api.routes._shared import normalize_graph_identifier
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
@@ -159,7 +160,7 @@ async def get_workflow_details(graph_id: str, request: Request):
         await asyncio.to_thread(ensure_initialized)
 
         # Handle URL encoding and alternative separators
-        graph_id = graph_id.replace("%3A%3A", "::").replace("/", "::")
+        graph_id = normalize_graph_identifier(graph_id)
 
         result = await inspect_graph_async(graph_id)
         if not result.get("success"):

@@ -588,3 +588,41 @@ class TestTD014InterruptedRunsMapTo200:
         assert body["interrupted"] is True
         assert body["thread_id"] == "thread-suspend-001"
         assert body["interrupt_info"]["node_name"] == "approve_node"
+
+    def test_format_http_response_legacy_interrupt_shape_populates_interrupt_info(
+        self,
+    ):
+        """Deep-review F1: the legacy ExecutionInterruptedException path
+        (GraphRunnerService.build_legacy_interrupt_result) produces
+        "interaction_request", never "interrupt_info". _format_http_response
+        must not silently drop that payload into an empty interrupt_info.
+
+        Counter-factual: pre-fix, ``result.get("interrupt_info", {})`` always
+        returned ``{}`` for this payload shape since the key is absent.
+        """
+        from agentmap.deployment.serverless.base_handler import BaseHandler
+
+        legacy_payload = {
+            "success": False,
+            "interrupted": True,
+            "thread_id": "thread-legacy-001",
+            "interaction_request": {"prompt": "Approve?", "options": ["yes", "no"]},
+            "message": "Execution interrupted for human interaction in thread: thread-legacy-001",
+            "metadata": {"graph_name": "legacy::LegacyFlow"},
+        }
+
+        with patch("agentmap.deployment.serverless.base_handler.ensure_initialized"):
+            handler = BaseHandler(config_file=None)
+
+        response = handler._format_http_response(
+            legacy_payload, correlation_id="corr-2"
+        )
+
+        assert response["statusCode"] == 200
+        body = json.loads(response["body"])
+        assert body["interrupted"] is True
+        assert body["thread_id"] == "thread-legacy-001"
+        assert body["interrupt_info"] == {
+            "prompt": "Approve?",
+            "options": ["yes", "no"],
+        }

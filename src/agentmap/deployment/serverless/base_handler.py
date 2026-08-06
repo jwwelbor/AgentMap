@@ -195,11 +195,21 @@ class BaseHandler:
             # ``_build_execute_response`` behaviour (200 + thread_id +
             # interrupt_info) instead of falling through to the generic 500
             # error branch below.
+            # Two interrupt producers feed this branch with different payload
+            # keys: the native GraphInterrupt suspend path sets
+            # "interrupt_info" (type/node_name dict), while the legacy
+            # ExecutionInterruptedException path
+            # (GraphRunnerService.build_legacy_interrupt_result) sets
+            # "interaction_request" instead. Read whichever is present so
+            # neither producer's payload is silently dropped.
+            interrupt_payload = result.get("interrupt_info")
+            if interrupt_payload is None:
+                interrupt_payload = result.get("interaction_request", {})
             body = {
                 "success": False,
                 "interrupted": True,
                 "thread_id": result.get("thread_id"),
-                "interrupt_info": result.get("interrupt_info", {}),
+                "interrupt_info": interrupt_payload,
                 "message": result.get("message"),
                 "correlation_id": correlation_id,
                 "metadata": result.get("metadata", {}),

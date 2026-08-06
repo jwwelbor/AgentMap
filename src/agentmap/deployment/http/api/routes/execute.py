@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from agentmap.deployment.http.api.dependencies import requires_auth
+from agentmap.deployment.http.api.routes._shared import normalize_graph_identifier
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
@@ -122,26 +123,6 @@ class ResumeResponse(BaseModel):
 router = APIRouter(tags=["Execution"])
 
 
-def _normalize_graph_identifier(identifier: str) -> str:
-    """Normalize graph identifier to standard format.
-
-    TD-015: the previous implementation blanket-replaced every "/" with
-    "::", which turns a nested workflow path like "sub/folder::graph" (or
-    an already-"::"-form identifier that happens to contain a "/" inside
-    the workflow segment) into multiple "::" tokens and trips the
-    ``count("::") > 1`` validation below. Only the *last* path separator is
-    converted, matching ``_resolve_csv_path``'s
-    ``identifier.rsplit("/", 1)`` convention for splitting workflow/graph
-    on "/"-style identifiers, and identifiers already in "::" form are left
-    untouched.
-    """
-    identifier = identifier.replace("%3A%3A", "::")
-    if "::" not in identifier and "/" in identifier:
-        workflow_part, graph_part = identifier.rsplit("/", 1)
-        identifier = f"{workflow_part}::{graph_part}"
-    return identifier
-
-
 def _to_serializable(value: Any) -> Any:
     """Convert dataclasses, datetimes, and nested structures into JSON-friendly values."""
     if value is None:
@@ -207,6 +188,16 @@ def _build_execute_response(
     success = bool(runtime_result.get("success")) and not interrupted
     status = "completed" if success else "suspended" if interrupted else "failed"
 
+    # Two interrupt producers feed this response with different payload
+    # keys: the native GraphInterrupt suspend path sets "interrupt_info"
+    # (type/node_name dict), while the legacy ExecutionInterruptedException
+    # path (GraphRunnerService.build_legacy_interrupt_result) sets
+    # "interaction_request" instead. Read whichever is present so neither
+    # producer's payload is silently dropped.
+    interrupt_payload = runtime_result.get("interrupt_info")
+    if interrupt_payload is None:
+        interrupt_payload = runtime_result.get("interaction_request")
+
     response = ExecuteResponse(
         success=success,
         status=status,
@@ -215,7 +206,7 @@ def _build_execute_response(
         outputs=_sanitize_outputs(runtime_result),
         execution_summary=_extract_execution_summary(runtime_result),
         metadata=_to_serializable(runtime_result.get("metadata")),
-        interrupt_info=_to_serializable(runtime_result.get("interrupt_info")),
+        interrupt_info=_to_serializable(interrupt_payload),
         error=runtime_result.get("error"),
         execution_id=execution_id,
     )
@@ -268,7 +259,7 @@ async def _execute_workflow_internal(
         await asyncio.to_thread(ensure_initialized, config_file=config_file)
 
         # Normalize identifier
-        graph_identifier = _normalize_graph_identifier(graph_identifier)
+        graph_identifier = normalize_graph_identifier(graph_identifier)
 
         # Validate format
         if not graph_identifier or graph_identifier.count("::") > 1:

@@ -646,6 +646,34 @@ class TestGetWorkflowDetailsAwaitsAsyncFacade:
         assert data["workflow"] == "customer_service"
         assert data["graph"] == "support_flow"
 
+    @patch("agentmap.deployment.http.api.routes.workflows.ensure_initialized")
+    @patch(
+        "agentmap.deployment.http.api.routes.workflows.inspect_graph_async",
+        new_callable=AsyncMock,
+    )
+    def test_get_workflow_details_nested_workflow_path_does_not_produce_double_colon(
+        self, mock_inspect_graph_async, mock_ensure_initialized
+    ):
+        """TD-015 sibling fix: a nested workflow subfolder path must not be
+        blanket-converted into multiple "::" tokens on the workflows route.
+
+        Counter-factual: the pre-fix inline ``.replace("/", "::")`` turned
+        "subfolder/inner/graph" into "subfolder::inner::graph" (two "::"
+        tokens), which trips ``_resolve_csv_path``'s ``count("::") != 1``
+        guard and returns 404 instead of resolving to the
+        (workflow-with-subfolder, graph) split.
+        """
+        mock_ensure_initialized.return_value = None
+        mock_inspect_graph_async.return_value = _make_inspect_graph_payload()
+
+        client = self._make_client()
+        response = client.get("/workflows/subfolder/inner/graph")
+
+        assert response.status_code == 200, response.text
+        mock_inspect_graph_async.assert_awaited_once()
+        (called_graph_id,), _ = mock_inspect_graph_async.call_args
+        assert called_graph_id == "subfolder/inner::graph"
+
 
 # ---------------------------------------------------------------------------
 # TD-018: route-level ensure_initialized() must not block the event loop
