@@ -112,6 +112,48 @@ _SURFACE_LABELS = {
 _BATCH_INCOMPATIBLE_PARAMS = frozenset({"stream"})
 
 
+def _collect_one_surface(
+    label: str,
+    opts: Optional[Dict[str, Any]],
+    param: ReservedParam,
+    spec_id: Any,
+) -> Optional[Tuple[str, Any]]:
+    """
+    Collect and conflict-check the canonical + alias keys for ``param`` within
+    a single options dict (S2 or S4), returning ``(label, value)`` if any key
+    is present, or ``None`` if the surface is unset.
+
+    Collect ALL present canonical+alias keys; if they disagree → intra-surface
+    conflict (N4 / AC-8).  This must NOT break early: a caller who sets both
+    "max_tokens" and "max_output_tokens" in the same dict with different values
+    must get ``LLMBatchParamConflictError``, not a silent canonical-precedence
+    win.
+
+    Distinct values are compared via sequential ``!=`` (not ``set()``) so that
+    unhashable option values (dict, list, set, ...) are handled uniformly and
+    never leak a raw ``TypeError`` (TD-003).
+    """
+    if not opts:
+        return None
+
+    keys_to_check = [param.options_key] + sorted(param.aliases)
+    hits: List[Tuple[str, Any]] = [(k, opts[k]) for k in keys_to_check if k in opts]
+    if not hits:
+        return None
+
+    values = [v for _, v in hits]
+    keys = [k for k, _ in hits]
+    first = values[0]
+    if any(v != first for v in values[1:]):
+        raise LLMBatchParamConflictError(
+            f"request_id={spec_id!r}: conflicting values for "
+            f"parameter {param.logical!r} within {_SURFACE_LABELS[label]} — "
+            f"keys {keys} have different values {values}. "
+            "Set this parameter using exactly one key."
+        )
+    return (label, first)
+
+
 def _collect_surfaces(
     param: ReservedParam,
     spec: LLMRequest,
@@ -137,31 +179,9 @@ def _collect_surfaces(
             surfaces.append(("S1", val))
 
     # S2 — per-spec request_options (canonical key or any alias).
-    # Collect ALL present canonical+alias keys; if they disagree → intra-surface
-    # conflict (N4 / AC-8).  This must NOT break early: a caller who sets both
-    # "max_tokens" and "max_output_tokens" in the same dict with different values
-    # must get LLMBatchParamConflictError, not a silent canonical-precedence win.
-    if spec.request_options:
-        _keys_to_check = [param.options_key] + sorted(param.aliases)
-        _s2_hits: List[Tuple[str, Any]] = [
-            (_k, spec.request_options[_k])
-            for _k in _keys_to_check
-            if _k in spec.request_options
-        ]
-        if _s2_hits:
-            _s2_values = [v for _, v in _s2_hits]
-            _s2_keys = [k for k, _ in _s2_hits]
-            if len({v for v in _s2_values if not isinstance(v, (dict, list))}) > 1 or (
-                any(isinstance(v, (dict, list)) for v in _s2_values)
-                and any(v != _s2_values[0] for v in _s2_values[1:])
-            ):
-                raise LLMBatchParamConflictError(
-                    f"request_id={spec.request_id!r}: conflicting values for "
-                    f"parameter {param.logical!r} within spec.request_options — "
-                    f"keys {_s2_keys} have different values {_s2_values}. "
-                    "Set this parameter using exactly one key."
-                )
-            surfaces.append(("S2", _s2_values[0]))
+    s2_hit = _collect_one_surface("S2", spec.request_options, param, spec.request_id)
+    if s2_hit is not None:
+        surfaces.append(s2_hit)
 
     # S3 — batch-level direct field
     if param.request_field is not None:
@@ -170,28 +190,9 @@ def _collect_surfaces(
             surfaces.append(("S3", val))
 
     # S4 — batch-level request_options (canonical key or any alias).
-    # Same intra-surface conflict detection as S2 (N4 / AC-8).
-    if request.request_options:
-        _keys_to_check = [param.options_key] + sorted(param.aliases)
-        _s4_hits: List[Tuple[str, Any]] = [
-            (_k, request.request_options[_k])
-            for _k in _keys_to_check
-            if _k in request.request_options
-        ]
-        if _s4_hits:
-            _s4_values = [v for _, v in _s4_hits]
-            _s4_keys = [k for k, _ in _s4_hits]
-            if len({v for v in _s4_values if not isinstance(v, (dict, list))}) > 1 or (
-                any(isinstance(v, (dict, list)) for v in _s4_values)
-                and any(v != _s4_values[0] for v in _s4_values[1:])
-            ):
-                raise LLMBatchParamConflictError(
-                    f"request_id={spec.request_id!r}: conflicting values for "
-                    f"parameter {param.logical!r} within request.request_options — "
-                    f"keys {_s4_keys} have different values {_s4_values}. "
-                    "Set this parameter using exactly one key."
-                )
-            surfaces.append(("S4", _s4_values[0]))
+    s4_hit = _collect_one_surface("S4", request.request_options, param, spec.request_id)
+    if s4_hit is not None:
+        surfaces.append(s4_hit)
 
     return surfaces
 

@@ -524,6 +524,43 @@ def test_intra_surface_S4_canonical_and_alias_same_values_allowed():
     assert resolved["max_tokens"] == 512
 
 
+def test_intra_surface_S2_unhashable_alias_conflict_raises_typed_error():
+    """TD-003: unhashable option values (e.g. a set) within S2 must raise
+    LLMBatchParamConflictError, not a raw TypeError, when canonical + alias
+    disagree in the same options dict."""
+    spec = LLMRequest(
+        request_id="s1",
+        messages=[{"role": "user", "content": "hi"}],
+        request_options={"max_tokens": {1, 2}, "max_output_tokens": {3, 4}},
+    )
+    request = LLMBatchSubmitRequest(
+        provider="anthropic",
+        model="claude-3-5-haiku",
+        max_tokens=None,
+        requests=[],
+    )
+    with pytest.raises(LLMBatchParamConflictError) as exc_info:
+        resolve_request_params(spec, request)
+    msg = str(exc_info.value)
+    assert "max_tokens" in msg
+    assert "s1" in msg
+
+
+def test_intra_surface_S4_unhashable_alias_same_value_allowed():
+    """TD-003: unhashable option values (e.g. a set) within S4 that are equal
+    must resolve without raising, even though they are not hashable."""
+    request = LLMBatchSubmitRequest(
+        provider="anthropic",
+        model="claude-3-5-haiku",
+        max_tokens=None,
+        requests=[],
+        request_options={"max_tokens": {1, 2}, "max_output_tokens": {1, 2}},
+    )
+    spec = _base_spec()
+    resolved = resolve_request_params(spec, request)
+    assert resolved["max_tokens"] == {1, 2}
+
+
 def _intra_surface_alias_cases():
     """
     Registry-driven intra-surface alias conflict cases.
