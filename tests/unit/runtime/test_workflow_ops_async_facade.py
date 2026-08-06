@@ -215,6 +215,62 @@ class TestRunWorkflowAsyncUsesNativeRunner:
         graph_runner.run_async.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_run_workflow_async_legacy_interrupt_delegates_to_runner(self):
+        """TD-031: the legacy ExecutionInterruptedException handler must delegate
+        the suspended-result mapping to GraphRunnerService.build_legacy_interrupt_result
+        rather than constructing the dict inline — the single canonical mapping
+        lives on the runner.
+
+        COUNTER-FACTUAL: pre-fix, run_workflow_async built the result dict as an
+        inline literal and never called ``build_legacy_interrupt_result`` at all;
+        ``assert_called_once_with`` would fail (never called) against that code,
+        and the returned dict would not be the exact object the mock stub returns.
+        """
+        from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
+        from agentmap.models.human_interaction import (
+            HumanInteractionRequest,
+            InteractionType,
+        )
+
+        interaction_request = HumanInteractionRequest(
+            thread_id="legacy-thread-99",
+            node_name="approval_node",
+            interaction_type=InteractionType.APPROVAL,
+            prompt="Approve?",
+        )
+        exc = ExecutionInterruptedException(
+            thread_id="legacy-thread-99",
+            interaction_request=interaction_request,
+            checkpoint_data={},
+        )
+
+        run_result = _make_execution_result(success=True)
+        container, graph_runner = _make_mock_container(run_result)
+        graph_runner.run_async = AsyncMock(side_effect=exc)
+        sentinel_result = {"success": False, "interrupted": True, "sentinel": True}
+        graph_runner.build_legacy_interrupt_result = MagicMock(
+            return_value=sentinel_result
+        )
+
+        with (
+            patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=container,
+            ),
+            patch(
+                "agentmap.runtime.workflow_ops._resolve_csv_path",
+                return_value=(MagicMock(), "test_graph"),
+            ),
+        ):
+            result = await run_workflow_async("test_graph", {}, profile="dev")
+
+        graph_runner.build_legacy_interrupt_result.assert_called_once_with(
+            exc, "test_graph", "dev"
+        )
+        assert result is sentinel_result
+
+    @pytest.mark.asyncio
     async def test_run_workflow_async_forwards_force_create(self):
         """force_create is forwarded to get_or_create_bundle."""
         run_result = _make_execution_result(success=True)

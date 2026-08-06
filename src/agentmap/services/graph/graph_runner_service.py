@@ -1656,6 +1656,10 @@ class GraphRunnerService:
         executable_graph: Any = None
         execution_config: Optional[Dict[str, Any]] = None
         requires_checkpoint: bool = False
+        # TD-033: tracks whether the streaming phase (which finalizes the tracker
+        # itself on cancellation) was entered — see the ``except asyncio.CancelledError``
+        # handler below.
+        entered_streaming_phase: bool = False
 
         # Telemetry: open span explicitly before the iteration so it wraps
         # the full stream lifetime.  Use explicit open/close (not a `with` block)
@@ -1697,6 +1701,15 @@ class GraphRunnerService:
                 f"[GraphRunnerService] Streaming Phase 6: Executing graph {graph_name}"
             )
 
+            # TD-033: once the streaming phase is entered, any asyncio.CancelledError
+            # observed here has necessarily already passed through
+            # ``stream_compiled_graph_async``'s own ``except asyncio.CancelledError``
+            # (graph_execution_service.py ~562), which finalizes the tracker before
+            # re-raising. Set this flag BEFORE the ``async for`` so cancellation on the
+            # very first ``__anext__`` (before any item is yielded) is still correctly
+            # attributed to the streaming phase. The ``except asyncio.CancelledError``
+            # handler below uses this to skip a redundant re-finalize.
+            entered_streaming_phase = True
             async for item in self.graph_execution.stream_compiled_graph_async(
                 executable_graph=executable_graph,
                 graph_name=graph_name,
@@ -1823,21 +1836,9 @@ class GraphRunnerService:
                 event_type="suspended",
                 sequence=sequence,
                 is_terminal=True,
-                result={
-                    "success": False,
-                    "interrupted": True,
-                    "thread_id": e.thread_id,
-                    "interaction_request": e.interaction_request,
-                    "message": (
-                        f"Execution interrupted for human interaction in "
-                        f"thread: {e.thread_id}"
-                    ),
-                    "metadata": {
-                        "graph_name": metadata_graph_name,
-                        "profile": profile,
-                        "checkpoint_available": True,
-                    },
-                },
+                result=self.build_legacy_interrupt_result(
+                    e, metadata_graph_name, profile
+                ),
             )
             return
 
@@ -1849,7 +1850,14 @@ class GraphRunnerService:
 
         except asyncio.CancelledError:
             # Task cancellation — finalize tracker, then propagate (REQ-F-006).
-            self._finalize_tracker_safe(execution_tracker)
+            # TD-033: if cancellation occurred once the streaming phase had started,
+            # ``stream_compiled_graph_async`` already finalized the tracker in its own
+            # ``except asyncio.CancelledError`` before re-raising here — skip the
+            # redundant re-finalize. If cancellation occurred earlier (e.g. during
+            # ``_assemble_for_async_run``), the streaming phase was never entered and
+            # the tracker has not been finalized yet, so finalize it here.
+            if not entered_streaming_phase:
+                self._finalize_tracker_safe(execution_tracker)
             raise
 
         except Exception as exc:
@@ -1951,6 +1959,54 @@ class GraphRunnerService:
         return self._shape_streaming_result(
             result, metadata_graph_name, profile=profile
         )
+
+    def build_legacy_interrupt_result(
+        self,
+        error: ExecutionInterruptedException,
+        graph_name: str,
+        profile: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build the resumable 'suspended' result dict for a legacy
+        ``ExecutionInterruptedException`` (B-1 human-interaction pattern) (TD-031).
+
+        Single canonical mapping for this exception -> result-dict shape.
+        Public (not name-mangled with a leading underscore) so it is callable
+        across the module boundary from ``runtime/workflow_ops.py``'s
+        ``run_workflow_stream_async`` facade, which needs the identical mapping
+        for the (currently unreachable, defensive-only) case where the
+        exception is raised in its pre-stream prelude — before
+        ``run_stream_async`` (whose own ``except ExecutionInterruptedException``
+        handler also calls this) is ever entered. Consolidates what was
+        previously duplicated dict-literal construction in both places
+        (TD-031; was scattered between ``graph_runner_service.py`` and
+        ``workflow_ops.py``).
+
+        Args:
+            error: The raised ``ExecutionInterruptedException``.
+            graph_name: Caller-facing graph name to echo in
+                ``metadata.graph_name``.
+            profile: Optional profile/environment name to echo in
+                ``metadata.profile``.
+
+        Returns:
+            Result dict matching the shape ``run_workflow_async``'s own
+            ``except ExecutionInterruptedException`` handler produces (parity).
+        """
+        return {
+            "success": False,
+            "interrupted": True,
+            "thread_id": error.thread_id,
+            "interaction_request": error.interaction_request,
+            "message": (
+                f"Execution interrupted for human interaction in thread: "
+                f"{error.thread_id}"
+            ),
+            "metadata": {
+                "graph_name": graph_name,
+                "profile": profile,
+                "checkpoint_available": True,
+            },
+        }
 
     def _build_graph_interrupt_result(
         self,
