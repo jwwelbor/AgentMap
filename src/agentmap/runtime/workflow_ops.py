@@ -804,7 +804,16 @@ async def run_workflow_async(
         # TD-031: single canonical mapping lives on GraphRunnerService
         # (build_legacy_interrupt_result), shared with the streaming facade's
         # equivalent handler so suspension mapping is not duplicated.
-        return graph_runner.build_legacy_interrupt_result(e, graph_name, profile)
+        # Re-fetched (rather than reusing the `graph_runner` local) because
+        # ExecutionInterruptedException can only originate from
+        # graph_runner.run_async, but a fresh lookup keeps this handler
+        # correct even if that invariant changes.
+        graph_runner_service: GraphRunnerService = (
+            RuntimeManager.get_container().graph_runner_service()
+        )
+        return graph_runner_service.build_legacy_interrupt_result(
+            e, graph_name, profile
+        )
     except (GraphNotFound, InvalidInputs, AgentMapNotInitialized):
         raise
     except FileNotFoundError as e:
