@@ -4,6 +4,7 @@ These routes mirror the runtime facade that powers the CLI, including
 the richer suspend/resume behavior (status reporting, summaries, thread ids).
 """
 
+import asyncio
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -122,9 +123,23 @@ router = APIRouter(tags=["Execution"])
 
 
 def _normalize_graph_identifier(identifier: str) -> str:
-    """Normalize graph identifier to standard format."""
-    # Handle URL encoding and alternative separators
-    return identifier.replace("%3A%3A", "::").replace("/", "::")
+    """Normalize graph identifier to standard format.
+
+    TD-015: the previous implementation blanket-replaced every "/" with
+    "::", which turns a nested workflow path like "sub/folder::graph" (or
+    an already-"::"-form identifier that happens to contain a "/" inside
+    the workflow segment) into multiple "::" tokens and trips the
+    ``count("::") > 1`` validation below. Only the *last* path separator is
+    converted, matching ``_resolve_csv_path``'s
+    ``identifier.rsplit("/", 1)`` convention for splitting workflow/graph
+    on "/"-style identifiers, and identifiers already in "::" form are left
+    untouched.
+    """
+    identifier = identifier.replace("%3A%3A", "::")
+    if "::" not in identifier and "/" in identifier:
+        workflow_part, graph_part = identifier.rsplit("/", 1)
+        identifier = f"{workflow_part}::{graph_part}"
+    return identifier
 
 
 def _to_serializable(value: Any) -> Any:
@@ -246,7 +261,11 @@ async def _execute_workflow_internal(
 ) -> ExecuteResponse:
     """Internal execution logic shared by all endpoints."""
     try:
-        ensure_initialized(config_file=config_file)
+        # TD-018: ensure_initialized() does synchronous filesystem I/O (a
+        # Path.exists() cache check) on every call, not just the first, so
+        # calling it inline here blocks the event loop on every request.
+        # Offload it behind a thread boundary (REQ-NF-001).
+        await asyncio.to_thread(ensure_initialized, config_file=config_file)
 
         # Normalize identifier
         graph_identifier = _normalize_graph_identifier(graph_identifier)
@@ -277,21 +296,16 @@ async def _execute_workflow_internal(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/execute/{graph_id:path}", response_model=ExecuteResponse)
-@requires_auth("execute")
-async def execute_workflow(
-    graph_id: str, request_body: ExecuteRequest, request: Request
-):
-    """
-    Execute a workflow using its graph identifier.
-
-    Graph ID format: workflow::graph (e.g., customer_service::support_flow)
-    Also accepts: workflow/graph or URL-encoded workflow%3A%3Agraph
-    """
-    config_file = getattr(request.app.state, "config_file", None)
-    return await _execute_workflow_internal(graph_id, request_body, config_file)
-
-
+# TD-015: route registration order matters. FastAPI/Starlette match routes in
+# registration order, and a ``{param:path}`` converter matches every segment
+# (including "/") after the prefix — so a catch-all registered before a more
+# specific "/execute/{workflow}/{graph}" route would shadow it for every
+# two-segment path. The two-param route is therefore registered first here.
+# ``execute_workflow`` (single ``:path`` catch-all) stays registered next so
+# it keeps handling single-segment and "::"-form identifiers exactly as
+# before. ``execute_workflow_single_param`` is a second ``:path`` catch-all
+# on the same prefix, so it remains unreachable either way (pre-existing;
+# left in place as a documented public route rather than removed here).
 @router.post("/execute/{workflow}/{graph}", response_model=ExecuteResponse)
 @requires_auth("execute")
 async def execute_workflow_two_param(
@@ -312,6 +326,21 @@ async def execute_workflow_two_param(
     graph_identifier = f"{workflow}::{graph}"
     config_file = getattr(request.app.state, "config_file", None)
     return await _execute_workflow_internal(graph_identifier, request_body, config_file)
+
+
+@router.post("/execute/{graph_id:path}", response_model=ExecuteResponse)
+@requires_auth("execute")
+async def execute_workflow(
+    graph_id: str, request_body: ExecuteRequest, request: Request
+):
+    """
+    Execute a workflow using its graph identifier.
+
+    Graph ID format: workflow::graph (e.g., customer_service::support_flow)
+    Also accepts: workflow/graph or URL-encoded workflow%3A%3Agraph
+    """
+    config_file = getattr(request.app.state, "config_file", None)
+    return await _execute_workflow_internal(graph_id, request_body, config_file)
 
 
 @router.post("/execute/{workflow_graph:path}", response_model=ExecuteResponse)
@@ -358,7 +387,8 @@ async def resume_execution(
     """
     try:
         config_file = getattr(request.app.state, "config_file", None)
-        ensure_initialized(config_file=config_file)
+        # TD-018: see _execute_workflow_internal above.
+        await asyncio.to_thread(ensure_initialized, config_file=config_file)
 
         # Validate thread_id
         if not thread_id or len(thread_id) < 10:
