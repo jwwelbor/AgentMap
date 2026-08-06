@@ -883,6 +883,138 @@ class TestLLMClientFactoryStreamingConstruction(unittest.TestCase):
             "Factory must not construct native AsyncAnthropic",
         )
 
+    def test_bnd1b_f02_commit_diff_scope_excludes_stream_seam_td025(self):
+        """TC-F02-BND-1 (TD-025a): diff-scope guard — F02's actual commits never
+        touch stream_seam.py.
+
+        The substring check in ``test_bnd1_factory_contains_no_native_sdk_construction``
+        only proves the seam still *contains* a marker string — it would still
+        pass if F02 had modified the native seam elsewhere. This test asserts
+        directly on the git diff of F02's actual commits (68e1141, c1d5060),
+        which is the only way to prove the change set's scope rather than
+        inferring it from a substring surviving in the current file.
+
+        Skipped (not failed) when the repository history has been rewritten
+        and these specific commit hashes are no longer resolvable (e.g. a
+        squash-merge rewrite of an unrelated ancestor) — this is a structural
+        history guard, not a behavioral one.
+        """
+        import os
+        import subprocess
+
+        # Resolve relative to this test file (not the process cwd) so the
+        # guard still runs correctly from a worktree or when pytest is
+        # invoked from a directory other than the repo root.
+        repo_root = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "../../../../")
+        )
+
+        commits = ["68e1141", "c1d5060"]
+        for commit in commits:
+            check = subprocess.run(
+                ["git", "cat-file", "-t", commit],
+                capture_output=True,
+                text=True,
+                cwd=repo_root,
+            )
+            if check.returncode != 0 or check.stdout.strip() != "commit":
+                self.skipTest(
+                    f"commit {commit} not resolvable in this checkout's history "
+                    "(TD-025a diff-scope guard requires it) — skipping rather "
+                    "than failing on an unrelated history rewrite."
+                )
+
+        for commit in commits:
+            result = subprocess.run(
+                ["git", "show", "--name-only", "--pretty=format:", commit],
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=repo_root,
+            )
+            touched_files = {
+                line.strip() for line in result.stdout.splitlines() if line.strip()
+            }
+            self.assertNotIn(
+                "src/agentmap/services/llm/stream_seam.py",
+                touched_files,
+                f"F02 commit {commit} must not touch stream_seam.py — AC-11 "
+                f"requires F02 stay factory-scoped; touched files: {touched_files}",
+            )
+
+
+class TestLLMClientFactoryStreamingNonBoolInput(unittest.TestCase):
+    """TD-025(b): non-bool ``streaming`` input must be rejected (TD-024).
+
+    Companion test for TD-024's runtime hardening of the ``streaming``
+    parameter — a truthy non-bool value (e.g. the string ``"False"``) used
+    to alias a streaming-aware client and a non-streaming client under the
+    same f-string-rendered cache key.
+    """
+
+    def setUp(self):
+        self.logging_service = MockServiceFactory.create_mock_logging_service()
+        self.factory = LLMClientFactory(self.logging_service)
+        self._config = {
+            "api_key": "test_key_123456",
+            "model": "claude-3-haiku-20240307",
+            "temperature": 0.4,
+            "max_tokens": 256,
+        }
+
+    def test_get_or_create_client_rejects_string_false(self):
+        """The string "False" is truthy but must not alias streaming=False."""
+        with self.assertRaises(TypeError):
+            self.factory.get_or_create_client(
+                "anthropic", self._config, streaming="False"
+            )
+
+    def test_get_or_create_client_rejects_string_true(self):
+        with self.assertRaises(TypeError):
+            self.factory.get_or_create_client(
+                "anthropic", self._config, streaming="True"
+            )
+
+    def test_get_or_create_client_rejects_int(self):
+        with self.assertRaises(TypeError):
+            self.factory.get_or_create_client("anthropic", self._config, streaming=1)
+
+    def test_get_or_create_client_rejects_none(self):
+        with self.assertRaises(TypeError):
+            self.factory.get_or_create_client("anthropic", self._config, streaming=None)
+
+    def test_create_langchain_client_rejects_non_bool_directly(self):
+        """Defense-in-depth: the private builder also validates independently
+        of ``get_or_create_client`` (it is reachable directly — see
+        ``llm_service.py``'s ``_create_langchain_client`` backwards-compat
+        wrapper)."""
+        with self.assertRaises(TypeError):
+            self.factory._create_langchain_client(
+                "anthropic", self._config, streaming="False"
+            )
+
+    def test_no_aliasing_after_fix_true_bool_and_string_stay_distinct(self):
+        """Once TypeError is raised for non-bool input, no cache entry is
+        created for the rejected call — confirming the aliasing scenario
+        TD-024 describes cannot occur post-fix."""
+        with patch("langchain_anthropic.ChatAnthropic") as mock_cls:
+            real_client = Mock(name="real_streaming_false_client")
+            mock_cls.return_value = real_client
+
+            result = self.factory.get_or_create_client(
+                "anthropic", self._config, streaming=False
+            )
+            self.assertIs(result, real_client)
+
+            with self.assertRaises(TypeError):
+                self.factory.get_or_create_client(
+                    "anthropic", self._config, streaming="False"
+                )
+
+            # The legitimate streaming=False client must still be the only
+            # cache entry — the rejected string input created no aliasing entry.
+            self.assertEqual(len(self.factory._clients), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
