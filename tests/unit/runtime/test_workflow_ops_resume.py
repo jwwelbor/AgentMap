@@ -168,6 +168,10 @@ class TestResumeWorkflowRuntimeAPI(unittest.TestCase):
         self.assertEqual(result["metadata"]["resume_token"], resume_token)
         self.assertIsNone(result["metadata"]["profile"])
 
+        # TD-017: untyped workflow-level failures still envelope, but now
+        # preserve the exception type instead of an opaque success=False.
+        self.assertEqual(result["error_type"], "RuntimeError")
+
     @patch("agentmap.runtime.workflow_ops.ensure_initialized")
     def test_resume_workflow_invalid_token_format(self, mock_ensure_init):
         """Test resume workflow with invalid token format."""
@@ -180,6 +184,26 @@ class TestResumeWorkflowRuntimeAPI(unittest.TestCase):
         # Should treat as plain thread_id and succeed/fail based on that
         self.assertFalse(result["success"])
         self.assertIn("error", result)
+
+    @patch("agentmap.runtime.workflow_ops.ensure_initialized")
+    def test_resume_workflow_invalid_thread_id_raises_invalid_inputs(
+        self, mock_ensure_init
+    ):
+        """TD-017: InvalidInputs from _parse_resume_token must propagate to the
+        caller, not collapse into the generic success=False envelope.
+
+        Counter-factual: a buggy resume_workflow() that swallows all
+        exceptions (including InvalidInputs) into {success: False, error}
+        would make this test fail with an AssertionError instead of the
+        expected InvalidInputs raise, and HTTP/CLI adapters would lose the
+        400/exit-code-2 mapping they rely on for this exception type.
+        """
+        # A token with no thread_id triggers InvalidInputs inside
+        # _parse_resume_token, which runs *inside* resume_workflow's try block.
+        resume_token = json.dumps({"response_action": "approve"})
+
+        with self.assertRaises(InvalidInputs):
+            resume_workflow(resume_token)
 
     @patch("agentmap.runtime.workflow_ops.ensure_initialized")
     @patch(

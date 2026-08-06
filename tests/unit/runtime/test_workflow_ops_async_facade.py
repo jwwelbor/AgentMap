@@ -603,6 +603,32 @@ class TestResumeWorkflowAsyncUsesNativeRunner:
         assert "error" in result
         assert "metadata" in result
         assert result["metadata"]["resume_token"] == resume_token
+        # TD-017: workflow-level failures preserve the exception type instead
+        # of collapsing to an opaque success=False payload.
+        assert result["error_type"] == "ValueError"
+
+    @pytest.mark.asyncio
+    async def test_resume_workflow_async_invalid_token_raises_invalid_inputs(self):
+        """TD-017: InvalidInputs from _parse_resume_token must propagate, not
+        collapse into the generic success=False envelope.
+
+        Counter-factual: pre-fix, the bare ``except Exception`` at the bottom
+        of resume_workflow_async swallowed InvalidInputs too, so the HTTP
+        route's ``except InvalidInputs -> 400`` branch (execute.py) never
+        fired for a malformed resume token — it always got the generic
+        success=False payload mapped to a mismatched status instead.
+        """
+        import json
+
+        from agentmap.exceptions.runtime_exceptions import InvalidInputs
+
+        # Missing thread_id triggers InvalidInputs inside _parse_resume_token,
+        # which runs before any container/service access.
+        resume_token = json.dumps({"response_action": "approve"})
+
+        with patch("agentmap.runtime.workflow_ops.ensure_initialized"):
+            with pytest.raises(InvalidInputs):
+                await resume_workflow_async(resume_token)
 
 
 # ---------------------------------------------------------------------------
@@ -1127,3 +1153,170 @@ class TestValidateResumePayloadSizeBoundary:
 
         with pytest.raises(ValueError, match="not JSON-serialisable"):
             _validate_resume_payload({"bad": object()})
+
+
+# ---------------------------------------------------------------------------
+# TD-016: bounded concurrency for asyncio.to_thread-backed facade wrappers
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncFacadeBoundedConcurrency:
+    """TD-016: list_graphs_async / inspect_graph_async / validate_workflow_async
+    dispatch through a semaphore-bounded gate before asyncio.to_thread, so a
+    burst of concurrent calls cannot exceed a configured concurrency ceiling.
+
+    Counter-factual: without the semaphore, N concurrent calls would all
+    enter the tracked section simultaneously and the observed peak
+    concurrency would equal N (or the shared default executor's size),
+    not the configured, much smaller ceiling asserted here.
+    """
+
+    def setup_method(self):
+        # Reset the lazily-constructed module-level semaphore so each test
+        # gets a fresh one sized by the env var it sets, and so semaphores
+        # are never reused across event loops between tests.
+        import agentmap.runtime.workflow_ops as workflow_ops_module
+
+        workflow_ops_module._async_facade_semaphore = None
+
+    def teardown_method(self):
+        import agentmap.runtime.workflow_ops as workflow_ops_module
+
+        workflow_ops_module._async_facade_semaphore = None
+
+    @pytest.mark.asyncio
+    async def test_list_graphs_async_bounds_concurrent_thread_dispatch(self):
+        import agentmap.runtime.workflow_ops as workflow_ops_module
+
+        with patch.object(workflow_ops_module, "_ASYNC_FACADE_MAX_CONCURRENCY", 2):
+            workflow_ops_module._async_facade_semaphore = None
+
+            current = 0
+            peak = 0
+
+            def slow_list_graphs(*, profile=None, config_file=None):
+                nonlocal current, peak
+                # Runs inside the to_thread worker thread; use a plain
+                # (thread-safe-enough for this counter) increment/decrement
+                # bracketing a short sleep to simulate blocking filesystem work.
+                current += 1
+                peak = max(peak, current)
+                import time
+
+                time.sleep(0.05)
+                current -= 1
+                return {"success": True, "outputs": {"graphs": []}, "metadata": {}}
+
+            with patch.object(workflow_ops_module, "list_graphs", slow_list_graphs):
+                await asyncio.gather(
+                    *[workflow_ops_module.list_graphs_async() for _ in range(6)]
+                )
+
+            assert (
+                peak <= 2
+            ), f"peak concurrent thread dispatch was {peak}, expected <= 2"
+            assert peak >= 1
+
+    def test_max_concurrency_env_var_is_configurable(self):
+        """AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY overrides the default ceiling."""
+        import importlib
+        import os
+
+        import agentmap.runtime.workflow_ops as workflow_ops_module
+
+        with patch.dict(os.environ, {"AGENTMAP_ASYNC_FACADE_MAX_CONCURRENCY": "3"}):
+            reloaded = importlib.reload(workflow_ops_module)
+            try:
+                assert reloaded._ASYNC_FACADE_MAX_CONCURRENCY == 3
+            finally:
+                # Restore the module to its default-env state for other tests.
+                importlib.reload(workflow_ops_module)
+
+
+# ---------------------------------------------------------------------------
+# TD-018: ensure_initialized() must not block the event loop
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureInitializedOffloadedFromAsyncFacade:
+    """TD-018: run_workflow_async / run_workflow_stream_async /
+    resume_workflow_async must dispatch ensure_initialized() through
+    asyncio.to_thread rather than calling it inline on the event loop.
+
+    Counter-factual: pre-fix, ``ensure_initialized(config_file=config_file)``
+    was the first statement inside each async function, called directly
+    (not awaited/offloaded) — a synchronous call on the async request path.
+    """
+
+    @pytest.mark.asyncio
+    async def test_run_workflow_async_dispatches_ensure_initialized_via_to_thread(
+        self,
+    ):
+        run_result = _make_execution_result(success=True)
+        container, graph_runner = _make_mock_container(run_result)
+
+        calls = []
+
+        async def spy_to_thread(func, *args, **kwargs):
+            calls.append((func, args, kwargs))
+            return func(*args, **kwargs)
+
+        with (
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized"
+            ) as mock_ensure_initialized,
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=container,
+            ),
+            patch(
+                "agentmap.runtime.workflow_ops._resolve_csv_path",
+                return_value=(MagicMock(), "test_graph"),
+            ),
+            patch("agentmap.runtime.workflow_ops.asyncio.to_thread", spy_to_thread),
+        ):
+            await run_workflow_async("test_graph", {}, config_file="cfg.yaml")
+
+        assert any(
+            func is mock_ensure_initialized for func, _, _ in calls
+        ), "run_workflow_async must dispatch ensure_initialized via asyncio.to_thread"
+        # The forwarded kwarg must be preserved through the thread dispatch.
+        ensure_call = next((c for c in calls if c[0] is mock_ensure_initialized), None)
+        assert ensure_call[2] == {"config_file": "cfg.yaml"}
+
+    @pytest.mark.asyncio
+    async def test_resume_workflow_async_dispatches_ensure_initialized_via_to_thread(
+        self,
+    ):
+        resume_result = _make_execution_result(success=True)
+        container, graph_runner, bundle = _make_mock_container_for_resume(resume_result)
+
+        calls = []
+
+        async def spy_to_thread(func, *args, **kwargs):
+            calls.append((func, args, kwargs))
+            return func(*args, **kwargs)
+
+        with (
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized"
+            ) as mock_ensure_initialized,
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=container,
+            ),
+            patch(
+                "agentmap.services.workflow_orchestration_service."
+                "_rehydrate_bundle_from_metadata",
+                return_value=bundle,
+            ),
+            patch("agentmap.runtime.workflow_ops.asyncio.to_thread", spy_to_thread),
+        ):
+            import json
+
+            resume_token = json.dumps({"thread_id": "thread-abc"})
+            await resume_workflow_async(resume_token, config_file="cfg.yaml")
+
+        assert any(
+            func is mock_ensure_initialized for func, _, _ in calls
+        ), "resume_workflow_async must dispatch ensure_initialized via asyncio.to_thread"
