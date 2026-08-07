@@ -328,6 +328,27 @@ async def stream_workflow(
             # Pre-open JSON error (404/400/503) — _pre_open_error_response maps it
             # exactly like the non-streaming endpoint; the stream never opens.
             return _pre_open_error_response(exc)
+        except Exception:
+            # Non-mapped prelude error (TD-037): e.g. workflow_ops normalizes a
+            # stray prelude exception to RuntimeError, which isn't one of the
+            # three mapped types above.  _sse_generator was never constructed, so
+            # ITS finally (which owns aclose() under normal operation) never
+            # runs — best-effort aclose here so this exit path still honors
+            # "aclose on every exit path" (DEC-5) instead of leaving the started
+            # generator to non-deterministic GC finalization.  Swallow any
+            # aclose() failure so it never masks the original exception; re-raise
+            # that exception unchanged (no re-mapping — only the mapped tuple
+            # above becomes pre-open JSON).
+            try:
+                await upstream.aclose()
+            except Exception:
+                logger.warning(
+                    "SSE upstream.aclose() failed while handling a non-mapped "
+                    "prelude error for graph: %s",
+                    graph_name,
+                    exc_info=True,
+                )
+            raise
 
         response = StreamingResponse(
             _sse_generator(

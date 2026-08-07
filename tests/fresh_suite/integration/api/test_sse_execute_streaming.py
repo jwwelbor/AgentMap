@@ -2606,6 +2606,120 @@ class TestSSEStreamPreOpenErrors(IsolatedAsyncioTestCase):
         )
 
 
+class _AcloseSpyUpstream:
+    """Wraps a real async generator, recording whether ``aclose()`` was called.
+
+    Async generator objects are a builtin type with read-only attributes, so a
+    bound-method mock (``gen.aclose = AsyncMock(...)``) cannot be attached
+    directly. This thin duck-typed wrapper (mirrors ``_make_cancellable_stream``'s
+    real-generator-with-``finally`` pattern used elsewhere in this file) forwards
+    ``__anext__``/``aclose`` to the wrapped generator while recording the call, so
+    tests can assert ``aclose()`` was explicitly invoked by the route — not merely
+    that the generator was implicitly finalized by the exception unwind.
+    """
+
+    def __init__(self, gen):
+        self._gen = gen
+        self.aclose_called = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        return await self._gen.__anext__()
+
+    async def aclose(self):
+        self.aclose_called = True
+        await self._gen.aclose()
+
+
+class TestSSEStreamNonMappedPreOpenError(IsolatedAsyncioTestCase):
+    """TD-037: a non-mapped prelude error must still aclose() the upstream.
+
+    ``workflow_ops.run_workflow_stream_async`` normalizes stray prelude errors to
+    ``RuntimeError`` (not in the ``(GraphNotFound, InvalidInputs,
+    AgentMapNotInitialized)`` tuple _prime_upstream's caller maps to pre-open
+    JSON). Before the TD-037 fix, that RuntimeError propagated straight out of the
+    route handler without ever calling ``upstream.aclose()`` — the started
+    generator was left to non-deterministic GC finalization instead of the
+    "aclose on every exit path" invariant (DEC-5) that ``_sse_generator``'s own
+    finally block already enforces for every OTHER exit path.
+
+    Caller-path contract:
+      ENTRYPOINT: ``POST /execute/{graph_id}/stream`` via the real ASGI app.
+      LOWEST ALLOWED MOCK SEAM: ``run_workflow_stream_async`` replaced with a fake
+        that raises a stray ``RuntimeError`` on its first ``__anext__`` (mirrors
+        workflow_ops.py:928-929's normalization of an unexpected prelude error),
+        wrapped in ``_AcloseSpyUpstream`` so the test can observe whether the
+        route explicitly closed it.
+      FORBIDDEN MOCKS: ``upstream.aclose`` itself is not mocked away — the spy
+        forwards to the real generator's ``aclose()`` so a double-close or
+        already-running-generator regression would still surface.
+    """
+
+    async def test_non_mapped_runtime_error_still_acloses_upstream(self):
+        spy_holder: Dict[str, Any] = {}
+
+        def _factory(*_a, **_kw):
+            async def _gen():
+                raise RuntimeError("Unexpected error during workflow execution: boom")
+                yield  # pragma: no cover — unreachable; makes this an async gen
+
+            spy = _AcloseSpyUpstream(_gen())
+            spy_holder["spy"] = spy
+            return spy
+
+        app = _make_test_app()
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=_factory,
+        ):
+            with self.assertRaises(RuntimeError):
+                await asyncio.wait_for(
+                    _collect_sse_response(app, "/execute/some-graph/stream"),
+                    timeout=5,
+                )
+
+        self.assertIn("spy", spy_holder, "run_workflow_stream_async was never called")
+        self.assertTrue(
+            spy_holder["spy"].aclose_called,
+            "A non-mapped prelude error (RuntimeError) must still aclose() the "
+            "upstream generator before re-raising (TD-037 / DEC-5).",
+        )
+
+    async def test_non_mapped_runtime_error_still_releases_slot(self):
+        """The existing slot-release invariant must hold for non-mapped errors too."""
+        reset_stream_semaphore()
+        self.addCleanup(reset_stream_semaphore)
+
+        app = _make_test_app(sse_config={"max_concurrent_streams": 2})
+        value_before = get_stream_semaphore(2)._value
+
+        def _factory(*_a, **_kw):
+            async def _gen():
+                raise RuntimeError("Unexpected error during workflow execution: boom")
+                yield  # pragma: no cover
+
+            return _AcloseSpyUpstream(_gen())
+
+        with patch(
+            "agentmap.deployment.http.api.routes.stream.run_workflow_stream_async",
+            side_effect=_factory,
+        ):
+            with self.assertRaises(RuntimeError):
+                await asyncio.wait_for(
+                    _collect_sse_response(app, "/execute/some-graph/stream"),
+                    timeout=5,
+                )
+
+        self.assertEqual(
+            get_stream_semaphore(2)._value,
+            value_before,
+            "A non-mapped prelude failure must not leak a stream slot",
+        )
+
+
 class TestSSEStreamRegressionNonStreaming(IsolatedAsyncioTestCase):
     """TC-F05-010: POST /execute/{graph_id} still returns application/json after stream_router."""
 
