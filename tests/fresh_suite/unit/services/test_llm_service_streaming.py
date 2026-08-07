@@ -4653,6 +4653,121 @@ class TestCredentialsNotLoggedOnStreamingPath(unittest.IsolatedAsyncioTestCase):
                 f"Secret api_key value must NOT appear in log record: {record!r}",
             )
 
+    async def test_api_key_not_present_in_span_exception(self):
+        """TC-F03-034 (TD-030 extension): if a provider SDK error message
+        embeds the api_key, the span exception recorded by the telemetry
+        wrapper must NOT contain it either -- not just logs. Uses a real
+        ``OTELTelemetryService`` (mocked tracer/span, per
+        test_otel_telemetry_service.py's pattern) so the actual TD-030
+        redaction in ``OTELTelemetryService.record_exception()`` is
+        exercised end-to-end through
+        ``_call_llm_stream_async_with_telemetry`` /
+        ``_record_span_exception_safe``.
+        """
+        from unittest.mock import patch as _patch
+
+        from agentmap.services.llm_service import LLMService
+
+        secret_api_key = "sk-SUPERSECRETKEY-MUST-NOT-APPEAR-IN-SPANS"
+
+        mock_tracer = MagicMock()
+        with (
+            _patch(
+                "agentmap.services.telemetry.otel_telemetry_service.trace"
+            ) as mock_trace,
+            _patch(
+                "agentmap.services.telemetry.otel_telemetry_service.metrics"
+            ) as mock_metrics,
+        ):
+            mock_trace.get_tracer.return_value = mock_tracer
+            mock_metrics.get_meter.return_value = MagicMock()
+            from agentmap.services.telemetry.otel_telemetry_service import (
+                OTELTelemetryService,
+            )
+
+            telemetry = OTELTelemetryService()
+
+        mock_config = MagicMock()
+        mock_config.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {"failure_threshold": 3, "reset_timeout": 60},
+        }
+        mock_config.get_llm_config.return_value = {
+            "model": "claude-3-sonnet",
+            "temperature": 0.7,
+            "api_key": secret_api_key,
+        }
+        mock_models_config = MagicMock()
+        mock_routing_service = MagicMock()
+        mock_routing_config = MagicMock()
+        mock_routing_config.supports_prompt_caching.return_value = False
+
+        mock_logging = MagicMock()
+        mock_logging.get_class_logger.return_value = MagicMock()
+
+        svc = LLMService(
+            configuration=mock_config,
+            logging_service=mock_logging,
+            routing_service=mock_routing_service,
+            llm_models_config_service=mock_models_config,
+            routing_config_service=mock_routing_config,
+            telemetry_service=telemetry,
+        )
+
+        cb_mock = MagicMock()
+        cb_mock.is_open.return_value = False
+        svc._circuit_breaker = cb_mock
+
+        # Raise *after* the first chunk is delivered: this is a terminal,
+        # unclassified error (REQ-F-004) that is re-raised as-is -- it does
+        # NOT pass through classify_llm_error's own sanitization (that only
+        # applies to the pre-first-chunk fallback-eligible path), so it is
+        # exactly the raw-provider-exception scenario TD-030 is about. The
+        # only thing standing between this raw exception and the span is
+        # the redaction in ``OTELTelemetryService.record_exception()``.
+        raw_exc = RuntimeError(f"Authentication failed: api_key={secret_api_key}")
+
+        async def fake_sp_raises(prov, messages, params, *, client, credentials):
+            async for chunk in make_failing_stream(1, raw_exc):
+                yield chunk
+
+        with self.assertRaises(RuntimeError):
+            with patch(
+                "agentmap.services.llm_service.stream_provider",
+                side_effect=fake_sp_raises,
+            ):
+                async for _ in svc.call_llm_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="anthropic",
+                    model="claude-3-sonnet",
+                ):
+                    pass
+
+        # The mocked tracer's start_as_current_span(...).__enter__() return
+        # value is the span the telemetry wrapper records onto.
+        mock_span = (
+            mock_tracer.start_as_current_span.return_value.__enter__.return_value
+        )
+        mock_span.record_exception.assert_called_once()
+        recorded_exc = mock_span.record_exception.call_args[0][0]
+        self.assertNotIn(
+            secret_api_key,
+            str(recorded_exc),
+            f"Secret api_key value must NOT appear in span exception: {recorded_exc!r}",
+        )
+        mock_span.set_status.assert_called_once()
+        status_message = mock_span.set_status.call_args[0][1]
+        self.assertNotIn(
+            secret_api_key,
+            str(status_message),
+            f"Secret api_key value must NOT appear in span status message: {status_message!r}",
+        )
+
 
 # ---------------------------------------------------------------------------
 # TC-F03-035: F04 hand-off contract

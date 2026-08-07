@@ -3421,7 +3421,15 @@ class LLMService:
         self._set_current_span_attributes({GEN_AI_USAGE_COST: float(cost.total_cost)})
 
     def _record_span_exception_safe(self, span: Any, exception: Exception) -> None:
-        """Record exception on span safely. No-op on failure."""
+        """Record exception on span safely. No-op on failure.
+
+        TD-030: credential-shaped substrings (api keys, bearer tokens) in
+        *exception*'s message are scrubbed by
+        ``OTELTelemetryService.record_exception()`` before anything reaches
+        the span -- that is the single centralized redaction point shared
+        by all three telemetry wrappers (sync, async, streaming) that call
+        this method. Callers do not need to pre-sanitize *exception*.
+        """
         if span is None or self._telemetry_service is None:
             return
         try:
