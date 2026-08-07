@@ -8,6 +8,7 @@ existing Configuration class interface.
 """
 
 import logging
+import math
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypeVar, Union
@@ -503,6 +504,19 @@ class AppConfigService:
         }
 
     # HTTP / SSE transport accessors
+
+    # Per-key validation rules (TD-035): key -> min_allowed. min_allowed is the
+    # smallest value ACCEPTED — 0 for heartbeat_interval_seconds (disables
+    # keepalive; a legitimate value per spec.md §A.4), 1 for the other three
+    # (0 either poisons the semaphore permanently-locked or breaks deadline
+    # arithmetic; see TD-035 research report Failure Modes).
+    _SSE_CONFIG_MIN_VALUES: Dict[str, int] = {
+        "max_stream_duration_seconds": 1,
+        "idle_timeout_seconds": 1,
+        "heartbeat_interval_seconds": 0,
+        "max_concurrent_streams": 1,
+    }
+
     def get_sse_config(self) -> Dict[str, Any]:
         """Get SSE transport connection-envelope configuration with default values.
 
@@ -514,8 +528,20 @@ class AppConfigService:
           heartbeat_interval_seconds   — 15    (keepalive comment cadence)
           max_concurrent_streams       — 100   (global asyncio.Semaphore cap)
 
+        Values are validated (TD-035) before being returned: the accessor is the
+        single boundary where bad http.sse.* YAML is caught and turned into a
+        controlled ConfigurationException, instead of propagating to an
+        uncontrolled crash later (e.g. ``asyncio.Semaphore(int(-1))`` raising
+        ``ValueError``, or ``max_concurrent_streams: 0`` silently poisoning the
+        semaphore into permanently-locked).
+
         Returns:
             Dict with the four envelope keys, user config merged over defaults.
+
+        Raises:
+            ConfigurationException: If ``http.sse`` is present but not a dict,
+                or if any of the four keys is non-numeric or outside its valid
+                range (see ``_SSE_CONFIG_MIN_VALUES``).
         """
         defaults = {
             "max_stream_duration_seconds": 1800,
@@ -525,7 +551,77 @@ class AppConfigService:
         }
 
         sse_config = self.get_value("http.sse", {})
-        return self._merge_with_defaults(sse_config, defaults)
+        if not isinstance(sse_config, dict):
+            raise ConfigurationException(
+                "Invalid http.sse configuration: expected a mapping of "
+                f"max_stream_duration_seconds/idle_timeout_seconds/"
+                f"heartbeat_interval_seconds/max_concurrent_streams, got "
+                f"{type(sse_config).__name__} ({sse_config!r}). Remove the "
+                "http.sse key to use defaults, or provide a mapping."
+            )
+
+        merged = self._merge_with_defaults(sse_config, defaults)
+        self._validate_sse_config_values(merged)
+        return merged
+
+    @staticmethod
+    def _coerce_sse_numeric(value: Any) -> Optional[float]:
+        """Coerce an http.sse.* value to float for validation, or None if invalid.
+
+        Accepts real int/float (bool excluded — it is an int subclass in Python
+        but must not silently pass as 1/0) and numeric strings, since
+        ``ConfigService._resolve_env_vars`` resolves ``env:VAR_NAME`` config
+        entries via ``os.environ.get()``, which always returns ``str`` — an
+        operator setting ``max_concurrent_streams: env:MAX_STREAMS:100`` must
+        not be broken by this validation. Non-numeric strings (``"abc"``)
+        still return None.
+        """
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return None
+        return None
+
+    def _validate_sse_config_values(self, sse_config: Dict[str, Any]) -> None:
+        """Validate http.sse.* values (TD-035); raise ConfigurationException.
+
+        Each of the four keys must coerce to a finite number (see
+        ``_coerce_sse_numeric``) that is >= its configured minimum (see
+        ``_SSE_CONFIG_MIN_VALUES``).
+        """
+        for key, min_allowed in self._SSE_CONFIG_MIN_VALUES.items():
+            value = sse_config.get(key)
+            numeric_value = self._coerce_sse_numeric(value)
+
+            if numeric_value is None:
+                raise ConfigurationException(
+                    f"Invalid http.sse.{key}: expected a number, got "
+                    f"{type(value).__name__} ({value!r})."
+                )
+
+            if not math.isfinite(numeric_value):
+                raise ConfigurationException(
+                    f"Invalid http.sse.{key}: {value!r} must be a finite "
+                    "number (NaN/Infinity are not allowed)."
+                )
+
+            if numeric_value < min_allowed:
+                raise ConfigurationException(
+                    f"Invalid http.sse.{key}: {value!r} is below the minimum "
+                    f"allowed value of {min_allowed}. "
+                    + (
+                        "max_concurrent_streams=0 would permanently lock the "
+                        "stream-admission semaphore, silently 503-ing every "
+                        "request."
+                        if key == "max_concurrent_streams"
+                        else f"{key} must be a positive number."
+                    )
+                )
 
     # Config file path accessor for debugging mostly
     def get_config_file_path(self) -> Optional[Path]:
