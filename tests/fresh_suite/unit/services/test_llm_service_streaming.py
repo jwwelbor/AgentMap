@@ -2304,6 +2304,99 @@ class TestCallLLMStreamAsyncDirectTerminalReconstruction(
 
 
 # ---------------------------------------------------------------------------
+# TD-038: cache_system_prompt must be injected on the streaming path, not
+# just validated as supported.
+# ---------------------------------------------------------------------------
+
+
+class TestCallLLMStreamAsyncCacheInjection(unittest.IsolatedAsyncioTestCase):
+    """TD-038: streaming validates cache_system_prompt as supported (like
+    non-streaming) but must also actually inject cache_control metadata
+    before invoking the provider seam -- mirrors
+    TestCacheSystemPromptAsyncWiring.test_tc006_call_llm_async_anthropic_injects_cache_control
+    (test_llm_service_async.py) for the streaming twin.
+    """
+
+    async def test_streaming_anthropic_injects_cache_control(self):
+        """cache_system_prompt=True on Anthropic streaming must inject
+        cache_control onto the system message before it reaches stream_provider.
+        inject_cache_metadata is NOT mocked -- the real injection must run.
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+        # Anthropic supports prompt caching for this test.
+        svc.routing_config.supports_prompt_caching.side_effect = (
+            lambda provider: provider == "anthropic"
+        )
+
+        captured_messages = []
+
+        async def fake_stream_provider(
+            provider, messages, params, *, client, credentials
+        ):
+            captured_messages.append(messages)
+            async for chunk in make_stream_with_provider(
+                "Hi",
+                resolved_provider="anthropic",
+                resolved_model="claude-3-sonnet",
+            ):
+                yield chunk
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider",
+            side_effect=fake_stream_provider,
+        ):
+            collected = []
+            async for chunk in svc._call_llm_stream_async_direct(
+                "anthropic",
+                [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "hi"},
+                ],
+                model="claude-3-sonnet",
+                cache_system_prompt=True,
+            ):
+                collected.append(chunk)
+
+        self.assertEqual(
+            len(captured_messages), 1, "stream_provider must be invoked once"
+        )
+        sent_messages = captured_messages[0]
+        system_message = next(m for m in sent_messages if m.get("role") == "system")
+        system_content = system_message["content"]
+        self.assertIsInstance(
+            system_content,
+            list,
+            f"Expected system content converted to block list, got: {system_content!r}",
+        )
+        self.assertTrue(
+            any(
+                isinstance(block, dict) and "cache_control" in block
+                for block in system_content
+            ),
+            f"Expected cache_control in system message content, got: {system_content}",
+        )
+
+    async def test_streaming_google_cache_system_prompt_never_injected(self):
+        """Providers that don't support caching are rejected by the validation
+        gate before injection would even run (TC-F03-024 coverage); confirming
+        the fix doesn't bypass that gate for unsupported providers.
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+        svc.routing_config.supports_prompt_caching.return_value = False
+
+        from agentmap.services.llm_service import LLMServiceError
+
+        with self.assertRaises(LLMServiceError):
+            async for _ in svc._call_llm_stream_async_direct(
+                "google",
+                [{"role": "user", "content": "hi"}],
+                model="gemini-pro",
+                cache_system_prompt=True,
+            ):
+                pass
+
+
+# ---------------------------------------------------------------------------
 # TC-F03-010: Retries exhausted + fallback eligible → synthetic terminal chunk
 # TC-F03-016: Fallback synthetic chunk carries fallback's resolved_provider/model
 # ---------------------------------------------------------------------------

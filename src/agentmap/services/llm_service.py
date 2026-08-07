@@ -4084,6 +4084,14 @@ class LLMService:
             {"api_key": api_key} if api_key else None
         )
 
+        # Inject cache metadata after provider resolution, before streaming
+        # invocation (mirrors _bind_and_invoke_direct:1279-1281 for non-streaming
+        # parity -- TD-038: validation approves cache_system_prompt but the
+        # streaming path never applied it).
+        messages = self._message_utils.inject_cache_metadata(
+            messages, provider, cache_system_prompt
+        )
+
         # Track whether any chunk has been delivered to the caller.
         # Only pre-first-chunk errors are eligible for fallback (REQ-F-006).
         first_chunk_delivered = False
