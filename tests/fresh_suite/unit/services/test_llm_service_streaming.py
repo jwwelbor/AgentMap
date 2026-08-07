@@ -39,6 +39,7 @@ Framework: unittest.IsolatedAsyncioTestCase for async tests; plain unittest.Test
 for sync assertions. No real network calls. asyncio_mode NOT auto.
 """
 
+import asyncio
 import unittest
 from typing import AsyncIterator, get_type_hints
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -1575,6 +1576,151 @@ class TestInvokeWithResilienceStreamRetry(unittest.IsolatedAsyncioTestCase):
 
 
 # ---------------------------------------------------------------------------
+# TD-028: per-attempt idle timeout for the streaming resilience loop
+# ---------------------------------------------------------------------------
+
+
+async def _hang_forever_stream():
+    """An async generator that never yields (simulates a stalled provider).
+
+    The trailing ``yield`` is unreachable at runtime -- the preceding
+    ``asyncio.sleep`` is cancelled by the enclosing ``asyncio.timeout`` --
+    but its presence is what makes this a generator function at all.
+    """
+    await asyncio.sleep(3600)
+    yield LLMStreamChunk(  # pragma: no cover
+        text_delta="unreachable", chunk_index=0, is_final=True
+    )
+
+
+class TestInvokeWithResilienceStreamIdleTimeout(unittest.IsolatedAsyncioTestCase):
+    """TD-028: a stalled pre-first-chunk stream is timed out and retried;
+    exhaustion is terminal and records a circuit-breaker failure like any
+    other terminal retry-loop failure.
+    """
+
+    async def test_pre_first_chunk_hang_times_out_and_retries(self):
+        """First attempt hangs past attempt_timeout with no chunk yielded;
+        it is converted to a retryable LLMTimeoutError and retried. Second
+        attempt succeeds and the caller receives the full stream.
+        """
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=2)
+        svc._resilience_config["retry"]["attempt_timeout"] = 0.05
+
+        call_count = 0
+
+        def fake_sp(provider, messages, params, *, client, credentials):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _hang_forever_stream()
+            return make_stream("recovered")
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            collected = []
+            async for chunk in svc._invoke_with_resilience_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                params={"model": "test-model"},
+                provider="anthropic",
+                model="test-model",
+                streaming_client=MagicMock(),
+                credentials={},
+            ):
+                collected.append(chunk)
+
+        self.assertEqual(
+            call_count, 2, "stream_provider must be invoked twice after idle timeout"
+        )
+        self.assertTrue(
+            any(c.is_final for c in collected), "must receive the retried stream"
+        )
+        # A pre-first-chunk idle timeout on a non-terminal attempt must NOT
+        # record a circuit breaker failure -- only the eventual success is.
+        cb_mock.record_failure.assert_not_called()
+        cb_mock.record_success.assert_called_once_with("anthropic", "test-model")
+
+    async def test_pre_first_chunk_timeout_exhausted_is_terminal(self):
+        """When every attempt hangs before any chunk, exhaustion is terminal:
+        an LLMTimeoutError propagates and the circuit breaker records exactly
+        one failure (mirrors other terminal retry-loop failures).
+        """
+        from agentmap.exceptions import LLMTimeoutError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=1)
+        svc._resilience_config["retry"]["attempt_timeout"] = 0.05
+
+        def fake_sp(provider, messages, params, *, client, credentials):
+            return _hang_forever_stream()
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            raised = None
+            try:
+                async for _ in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    pass
+            except LLMTimeoutError as e:
+                raised = e
+
+        self.assertIsNotNone(raised, "Idle timeout must surface as LLMTimeoutError")
+        cb_mock.record_failure.assert_called_once_with("anthropic", "test-model")
+        cb_mock.record_success.assert_not_called()
+
+    async def test_post_first_chunk_hang_is_terminal_not_retried(self):
+        """A chunk is delivered, then the provider stalls indefinitely: the
+        idle timeout still fires, but per post-first-chunk semantics it is
+        terminal (no retry) even though the underlying error is a timeout.
+        """
+        from agentmap.exceptions import LLMTimeoutError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=3)
+        svc._resilience_config["retry"]["attempt_timeout"] = 0.05
+
+        call_count = 0
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            nonlocal call_count
+            call_count += 1
+            yield LLMStreamChunk(text_delta="chunk0", chunk_index=0, is_final=False)
+            await asyncio.sleep(3600)  # stalls after the first chunk
+            yield LLMStreamChunk(  # pragma: no cover
+                text_delta="unreachable", chunk_index=1, is_final=True
+            )
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            collected = []
+            raised = None
+            try:
+                async for chunk in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    collected.append(chunk)
+            except LLMTimeoutError as e:
+                raised = e
+
+        self.assertEqual(len(collected), 1, "the first chunk must be delivered")
+        self.assertIsNotNone(raised, "post-first-chunk idle timeout must propagate")
+        self.assertEqual(call_count, 1, "no retry after first chunk, even on a timeout")
+        cb_mock.record_failure.assert_called_once_with("anthropic", "test-model")
+
+
+# ---------------------------------------------------------------------------
 # TC-F03-011: Post-first-chunk error → terminal, no retry, no fallback
 # ---------------------------------------------------------------------------
 
@@ -2155,6 +2301,99 @@ class TestCallLLMStreamAsyncDirectTerminalReconstruction(
         self.assertEqual(terminal.resolved_provider, "openai")
         self.assertEqual(terminal.resolved_model, "gpt-4o")
         self.assertEqual(terminal.text_delta, "")
+
+
+# ---------------------------------------------------------------------------
+# TD-038: cache_system_prompt must be injected on the streaming path, not
+# just validated as supported.
+# ---------------------------------------------------------------------------
+
+
+class TestCallLLMStreamAsyncCacheInjection(unittest.IsolatedAsyncioTestCase):
+    """TD-038: streaming validates cache_system_prompt as supported (like
+    non-streaming) but must also actually inject cache_control metadata
+    before invoking the provider seam -- mirrors
+    TestCacheSystemPromptAsyncWiring.test_tc006_call_llm_async_anthropic_injects_cache_control
+    (test_llm_service_async.py) for the streaming twin.
+    """
+
+    async def test_streaming_anthropic_injects_cache_control(self):
+        """cache_system_prompt=True on Anthropic streaming must inject
+        cache_control onto the system message before it reaches stream_provider.
+        inject_cache_metadata is NOT mocked -- the real injection must run.
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+        # Anthropic supports prompt caching for this test.
+        svc.routing_config.supports_prompt_caching.side_effect = (
+            lambda provider: provider == "anthropic"
+        )
+
+        captured_messages = []
+
+        async def fake_stream_provider(
+            provider, messages, params, *, client, credentials
+        ):
+            captured_messages.append(messages)
+            async for chunk in make_stream_with_provider(
+                "Hi",
+                resolved_provider="anthropic",
+                resolved_model="claude-3-sonnet",
+            ):
+                yield chunk
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider",
+            side_effect=fake_stream_provider,
+        ):
+            collected = []
+            async for chunk in svc._call_llm_stream_async_direct(
+                "anthropic",
+                [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "hi"},
+                ],
+                model="claude-3-sonnet",
+                cache_system_prompt=True,
+            ):
+                collected.append(chunk)
+
+        self.assertEqual(
+            len(captured_messages), 1, "stream_provider must be invoked once"
+        )
+        sent_messages = captured_messages[0]
+        system_message = next(m for m in sent_messages if m.get("role") == "system")
+        system_content = system_message["content"]
+        self.assertIsInstance(
+            system_content,
+            list,
+            f"Expected system content converted to block list, got: {system_content!r}",
+        )
+        self.assertTrue(
+            any(
+                isinstance(block, dict) and "cache_control" in block
+                for block in system_content
+            ),
+            f"Expected cache_control in system message content, got: {system_content}",
+        )
+
+    async def test_streaming_google_cache_system_prompt_never_injected(self):
+        """Providers that don't support caching are rejected by the validation
+        gate before injection would even run (TC-F03-024 coverage); confirming
+        the fix doesn't bypass that gate for unsupported providers.
+        """
+        svc, _cb = _make_svc_for_direct(max_attempts=1)
+        svc.routing_config.supports_prompt_caching.return_value = False
+
+        from agentmap.services.llm_service import LLMServiceError
+
+        with self.assertRaises(LLMServiceError):
+            async for _ in svc._call_llm_stream_async_direct(
+                "google",
+                [{"role": "user", "content": "hi"}],
+                model="gemini-pro",
+                cache_system_prompt=True,
+            ):
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -4413,6 +4652,121 @@ class TestCredentialsNotLoggedOnStreamingPath(unittest.IsolatedAsyncioTestCase):
                 record,
                 f"Secret api_key value must NOT appear in log record: {record!r}",
             )
+
+    async def test_api_key_not_present_in_span_exception(self):
+        """TC-F03-034 (TD-030 extension): if a provider SDK error message
+        embeds the api_key, the span exception recorded by the telemetry
+        wrapper must NOT contain it either -- not just logs. Uses a real
+        ``OTELTelemetryService`` (mocked tracer/span, per
+        test_otel_telemetry_service.py's pattern) so the actual TD-030
+        redaction in ``OTELTelemetryService.record_exception()`` is
+        exercised end-to-end through
+        ``_call_llm_stream_async_with_telemetry`` /
+        ``_record_span_exception_safe``.
+        """
+        from unittest.mock import patch as _patch
+
+        from agentmap.services.llm_service import LLMService
+
+        secret_api_key = "sk-SUPERSECRETKEY-MUST-NOT-APPEAR-IN-SPANS"
+
+        mock_tracer = MagicMock()
+        with (
+            _patch(
+                "agentmap.services.telemetry.otel_telemetry_service.trace"
+            ) as mock_trace,
+            _patch(
+                "agentmap.services.telemetry.otel_telemetry_service.metrics"
+            ) as mock_metrics,
+        ):
+            mock_trace.get_tracer.return_value = mock_tracer
+            mock_metrics.get_meter.return_value = MagicMock()
+            from agentmap.services.telemetry.otel_telemetry_service import (
+                OTELTelemetryService,
+            )
+
+            telemetry = OTELTelemetryService()
+
+        mock_config = MagicMock()
+        mock_config.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 1,
+                "backoff_base": 2.0,
+                "backoff_max": 30.0,
+                "jitter": False,
+            },
+            "circuit_breaker": {"failure_threshold": 3, "reset_timeout": 60},
+        }
+        mock_config.get_llm_config.return_value = {
+            "model": "claude-3-sonnet",
+            "temperature": 0.7,
+            "api_key": secret_api_key,
+        }
+        mock_models_config = MagicMock()
+        mock_routing_service = MagicMock()
+        mock_routing_config = MagicMock()
+        mock_routing_config.supports_prompt_caching.return_value = False
+
+        mock_logging = MagicMock()
+        mock_logging.get_class_logger.return_value = MagicMock()
+
+        svc = LLMService(
+            configuration=mock_config,
+            logging_service=mock_logging,
+            routing_service=mock_routing_service,
+            llm_models_config_service=mock_models_config,
+            routing_config_service=mock_routing_config,
+            telemetry_service=telemetry,
+        )
+
+        cb_mock = MagicMock()
+        cb_mock.is_open.return_value = False
+        svc._circuit_breaker = cb_mock
+
+        # Raise *after* the first chunk is delivered: this is a terminal,
+        # unclassified error (REQ-F-004) that is re-raised as-is -- it does
+        # NOT pass through classify_llm_error's own sanitization (that only
+        # applies to the pre-first-chunk fallback-eligible path), so it is
+        # exactly the raw-provider-exception scenario TD-030 is about. The
+        # only thing standing between this raw exception and the span is
+        # the redaction in ``OTELTelemetryService.record_exception()``.
+        raw_exc = RuntimeError(f"Authentication failed: api_key={secret_api_key}")
+
+        async def fake_sp_raises(prov, messages, params, *, client, credentials):
+            async for chunk in make_failing_stream(1, raw_exc):
+                yield chunk
+
+        with self.assertRaises(RuntimeError):
+            with patch(
+                "agentmap.services.llm_service.stream_provider",
+                side_effect=fake_sp_raises,
+            ):
+                async for _ in svc.call_llm_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    provider="anthropic",
+                    model="claude-3-sonnet",
+                ):
+                    pass
+
+        # The mocked tracer's start_as_current_span(...).__enter__() return
+        # value is the span the telemetry wrapper records onto.
+        mock_span = (
+            mock_tracer.start_as_current_span.return_value.__enter__.return_value
+        )
+        mock_span.record_exception.assert_called_once()
+        recorded_exc = mock_span.record_exception.call_args[0][0]
+        self.assertNotIn(
+            secret_api_key,
+            str(recorded_exc),
+            f"Secret api_key value must NOT appear in span exception: {recorded_exc!r}",
+        )
+        mock_span.set_status.assert_called_once()
+        status_message = mock_span.set_status.call_args[0][1]
+        self.assertNotIn(
+            secret_api_key,
+            str(status_message),
+            f"Secret api_key value must NOT appear in span status message: {status_message!r}",
+        )
 
 
 # ---------------------------------------------------------------------------

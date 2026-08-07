@@ -55,6 +55,7 @@ class LLMConfigManager(BaseConfigManager):
                 "backoff_base": 2.0,
                 "backoff_max": 30.0,
                 "jitter": True,
+                "attempt_timeout": 30.0,
             },
             "circuit_breaker": {
                 "failure_threshold": 5,

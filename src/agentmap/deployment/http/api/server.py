@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
@@ -167,6 +168,22 @@ class FastAPIServer:
                     "error": "Service unavailable",
                     "message": str(exc),
                     "type": "AgentMapNotInitialized",
+                },
+            )
+
+        @app.exception_handler(ConfigurationException)
+        async def configuration_exception_handler(
+            request: Request, exc: ConfigurationException
+        ):
+            # TD-035: a controlled config error (e.g. invalid http.sse.* values)
+            # must surface as a clean JSON error, not an uncontrolled 500
+            # traceback (AttributeError/ValueError from downstream consumers).
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "Configuration error",
+                    "message": str(exc),
+                    "type": "ConfigurationException",
                 },
             )
 

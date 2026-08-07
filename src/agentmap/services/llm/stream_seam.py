@@ -349,15 +349,24 @@ class OpenAIStreamSeam:
         ):
             choices = getattr(oai_chunk, "choices", None) or []
 
-            # Final usage chunk: choices == [], chunk.usage set (spec.md §7.2).
+            # TD-039: usage extraction is hoisted above the choices-emptiness
+            # branch so it is captured from ANY chunk that carries it, not
+            # only the OpenAI-standard usage-only chunk (choices == []).
+            # OpenAI-compatible clients (Azure OpenAI, OpenRouter, vLLM,
+            # Groq, LiteLLM) are known to attach usage to the final content
+            # chunk (choices non-empty) instead of a separate usage-only
+            # chunk. If usage appears on more than one chunk, last-seen-wins
+            # (matches how usage is typically finalized on the stream).
+            raw_usage = getattr(oai_chunk, "usage", None)
+            if raw_usage is not None:
+                usage = LLMUsage(
+                    input_tokens=getattr(raw_usage, "prompt_tokens", None),
+                    output_tokens=getattr(raw_usage, "completion_tokens", None),
+                )
+
+            # Final usage chunk: choices == [] (spec.md §7.2). No chunk is
+            # emitted for the usage-only event.
             if not choices:
-                raw_usage = getattr(oai_chunk, "usage", None)
-                if raw_usage is not None:
-                    usage = LLMUsage(
-                        input_tokens=getattr(raw_usage, "prompt_tokens", None),
-                        output_tokens=getattr(raw_usage, "completion_tokens", None),
-                    )
-                # No chunk emitted for the usage-only event.
                 continue
 
             # Regular chunk with choices: extract content and finish_reason.

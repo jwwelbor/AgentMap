@@ -155,13 +155,15 @@ class LLMCostCalculator:
 
         Raises:
             LLMConfigurationError: If ``value`` is not ``None`` and cannot be
-                parsed as a ``Decimal`` -- a config-authoring bug must be
-                loud, not silently treated as "not configured" (Decision 7).
+                parsed as a ``Decimal``, or parses to a non-finite (NaN,
+                ±Infinity) or negative value -- a config-authoring bug must
+                be loud, not silently treated as "not configured" or allowed
+                to corrupt a downstream total_cost (Decision 7, TD-045).
         """
         if value is None:
             return None
         try:
-            return Decimal(str(value))
+            dec = Decimal(str(value))
         except InvalidOperation as exc:
             raise LLMConfigurationError(
                 f"Invalid llm.pricing rate value {value!r}: not a valid "
@@ -169,3 +171,20 @@ class LLMCostCalculator:
                 "it -- a malformed rate must not be silently treated as "
                 "unpriced."
             ) from exc
+
+        if not dec.is_finite():
+            raise LLMConfigurationError(
+                f"Invalid llm.pricing rate value {value!r}: must be a "
+                "finite number (not NaN or ±Infinity). Fix the catalog "
+                "entry rather than leaving it -- a malformed rate must not "
+                "be silently treated as unpriced."
+            )
+        if dec < 0:
+            raise LLMConfigurationError(
+                f"Invalid llm.pricing rate value {value!r}: must be "
+                "non-negative. Fix the catalog entry rather than leaving "
+                "it -- a malformed rate must not be silently treated as "
+                "unpriced."
+            )
+
+        return dec

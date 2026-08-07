@@ -4,15 +4,16 @@ These routes mirror the runtime facade that powers the CLI, including
 the richer suspend/resume behavior (status reporting, summaries, thread ids).
 """
 
-from dataclasses import asdict, is_dataclass
-from datetime import datetime
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from agentmap.deployment.http.api.dependencies import requires_auth
-from agentmap.deployment.http.api.routes._shared import normalize_graph_identifier
+from agentmap.deployment.http.api.routes._shared import (
+    normalize_graph_identifier,
+    to_serializable,
+)
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
@@ -122,34 +123,19 @@ class ResumeResponse(BaseModel):
 router = APIRouter(tags=["Execution"])
 
 
-def _to_serializable(value: Any) -> Any:
-    """Convert dataclasses, datetimes, and nested structures into JSON-friendly values."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if is_dataclass(value) and not isinstance(value, type):
-        return _to_serializable(asdict(value))
-    if isinstance(value, dict):
-        return {key: _to_serializable(val) for key, val in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_to_serializable(item) for item in value]
-    return value
-
-
 def _extract_execution_summary(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Extract and serialize an execution summary from a runtime payload."""
     summary = payload.get("execution_summary")
     if summary:
-        return _to_serializable(summary)
+        return to_serializable(summary)
 
     outputs = payload.get("outputs")
     if isinstance(outputs, dict) and outputs.get("__execution_summary"):
-        return _to_serializable(outputs.get("__execution_summary"))
+        return to_serializable(outputs.get("__execution_summary"))
 
     final_state = payload.get("final_state")
     if isinstance(final_state, dict) and final_state.get("__execution_summary"):
-        return _to_serializable(final_state.get("__execution_summary"))
+        return to_serializable(final_state.get("__execution_summary"))
 
     return None
 
@@ -163,9 +149,9 @@ def _sanitize_outputs(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if isinstance(outputs, dict):
         cleaned = dict(outputs)
         cleaned.pop("__execution_summary", None)
-        return _to_serializable(cleaned)
+        return to_serializable(cleaned)
 
-    return _to_serializable(outputs)
+    return to_serializable(outputs)
 
 
 def _build_execution_message(status: str, graph_identifier: str) -> str:
@@ -204,8 +190,8 @@ def _build_execute_response(
         thread_id=runtime_result.get("thread_id"),
         outputs=_sanitize_outputs(runtime_result),
         execution_summary=_extract_execution_summary(runtime_result),
-        metadata=_to_serializable(runtime_result.get("metadata")),
-        interrupt_info=_to_serializable(interrupt_payload),
+        metadata=to_serializable(runtime_result.get("metadata")),
+        interrupt_info=to_serializable(interrupt_payload),
         error=runtime_result.get("error"),
         execution_id=execution_id,
     )
@@ -239,7 +225,7 @@ def _build_resume_response(
         thread_id=thread_id,
         outputs=_sanitize_outputs(runtime_result),
         execution_summary=summary,
-        metadata=_to_serializable(runtime_result.get("metadata")),
+        metadata=to_serializable(runtime_result.get("metadata")),
         error=runtime_result.get("error"),
     )
 

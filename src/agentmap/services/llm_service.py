@@ -9,10 +9,12 @@ and resilience (retry with backoff + circuit breaker).
 import asyncio
 import base64
 import inspect
+import math
 import mimetypes
 import random
 import re
 import time
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import (
     Any,
@@ -33,6 +35,7 @@ from agentmap.exceptions import (
     LLMProviderError,
     LLMResolvedCallError,
     LLMServiceError,
+    LLMTimeoutError,
 )
 from agentmap.models.llm_batch import (
     LLMBatchHandle,
@@ -56,8 +59,10 @@ from agentmap.services.config.llm_routing_config_service import LLMRoutingConfig
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.llm._budget_guard_refusal import (
     BudgetGuardRefusal,
+    consume_budget_guard_refusal_context,
     is_budget_guard_refusal,
     mark_as_budget_guard_refusal,
+    mark_budget_guard_refusal_context,
     telemetry_safe_marker,
 )
 from agentmap.services.llm.cost_calculator import LLMCostCalculator
@@ -571,15 +576,15 @@ class LLMService:
         routing_context: Optional[Dict[str, Any]],
         **kwargs,
     ) -> LLMResponse:
-        """Async telemetry wrapper mirroring the sync LLM span behavior."""
+        """Async telemetry wrapper mirroring the sync LLM span behavior.
+
+        NFR-F-006 waiver (TD-043, permanent): >50 lines by design -- dual
+        exception handling (inner LLM/guard, outer telemetry-isolation
+        fallback) required by REQ-F-009. Rationale/precedent:
+        TD-043.research-report.md Decision 3.
+        """
         assert self._telemetry_service is not None
-        initial_attributes: Dict[str, Any] = {}
-        if provider:
-            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
-                provider
-            )
-        if model:
-            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+        initial_attributes = self._build_llm_span_initial_attributes(provider, model)
 
         try:
             with self._telemetry_service.start_span(
@@ -604,11 +609,9 @@ class LLMService:
                     # __cause__ (unwrapped one frame up, in
                     # _dispatch_call_llm_async) -- record a class-name-only
                     # marker instead of the real chain so span telemetry
-                    # never exports host budget/business data.
-                    if isinstance(e, BudgetGuardRefusal):
-                        self._record_span_exception_safe(span, telemetry_safe_marker(e))
-                    else:
-                        self._record_span_exception_safe(span, e)
+                    # never exports host budget/business data. See
+                    # _record_llm_call_exception_safe (TD-043).
+                    self._record_llm_call_exception_safe(span, e)
                     raise
         except Exception as outer_error:
             if isinstance(
@@ -647,16 +650,14 @@ class LLMService:
         Falls back to ``_call_llm_core`` if span creation fails (Layer 1
         isolation).  LLM errors are re-raised directly -- only telemetry
         infrastructure failures trigger the fallback.
+
+        NFR-F-006 waiver (TD-043, permanent): >50 lines by design -- same
+        dual exception handling as the async sibling above (REQ-F-009).
+        Rationale/precedent: TD-043.research-report.md Decision 1/3.
         """
         assert self._telemetry_service is not None
         # Build initial attributes from known values
-        initial_attributes: Dict[str, Any] = {}
-        if provider:
-            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
-                provider
-            )
-        if model:
-            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+        initial_attributes = self._build_llm_span_initial_attributes(provider, model)
 
         try:
             with self._telemetry_service.start_span(
@@ -682,8 +683,9 @@ class LLMService:
                     return result
 
                 except Exception as e:
-                    # Record exception and set ERROR status on span
-                    self._record_span_exception_safe(span, e)
+                    # Record exception and set ERROR status on span. See
+                    # _record_llm_call_exception_safe (TD-043).
+                    self._record_llm_call_exception_safe(span, e)
                     raise
 
         except Exception as outer_error:
@@ -1591,10 +1593,13 @@ class LLMService:
 
         On **every** tier, wraps the exception in ``BudgetGuardRefusal`` (see
         that class's own docstring in ``_budget_guard_refusal.py`` for the
-        full per-seam pass-through and outermost-unwrap rationale) and stamps
-        it via ``mark_as_budget_guard_refusal`` (see that function's
-        docstring for why the fan-out path needs the stamp in addition to
-        the wrapper).
+        full per-seam pass-through and outermost-unwrap rationale) and marks
+        it two ways: ``mark_as_budget_guard_refusal`` (legacy best-effort
+        setattr marker, kept as a defense-in-depth fallback) and
+        ``mark_budget_guard_refusal_context`` (TD-042: task-scoped ContextVar
+        identity marker, immune to any host exception's ``__setattr__``
+        pathology -- see that function's docstring for why the fan-out path
+        needs a marker in addition to the wrapper).
         """
         if self._budget_guard is None:
             return
@@ -1609,6 +1614,7 @@ class LLMService:
             await self._budget_guard.check_before_dispatch(check)
         except Exception as e:
             mark_as_budget_guard_refusal(e)
+            mark_budget_guard_refusal_context(e)
             raise BudgetGuardRefusal(e) from e
 
     async def _invoke_with_resilience_async(
@@ -1656,10 +1662,45 @@ class LLMService:
             client, langchain_messages, provider, model
         )
 
-    def _resolve_retry_config(self) -> Tuple[int, float, float, bool]:
+    @staticmethod
+    def _coerce_attempt_timeout(value: Any) -> float:
+        """Coerce a resolved ``retry.attempt_timeout`` config value to a finite float.
+
+        Mirrors ``AppConfigService._coerce_sse_numeric``: accepts real int/float
+        (bool excluded) and numeric strings, since
+        ``ConfigService._resolve_env_vars`` resolves ``env:VAR_NAME`` config
+        entries via ``os.environ.get()``, which always returns ``str``. Without
+        this coercion, an operator setting ``attempt_timeout: env:LLM_TIMEOUT:30``
+        would crash every LLM call with ``TypeError`` inside ``asyncio.timeout()``.
+        """
+        numeric_value: Optional[float] = None
+        if isinstance(value, bool):
+            numeric_value = None
+        elif isinstance(value, (int, float)):
+            numeric_value = float(value)
+        elif isinstance(value, str):
+            try:
+                numeric_value = float(value)
+            except ValueError:
+                numeric_value = None
+
+        if (
+            numeric_value is None
+            or not math.isfinite(numeric_value)
+            or numeric_value <= 0
+        ):
+            raise LLMConfigurationError(
+                "Invalid retry.attempt_timeout: expected a positive finite "
+                f"number, got {type(value).__name__} ({value!r})."
+            )
+        return numeric_value
+
+    def _resolve_retry_config(self) -> Tuple[int, float, float, bool, float]:
         """Resolve retry config knobs from ``self._resilience_config``.
 
-        Extracted from ``_run_resilient_retry_loop`` (NFR-F-006).
+        Extracted from ``_run_resilient_retry_loop`` (NFR-F-006). ``attempt_timeout``
+        (TD-028) is the per-attempt idle-timeout budget in seconds -- each retry
+        gets a fresh window rather than sharing one deadline across the whole loop.
         """
         retry_cfg = self._resilience_config.get("retry", {})
         return (
@@ -1667,6 +1708,7 @@ class LLMService:
             retry_cfg.get("backoff_base", 2.0),
             retry_cfg.get("backoff_max", 30.0),
             retry_cfg.get("jitter", True),
+            self._coerce_attempt_timeout(retry_cfg.get("attempt_timeout", 30.0)),
         )
 
     async def _run_resilient_retry_loop(
@@ -1684,7 +1726,9 @@ class LLMService:
         failure classification/backoff-or-raise in
         ``_handle_retry_attempt_failure``.
         """
-        max_attempts, backoff_base, backoff_max, jitter = self._resolve_retry_config()
+        max_attempts, backoff_base, backoff_max, jitter, attempt_timeout = (
+            self._resolve_retry_config()
+        )
         last_error: Optional[Exception] = None
 
         for attempt in range(1, max_attempts + 1):
@@ -1694,7 +1738,7 @@ class LLMService:
                     f"(attempt {attempt}/{max_attempts})"
                 )
                 return await self._attempt_llm_call_async(
-                    client, langchain_messages, provider, model
+                    client, langchain_messages, provider, model, attempt_timeout
                 )
             except Exception as e:
                 last_error = await self._handle_retry_attempt_failure(
@@ -1753,6 +1797,7 @@ class LLMService:
         langchain_messages: List[Any],
         provider: str,
         model: str,
+        attempt_timeout: float,
     ) -> LLMResponse:
         """Single provider invocation plus success-path ``LLMResponse`` construction.
 
@@ -1760,9 +1805,24 @@ class LLMService:
         (NFR-F-006). Raises on any provider failure -- classification and the
         retry-vs-terminal decision are the caller's
         (``_run_resilient_retry_loop``'s) responsibility.
+
+        TD-028: the provider invocation is bounded by ``attempt_timeout`` (a
+        fresh per-attempt idle-timeout budget, seconds) so a provider that
+        connects but never returns cannot hang the retry loop indefinitely.
+        A resulting ``TimeoutError`` is converted to ``LLMTimeoutError`` --
+        already a typed, retryable ``LLMServiceError`` -- so it flows through
+        the caller's existing classify/retry/circuit-breaker handling
+        unchanged (``classify_llm_error`` passes already-typed errors through).
         """
         start_time = time.monotonic()
-        response = await self._invoke_provider_async(client, langchain_messages)
+        try:
+            async with asyncio.timeout(attempt_timeout):
+                response = await self._invoke_provider_async(client, langchain_messages)
+        except TimeoutError as e:
+            raise LLMTimeoutError(
+                f"LLM call to {provider}:{model} timed out after "
+                f"{attempt_timeout}s with no response (idle timeout)"
+            ) from e
         duration = time.monotonic() - start_time
 
         text = normalize_response_text(response)
@@ -1890,11 +1950,12 @@ class LLMService:
                 f"{self._circuit_breaker.reset}s)"
             )
 
-        retry_cfg = self._resilience_config.get("retry", {})
-        max_attempts = retry_cfg.get("max_attempts", 3)
-        backoff_base = retry_cfg.get("backoff_base", 2.0)
-        backoff_max = retry_cfg.get("backoff_max", 30.0)
-        jitter = retry_cfg.get("jitter", True)
+        # TD-028: per-attempt idle-timeout budget (seconds) -- bounds only the
+        # wait for the *next* chunk, never the time the caller spends
+        # consuming a yielded chunk (see the manual __anext__ loop below).
+        max_attempts, backoff_base, backoff_max, jitter, attempt_timeout = (
+            self._resolve_retry_config()
+        )
 
         last_error: Optional[Exception] = None
 
@@ -1906,13 +1967,30 @@ class LLMService:
                     f"LLM streaming call to {provider}:{model} "
                     f"(attempt {attempt}/{max_attempts})"
                 )
-                async for chunk in stream_provider(
+                stream_iter = stream_provider(
                     provider,
                     messages,
                     params,
                     client=streaming_client,
                     credentials=credentials,
-                ):
+                ).__aiter__()
+                while True:
+                    # Each `__anext__()` gets its own fresh timeout window --
+                    # NOT wrapped around `yield`, so time the caller spends
+                    # processing a delivered chunk never counts against the
+                    # provider's idle budget.
+                    try:
+                        async with asyncio.timeout(attempt_timeout):
+                            chunk = await stream_iter.__anext__()
+                    except StopAsyncIteration:
+                        break
+                    except TimeoutError as e:
+                        raise LLMTimeoutError(
+                            f"LLM streaming call to {provider}:{model} timed out "
+                            f"after {attempt_timeout}s waiting for the next chunk "
+                            "(idle timeout)"
+                        ) from e
+
                     # Cut point: once the first chunk is yielded, errors are terminal
                     first_chunk_delivered = True
                     yield chunk
@@ -2425,12 +2503,17 @@ class LLMService:
         Calls ``call_llm_async`` directly so that routing, retry, jitter,
         circuit-breaker, fallback, telemetry, and cache-aware behavior are all
         inherited from the single async resilience stack (spec Decision 3).
+        Deliberately keeps ``call_llm_async`` as the seam (tests patch it
+        directly; see ``test_llm_service_fanout.py``'s "Seam convention"
+        module docstring) rather than a lower-level entrypoint -- TD-042's
+        budget-refusal fix does not need a new seam, see the
+        ``except Exception`` branch below.
         Builds ``LLMFanoutResult`` from the returned ``LLMResponse`` so that
         ``provider``, ``model``, and ``usage`` reflect the resolved values, not
         the requested spec values. Failure-branch construction is delegated to
-        ``_fan_out_result_from_resolved_error`` / ``_fan_out_result_from_exception``
-        (NFR-F-006) -- see those methods' docstrings for the per-branch
-        classification rationale.
+        ``_fan_out_result_from_budget_refusal`` / ``_fan_out_result_from_resolved_error``
+        / ``_fan_out_result_from_exception`` (NFR-F-006) -- see those methods'
+        docstrings for the per-branch classification rationale.
         """
         async with semaphore:
             kwargs = dict(spec.request_options)
@@ -2455,7 +2538,59 @@ class LLMService:
             except LLMResolvedCallError as exc:
                 return self._fan_out_result_from_resolved_error(spec, exc)
             except Exception as exc:
+                # TD-042: `call_llm_async` already unwrapped a
+                # `BudgetGuardRefusal` back to `exc` (its `.original`) before
+                # we ever see it here, per REQ-F-003/NFR-F-003 -- so this
+                # branch cannot `except BudgetGuardRefusal` directly. Instead,
+                # `consume_budget_guard_refusal_context(exc)` does an
+                # identity check against a task-scoped ContextVar set at the
+                # exact moment `_check_budget_before_dispatch` raised `exc`
+                # (`_budget_guard_refusal.py`), one task per fan-out item
+                # (`asyncio.ensure_future` per spec in
+                # `call_llm_many_async`), so concurrent siblings never see
+                # each other's marks. Type-safe by identity, immune to any
+                # `__setattr__` pathology on `exc` (unlike the legacy
+                # setattr/getattr marker, kept only as a defense-in-depth
+                # fallback -- see `_classify_fan_out_exception`).
+                if consume_budget_guard_refusal_context(exc):
+                    return self._fan_out_result_from_budget_refusal(spec, exc)
                 return self._fan_out_result_from_exception(spec, exc)
+
+    def _fan_out_result_from_budget_refusal(
+        self, spec: LLMRequest, original: Exception
+    ) -> LLMFanoutResult:
+        """Build a failed ``LLMFanoutResult`` for a budget-guard refusal
+        recognized via ``consume_budget_guard_refusal_context`` (TD-042) --
+        a task-scoped ContextVar identity check, not the legacy best-effort
+        setattr/getattr marker.
+
+        Sets ``is_budget_refusal=True`` directly -- type-safe (identity
+        comparison against the exact exception object the guard raised) and
+        immune to the setattr marker's silent-failure mode for host guard
+        exceptions with a pathological ``__setattr__``. Emits the same field
+        values ``_fan_out_result_from_exception`` would have produced for
+        this exception via the marker path (same ``error_type``/``message``/
+        ``retryable``/``resolved_provider``/``resolved_model``), so this
+        branch is purely additive robustness, not a behavior change for the
+        common case.
+        """
+        return LLMFanoutResult(
+            request_id=spec.request_id,
+            status="failed",
+            resolved_provider=spec.provider,
+            resolved_model=spec.model,
+            text=None,
+            usage=None,
+            error=LLMExecutionError(
+                error_type=type(original).__name__,
+                message=_sanitize_error_message(original),
+                # NFR-F-003: a guard refusal must never be reclassified as a
+                # transient provider failure -- forced False unconditionally,
+                # mirroring _classify_fan_out_exception's marker-path rationale.
+                retryable=False,
+                is_budget_refusal=True,
+            ),
+        )
 
     def _fan_out_result_from_resolved_error(
         self, spec: LLMRequest, exc: LLMResolvedCallError
@@ -2524,13 +2659,27 @@ class LLMService:
         it is never caught by the except-Exception / except-LLMServiceError
         nets in ``_call_llm_async_direct``, ``_try_fallback_tier``
         (fallback_ladder.py), or ``_dispatch_fallback_ladder`` that would
-        otherwise wrap a failure as ``LLMResolvedCallError`` -- it
-        propagates past all of them unmodified, unwrapped back to
-        ``.original`` only at the outermost boundary
-        (``_dispatch_call_llm_async``), above this fan-out handling in the
-        call stack. If this stack ever changes such that a guard exception
-        could be wrapped as ``LLMResolvedCallError``, this paragraph is the
-        first place to revisit.
+        otherwise wrap a failure as ``LLMResolvedCallError``.
+
+        TD-042 rework: ``exc`` here has already been unwrapped back to
+        ``.original`` by ``call_llm_async`` (REQ-F-003 -- it unwraps for
+        every caller, ``_execute_fan_out_item`` included), so this method is
+        never reached with a still-wrapped ``BudgetGuardRefusal``; catching
+        that type here would therefore be dead code. Instead,
+        ``_execute_fan_out_item`` checks
+        ``consume_budget_guard_refusal_context(exc)`` *before* calling this
+        method at all -- a task-scoped ``ContextVar`` identity check against
+        the exact exception object ``_check_budget_before_dispatch`` raised,
+        immune to any ``__setattr__`` pathology on ``exc`` -- and short-
+        circuits to ``_fan_out_result_from_budget_refusal`` when it matches,
+        never reaching this method's ``is_budget_guard_refusal(exc)`` marker
+        check for that item. This method's marker check is retained only as
+        a **defense-in-depth fallback** (D-2, TD-042 research report) for
+        any other call path that reaches ``_classify_fan_out_exception``
+        with a marker-stamped exception the ContextVar check didn't already
+        catch. If this stack ever changes such that a guard exception could
+        be wrapped as ``LLMResolvedCallError``, this paragraph is the first
+        place to revisit.
 
         ``error_type`` intentionally stays ``type(exc).__name__`` unchanged
         even for a refusal -- every other fan-out failure path treats it as
@@ -2713,6 +2862,9 @@ class LLMService:
             model=request.model,
             request_id_map=request_id_map,
             expires_at=expires_at,
+            # TD-001/F-MED-5: populate the spec-declared created_at field so
+            # downstream lifecycle tracking/audit tooling can rely on it.
+            created_at=datetime.now(timezone.utc).isoformat(),
         )
 
         if self._batch_repo is not None:
@@ -2767,8 +2919,18 @@ class LLMService:
 
         try:
             return LLMBatchHandle.from_dict(handle_data)
-        except (KeyError, ValueError) as exc:
-            raise LLMServiceError(f"Cannot restore batch handle: {exc}") from exc
+        except KeyError as exc:
+            raise LLMServiceError(
+                f"Cannot restore batch handle: missing required field {exc}. "
+                "See LLMBatchHandle.to_dict()/from_dict() in "
+                "agentmap.models.llm_batch for the expected schema."
+            ) from exc
+        except ValueError as exc:
+            raise LLMServiceError(
+                f"Cannot restore batch handle: invalid field value ({exc}). "
+                "See LLMBatchHandle.to_dict()/from_dict() in "
+                "agentmap.models.llm_batch for the expected schema."
+            ) from exc
 
     def poll_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
         """
@@ -2811,6 +2973,7 @@ class LLMService:
             expires_at=poll_result.expires_at or handle.expires_at,
             ended_at=poll_result.ended_at,
             request_counts=poll_result.request_counts,
+            created_at=handle.created_at,
         )
 
         if self._batch_repo is not None:
@@ -2934,6 +3097,26 @@ class LLMService:
         )
         return records
 
+    def delete_batch(self, handle: LLMBatchHandle) -> bool:
+        """
+        Delete the persisted handle file for ``handle`` (TD-001, spec §1.5).
+
+        A no-op returning ``False`` when no batch repository is configured
+        (matching the ``self._batch_repo is not None`` guard used by
+        ``submit_batch``/``poll_batch``). Idempotent — deleting an
+        already-absent handle returns ``False`` rather than raising.
+        """
+        if self._batch_repo is None:
+            return False
+
+        deleted = self._batch_repo.delete(handle.agentmap_batch_id)
+        self._logger.info(
+            "llm_batch.handle_deleted agentmap_batch_id=%s deleted=%s",
+            handle.agentmap_batch_id,
+            deleted,
+        )
+        return deleted
+
     # ------------------------------------------------------------------
     # Async surfaces (REQ-F-006) — wrap sync methods via asyncio.to_thread
     # ------------------------------------------------------------------
@@ -2955,6 +3138,10 @@ class LLMService:
     ) -> "List[LLMBatchResult]":
         """Async wrapper for :meth:`fetch_batch_results` (runs off event-loop thread)."""
         return await asyncio.to_thread(self.fetch_batch_results, handle)
+
+    async def adelete_batch(self, handle: "LLMBatchHandle") -> bool:
+        """Async wrapper for :meth:`delete_batch` (runs off event-loop thread)."""
+        return await asyncio.to_thread(self.delete_batch, handle)
 
     async def wait_for_batch(
         self,
@@ -3262,13 +3449,61 @@ class LLMService:
         self._set_current_span_attributes({GEN_AI_USAGE_COST: float(cost.total_cost)})
 
     def _record_span_exception_safe(self, span: Any, exception: Exception) -> None:
-        """Record exception on span safely. No-op on failure."""
+        """Record exception on span safely. No-op on failure.
+
+        TD-030: credential-shaped substrings (api keys, bearer tokens) in
+        *exception*'s message are scrubbed by
+        ``OTELTelemetryService.record_exception()`` before anything reaches
+        the span -- that is the single centralized redaction point shared
+        by all three telemetry wrappers (sync, async, streaming) that call
+        this method. Callers do not need to pre-sanitize *exception*.
+        """
         if span is None or self._telemetry_service is None:
             return
         try:
             self._telemetry_service.record_exception(span, exception)
         except Exception:
             pass
+
+    def _build_llm_span_initial_attributes(
+        self, provider: Optional[str], model: Optional[str]
+    ) -> Dict[str, Any]:
+        """Build the initial ``gen_ai.*`` span attributes for an LLM call span.
+
+        TD-043: extracted from the sync/async/streaming telemetry wrappers,
+        which all built this same 1-2 key dict from the caller-supplied
+        (pre-routing) provider/model before opening the span. Absent values
+        are omitted rather than written as ``None``/empty string.
+        """
+        initial_attributes: Dict[str, Any] = {}
+        if provider:
+            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
+                provider
+            )
+        if model:
+            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+        return initial_attributes
+
+    def _record_llm_call_exception_safe(self, span: Any, exception: Exception) -> None:
+        """Record an LLM-call exception on *span*, substituting a safe marker
+        for budget-guard refusals.
+
+        TD-043: extracted from the sync/async/streaming telemetry wrappers'
+        identical ``except Exception as e`` handling. Preserves TD-030's
+        credential-redaction fix exactly: a ``BudgetGuardRefusal`` still
+        carries the host guard's raw exception via ``__cause__`` at this
+        point, so it is replaced with ``telemetry_safe_marker(e)`` (a
+        class-name-only marker) before being handed to
+        ``_record_span_exception_safe`` -- span telemetry must never export
+        host budget/business data. Non-refusal exceptions are recorded as-is.
+        This does not read or mutate the TD-042 ContextVar; it only branches
+        on ``isinstance(e, BudgetGuardRefusal)``, identical to the pre-TD-043
+        inline checks.
+        """
+        if isinstance(exception, BudgetGuardRefusal):
+            self._record_span_exception_safe(span, telemetry_safe_marker(exception))
+        else:
+            self._record_span_exception_safe(span, exception)
 
     @staticmethod
     def _extract_token_counts(response: Any) -> Tuple[Optional[int], Optional[int]]:
@@ -3621,16 +3856,15 @@ class LLMService:
         completion (REQ-F-009). Captures content once at completion (REQ-NF-002, C9).
 
         This is the sibling of ``_call_llm_async_with_telemetry`` (:461).
+
+        NFR-F-006 waiver (TD-043, permanent): >50 lines by design -- yield-safe
+        manual span lifecycle (REQ-F-010) + routing-resolved attribute capture
+        on the final chunk. Rationale/precedent: TD-043.research-report.md
+        Decision 2.
         """
         assert self._telemetry_service is not None
 
-        initial_attributes: Dict[str, Any] = {}
-        if provider:
-            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
-                provider
-            )
-        if model:
-            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+        initial_attributes = self._build_llm_span_initial_attributes(provider, model)
 
         # Explicit span open — must NOT use `with` so the span survives yields.
         span_cm = self._telemetry_service.start_span(
@@ -3678,10 +3912,8 @@ class LLMService:
             # call_llm_stream_async's docstring) still carries the host
             # guard's raw exception via __cause__; substitute a class-name
             # -only marker so span telemetry never exports host budget data.
-            if isinstance(e, BudgetGuardRefusal):
-                self._record_span_exception_safe(span, telemetry_safe_marker(e))
-            else:
-                self._record_span_exception_safe(span, e)
+            # See _record_llm_call_exception_safe (TD-043).
+            self._record_llm_call_exception_safe(span, e)
             raise
         finally:
             span_cm.__exit__(None, None, None)
@@ -4000,6 +4232,14 @@ class LLMService:
         api_key = config.get("api_key")
         credentials: Optional[Dict[str, Any]] = (
             {"api_key": api_key} if api_key else None
+        )
+
+        # Inject cache metadata after provider resolution, before streaming
+        # invocation (mirrors _bind_and_invoke_direct:1279-1281 for non-streaming
+        # parity -- TD-038: validation approves cache_system_prompt but the
+        # streaming path never applied it).
+        messages = self._message_utils.inject_cache_metadata(
+            messages, provider, cache_system_prompt
         )
 
         # Track whether any chunk has been delivered to the caller.

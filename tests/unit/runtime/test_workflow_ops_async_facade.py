@@ -347,6 +347,44 @@ class TestRunWorkflowAsyncUsesNativeRunner:
 # ---------------------------------------------------------------------------
 
 
+class TestRunWorkflowAsyncStrayExceptionPropagates:
+    """TD-040: stray (unmapped) prelude exceptions propagate with their
+    ORIGINAL type, not collapsed into RuntimeError.
+
+    Counter-factual: pre-fix, the bare ``except Exception as e: raise
+    RuntimeError(...)`` at the bottom of run_workflow_async wrapped this
+    KeyError into a RuntimeError, losing the original type for
+    callers/telemetry. pytest.raises(KeyError) would fail under that
+    behavior.
+    """
+
+    @pytest.mark.asyncio
+    async def test_run_workflow_async_stray_exception_propagates_original_type(self):
+        container = MagicMock()
+        graph_bundle_service = MagicMock()
+        graph_bundle_service.get_or_create_bundle.side_effect = KeyError(
+            "unexpected missing config key"
+        )
+        container.graph_bundle_service.return_value = graph_bundle_service
+
+        with (
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=container,
+            ),
+            patch(
+                "agentmap.runtime.workflow_ops._resolve_csv_path",
+                return_value=(MagicMock(), "test_graph"),
+            ),
+        ):
+            with pytest.raises(KeyError):
+                await run_workflow_async("test_graph", {"input": "value"})
+
+
 class TestRunWorkflowAsyncNoToThread:
     """AC: no asyncio.to_thread remains around the graph-invocation path."""
 

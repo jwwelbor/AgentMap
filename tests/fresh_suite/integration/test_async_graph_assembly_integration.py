@@ -223,13 +223,18 @@ class TestAsyncGraphAssemblyIntegration(BaseIntegrationTest):
         """
         from unittest.mock import Mock
 
+        from langgraph.checkpoint.base import BaseCheckpointSaver
+
         graph = _make_minimal_graph("integration_checkpoint_async_graph")
         agents: Dict[str, Any] = {
             "Start": LocalAsyncStubAgent("Start"),
             "End": LocalAsyncStubAgent("End"),
         }
         # Use a test-double checkpointer: only the container + assembly service are real.
-        mock_checkpointer = Mock()
+        # langgraph's StateGraph.compile() validates checkpointers via
+        # isinstance(checkpointer, BaseCheckpointSaver) (ensure_valid_checkpointer),
+        # so the mock must be spec'd to that base class to pass validation.
+        mock_checkpointer = Mock(spec=BaseCheckpointSaver)
         mock_checkpointer.__class__.__name__ = "MemorySaver"
 
         compiled = self.graph_assembly_service.assemble_with_checkpoint_async(

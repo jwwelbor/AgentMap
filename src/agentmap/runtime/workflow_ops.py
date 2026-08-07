@@ -195,8 +195,10 @@ def run_workflow(
         raise GraphNotFound(graph_name, f"Workflow file not found: {e}")
     except ValueError as e:
         raise InvalidInputs(str(e))
-    except Exception as e:
-        raise RuntimeError(f"Unexpected error during workflow execution: {e}")
+    # TD-040: let stray (unmapped) exceptions propagate with their original
+    # type instead of collapsing them into an opaque RuntimeError — the
+    # typed-exception contract (TD-017) and TD-037's aclose-on-any-exception
+    # fix at the SSE boundary no longer depend on this wrapping.
 
 
 def list_graphs(
@@ -820,8 +822,10 @@ async def run_workflow_async(
         raise GraphNotFound(graph_name, f"Workflow file not found: {e}")
     except ValueError as e:
         raise InvalidInputs(str(e))
-    except Exception as e:
-        raise RuntimeError(f"Unexpected error during workflow execution: {e}")
+    # TD-040: let stray (unmapped) exceptions propagate with their original
+    # type instead of collapsing them into an opaque RuntimeError — the
+    # typed-exception contract (TD-017) and TD-037's aclose-on-any-exception
+    # fix at the SSE boundary no longer depend on this wrapping.
 
 
 async def run_workflow_stream_async(
@@ -925,8 +929,10 @@ async def run_workflow_stream_async(
         raise InvalidInputs(str(e))
     except (asyncio.CancelledError, GeneratorExit):
         raise
-    except Exception as e:
-        raise RuntimeError(f"Unexpected error during workflow execution: {e}")
+    # TD-040: let stray (unmapped) exceptions propagate with their original
+    # type instead of collapsing them into an opaque RuntimeError — the
+    # typed-exception contract (TD-017) and TD-037's aclose-on-any-exception
+    # fix at the SSE boundary no longer depend on this wrapping.
 
 
 async def resume_workflow_async(

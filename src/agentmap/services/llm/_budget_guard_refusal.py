@@ -39,7 +39,36 @@ T-E05-F06-008 round-4 UAT rework: two defect classes fixed here --
    guard_refusal`` / ``is_budget_guard_refusal`` stamp and read a best-effort,
    message-preserving marker attribute directly on ``.original`` for that
    purpose.
+
+TD-042 update: defect class 2's setattr/getattr marker is best-effort and
+fails silently for a host guard exception whose ``__setattr__`` rejects the
+marker attribute (e.g. one that raises to protect its own fields), leaving
+``LLMFanoutResult.error.is_budget_refusal`` incorrectly ``None``/``False``
+for that exception even though the guard did refuse. ``call_llm_async``
+must keep unwrapping ``BudgetGuardRefusal`` back to ``.original`` before
+returning to ANY caller (REQ-F-003 -- including ``_execute_fan_out_item``,
+which deliberately stays on the public ``call_llm_async`` seam so it keeps
+inheriting routing/retry/fallback/telemetry behavior, and so existing tests
+that patch ``call_llm_async`` directly keep working), so
+``_execute_fan_out_item`` can never ``except BudgetGuardRefusal`` itself --
+by the time it sees the exception, it is already unwrapped.
+
+Fix: ``mark_budget_guard_refusal_context`` / ``consume_budget_guard_refusal_
+context`` record and read the exact (by identity) guard exception via a
+task-scoped ``contextvars.ContextVar`` instead of an attribute on the
+exception object -- no mutation of ``exc`` at all, so no ``__setattr__``
+failure mode is possible. ``asyncio`` copies the context at
+``asyncio.ensure_future``/``Task`` creation, and ``call_llm_many_async``
+creates one task per fan-out item, so concurrent siblings never observe
+each other's marks. ``mark_as_budget_guard_refusal`` / ``is_budget_guard_
+refusal`` (the original setattr/getattr marker) are kept for backward
+compatibility and as a defense-in-depth fallback for any other call path
+that still relies on the marker side-channel (D-2,
+``docs/plan/tech-debt/TD-042.research-report.md``).
 """
+
+import contextvars
+from typing import Optional
 
 
 class BudgetGuardRefusal(Exception):
@@ -58,7 +87,10 @@ class BudgetGuardRefusal(Exception):
     for its streaming sibling (a fallback-tier refusal can reach it via
     ``_call_llm_stream_async_direct``'s pre-first-chunk fallback
     materialization) -- and never surfaces to a caller of ``call_llm_async``
-    or ``call_llm_stream_async``.
+    or ``call_llm_stream_async``, including ``LLMService._execute_fan_out_item``
+    (TD-042: recognized instead via ``consume_budget_guard_refusal_context``,
+    an identity check against the un-unwrapped exception recorded in a
+    ContextVar at the moment ``_check_budget_before_dispatch`` raised it).
 
     ``.original``'s type and message are preserved byte-for-byte (that is
     what every caller of ``call_llm_async``/``call_llm_stream_async``
@@ -90,9 +122,19 @@ def mark_as_budget_guard_refusal(exc: BaseException) -> None:
     Deliberately does not change ``exc``'s type or message (NFR-F-003: the
     guard's exception must propagate to the caller of ``call_llm_async``
     unchanged) -- only adds an out-of-band attribute. Best-effort: a few
-    built-in exception types restrict instance attributes; a failed stamp
-    silently degrades to "not recognized as a guard refusal" rather than
-    breaking the refusal itself.
+    exception types restrict instance attributes (e.g. a custom
+    ``__setattr__`` that raises); a failed stamp silently degrades to "not
+    recognized as a guard refusal" rather than breaking the refusal itself.
+
+    .. deprecated:: TD-042
+        ``LLMService._execute_fan_out_item`` no longer depends solely on
+        this marker -- it primarily uses
+        ``consume_budget_guard_refusal_context``, a task-scoped ContextVar
+        identity check immune to this marker's silent-failure mode (see
+        module docstring). This function is still called (kept for backward
+        compatibility and as a defense-in-depth fallback for any other call
+        path, D-2, ``docs/plan/tech-debt/TD-042.research-report.md``); new
+        code should prefer ``mark_budget_guard_refusal_context``.
     """
     try:
         setattr(exc, _MARKER_ATTR, True)
@@ -112,11 +154,62 @@ def is_budget_guard_refusal(exc: BaseException) -> bool:
     escape from there -- that would abort every sibling item in the same
     ``asyncio.gather`` call, breaking fan-out's per-item isolation contract
     for a reason that has nothing to do with any of those siblings.
+
+    .. deprecated:: TD-042
+        Superseded, for ``_execute_fan_out_item``, by
+        ``consume_budget_guard_refusal_context``'s ContextVar identity
+        check, which runs first and does not depend on ``exc`` accepting an
+        out-of-band attribute. Kept as a defense-in-depth fallback for other
+        call paths (D-2); see ``mark_as_budget_guard_refusal``'s
+        deprecation note.
     """
     try:
         return getattr(exc, _MARKER_ATTR, False) is True
     except Exception:
         return False
+
+
+# TD-042: task-scoped companion to the setattr/getattr marker above, keyed
+# by object identity rather than a mutated attribute. ``contextvars.Context``
+# is copied whenever ``asyncio`` starts a new ``Task``
+# (``asyncio.ensure_future``/``asyncio.create_task``) -- ``LLMService.
+# call_llm_many_async`` creates exactly one such task per fan-out item, so a
+# ``set()`` made while handling one item's refusal is never visible to a
+# concurrently-running sibling item's task, without any global registry, id()
+# re-use risk, or weak-referenceability requirement.
+_budget_guard_refusal_context: "contextvars.ContextVar[Optional[BaseException]]" = (
+    contextvars.ContextVar("agentmap_budget_guard_refusal_context", default=None)
+)
+
+
+def mark_budget_guard_refusal_context(original: BaseException) -> None:
+    """Record *original* -- the guard's own, still-unwrapped exception -- in
+    the current task's ``ContextVar`` right before it is wrapped and raised
+    as ``BudgetGuardRefusal`` (``LLMService._check_budget_before_dispatch``).
+
+    Companion to ``mark_as_budget_guard_refusal``: unlike that function,
+    this never touches ``original`` itself, so it cannot fail for any
+    exception shape, including one with a pathological ``__setattr__``
+    (TD-042). Read back via ``consume_budget_guard_refusal_context``.
+    """
+    _budget_guard_refusal_context.set(original)
+
+
+def consume_budget_guard_refusal_context(exc: BaseException) -> bool:
+    """True if *exc* is -- by identity, not equality -- the exact exception
+    most recently recorded in THIS task's context by
+    ``mark_budget_guard_refusal_context``.
+
+    Always clears the ContextVar after reading (read-once semantics) so a
+    stale mark can never be attributed to a later, unrelated exception
+    handled in the same task. Safe to call for any exception, including one
+    the guard never touched -- ``exc`` is never mutated or inspected beyond
+    an identity comparison, so no host exception shape (pathological
+    ``__setattr__``/``__eq__``/``__hash__``) can make this raise.
+    """
+    recorded = _budget_guard_refusal_context.get()
+    _budget_guard_refusal_context.set(None)
+    return recorded is not None and recorded is exc
 
 
 def telemetry_safe_marker(exc: "BudgetGuardRefusal") -> Exception:

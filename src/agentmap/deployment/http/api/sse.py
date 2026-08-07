@@ -7,8 +7,12 @@ pieces of the SSE transport:
 
   * ``format_sse_event``      — frame an event block (``event:``/``data:``/blank).
   * ``format_sse_heartbeat``  — frame a ``:keepalive`` SSE comment line.
-  * ``to_serializable``       — JSON-friendly projection of dataclasses/datetimes.
   * ``prime_upstream``        — pull F04's first event pre-open (§A.3 error contract).
+
+TD-036: ``to_serializable`` (JSON-friendly projection of dataclasses/datetimes) is
+re-exported here from ``routes/_shared.py`` — the one canonical implementation also
+used by ``routes/execute.py`` — rather than defined locally, to avoid duplicating
+the recursive serialization logic.
 
 The concurrency limiter (DEC-6 semaphore) lives in ``sse_concurrency.py`` (split out
 to keep both modules under the 350-line limit).  ``routes/stream.py`` re-exports
@@ -18,13 +22,12 @@ route module continue to resolve unchanged.
 
 import asyncio
 import json
-from dataclasses import asdict, is_dataclass
-from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, Iterable, Optional, Tuple
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
+from agentmap.deployment.http.api.routes._shared import to_serializable
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
@@ -256,32 +259,6 @@ def validate_streaming_request_shape(
                 "parameters are rejected (no silent downgrade)."
             ),
         )
-
-
-def to_serializable(value: Any) -> Any:
-    """Convert dataclasses, datetimes, and nested structures to JSON-friendly values.
-
-    Mirrors the pattern at execute.py:130 so WorkflowProgressEvent payloads
-    can be fed directly to format_sse_event() without extra processing by
-    the route handler.
-
-    Args:
-        value: Any Python value.
-
-    Returns:
-        A JSON-serialisable equivalent of value.
-    """
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if is_dataclass(value) and not isinstance(value, type):
-        return to_serializable(asdict(value))
-    if isinstance(value, dict):
-        return {key: to_serializable(val) for key, val in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [to_serializable(item) for item in value]
-    return value
 
 
 # Terminal ``event_type``s whose ``result`` is normalized through the SAME

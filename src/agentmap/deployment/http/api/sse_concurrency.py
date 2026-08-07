@@ -19,6 +19,17 @@ requests — a per-request semaphore would limit nothing).  ``config wins once``
 the first resolved value sizes the pool for the process lifetime, mirroring how a
 module-level semaphore would have been fixed at import.  Tests reset the singleton
 via ``reset_stream_semaphore()`` so each starts from a clean, config-sized pool.
+
+SINGLE-APP-PER-PROCESS ASSUMPTION (TD-034): this singleton is process-wide, not
+app-instance-wide — a second app instance (or a config reload) sharing the same
+process will keep the FIRST instance's resolved limit, silently ignoring its own
+``max_concurrent_streams``. This is intentional and design-bounded for v1, which
+targets single-worker ASGI (one app per process; spec.md E06-F05 §A.4/§A.5 DEC-6).
+It is not enforced programmatically because it does not need to be for v1 — if a
+future architecture runs multiple app instances in one process, this module would
+need a config-change reconciler (compare live config to the cached semaphore's
+capacity and rebuild via ``reset_stream_semaphore()`` when they diverge) instead of
+the current build-once-and-cache singleton.
 """
 
 import asyncio

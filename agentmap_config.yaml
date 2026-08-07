@@ -110,6 +110,7 @@ llm:
       backoff_base: 2.0
       backoff_max: 30.0
       jitter: true
+      attempt_timeout: 30.0  # TD-028: per-attempt idle timeout (seconds)
     circuit_breaker:
       failure_threshold: 5
       reset_timeout: 60

@@ -1768,6 +1768,195 @@ class TestRunWorkflowStreamAsyncHappyPath(unittest.IsolatedAsyncioTestCase):
 
 
 # ---------------------------------------------------------------------------
+# TestReducerChannelStreamingParity — TD-041 regression
+# ---------------------------------------------------------------------------
+
+
+class TestReducerChannelStreamingParity(unittest.IsolatedAsyncioTestCase):
+    """TD-041 regression: streaming final_state must match non-streaming final_state
+    for graphs that use LangGraph channel reducers (append/accumulate semantics).
+
+    Builds a REAL 2-node LangGraph compiled graph — checkpointed via
+    ``InMemorySaver`` so ``get_state()`` is available — with a reducer channel
+    (``log: Annotated[list, operator.add]``).  Runs the SAME graph (same per-node
+    outputs) once through ``GraphExecutionService.execute_compiled_graph_async``
+    (non-streaming ``ainvoke`` — ground truth, reducers applied natively) and once
+    through ``GraphExecutionService.stream_compiled_graph_async`` (streaming).
+    Asserts the reducer-channel key is byte-equal across both paths (AC-3).
+
+    ENTRYPOINT:
+      GraphExecutionService.execute_compiled_graph_async / stream_compiled_graph_async
+
+    LOWEST ALLOWED MOCK SEAM:
+      Real LangGraph StateGraph/checkpointer; only GraphExecutionService's own
+      collaborators (tracking, policy, state_adapter, logging) are mocked via
+      ``_make_graph_execution_service``.
+
+    FORBIDDEN MOCKS:
+      Do NOT mock LangGraph's .astream()/.ainvoke()/.get_state() — the whole
+      point is to verify reducer application on the real engine.
+
+    COUNTER-FACTUAL: Prior to the TD-041 fix, the streaming path merged deltas
+    via naive ``final_state.update(state_delta)``, so ``final_state['log']``
+    would end up as only the LAST node's delta (``['n2 ran']``) instead of the
+    reduced ``['n1 ran', 'n2 ran']`` — this test fails against that
+    implementation and passes once ``get_state(config)`` is used instead.
+    """
+
+    def _build_reducer_graph(self) -> Any:
+        """Compile a 2-node graph with a reducer channel + in-memory checkpointer."""
+        import operator
+        from typing import Annotated
+
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        class _ReducerState(TypedDict):
+            log: Annotated[list, operator.add]
+
+        def _n1(state: _ReducerState) -> dict:
+            return {"log": ["n1 ran"]}
+
+        def _n2(state: _ReducerState) -> dict:
+            return {"log": ["n2 ran"]}
+
+        builder: StateGraph = StateGraph(_ReducerState)
+        builder.add_node("n1", _n1)
+        builder.add_node("n2", _n2)
+        builder.set_entry_point("n1")
+        builder.add_edge("n1", "n2")
+        builder.add_edge("n2", END)
+
+        return builder.compile(checkpointer=InMemorySaver())
+
+    async def test_streaming_reducer_channel_matches_non_streaming(self) -> None:
+        """TD-041: streaming final_state['log'] must equal the non-streaming
+        (ainvoke) final_state['log'] — both must reflect the REDUCED
+        (accumulated) list, not just the last node's delta.
+        """
+        from agentmap.services.graph.graph_execution_service import (
+            _TerminalStreamResult,
+        )
+
+        service, mocks = _make_graph_execution_service()
+        compiled_graph = self._build_reducer_graph()
+        initial_state = {"log": []}
+
+        # Non-streaming path — ainvoke applies reducers natively (ground truth).
+        non_streaming_result = await service.execute_compiled_graph_async(
+            executable_graph=compiled_graph,
+            graph_name="reducer-graph",
+            initial_state=initial_state,
+            execution_tracker=mocks["mock_tracker"],
+            config={"configurable": {"thread_id": "non-streaming"}},
+        )
+
+        # Streaming path — same graph, same per-node outputs, distinct thread.
+        gen = service.stream_compiled_graph_async(
+            executable_graph=compiled_graph,
+            graph_name="reducer-graph",
+            initial_state=initial_state,
+            execution_tracker=mocks["mock_tracker"],
+            config={"configurable": {"thread_id": "streaming"}},
+        )
+
+        streaming_terminal = None
+        async for item in gen:
+            if isinstance(item, _TerminalStreamResult):
+                streaming_terminal = item.result
+
+        self.assertIsNotNone(
+            streaming_terminal, "Streaming path must yield a terminal result"
+        )
+
+        self.assertEqual(
+            streaming_terminal.final_state["log"],
+            non_streaming_result.final_state["log"],
+            "TD-041: streaming final_state['log'] must equal non-streaming "
+            "final_state['log'] (AC-3 byte-equivalence). A naive "
+            "dict.update() delta merge would produce only the last node's "
+            "delta instead of the reducer-accumulated list.",
+        )
+        self.assertEqual(
+            streaming_terminal.final_state["log"],
+            ["n1 ran", "n2 ran"],
+            "Reduced 'log' must contain both nodes' contributions, in order — "
+            "proof the reducer (operator.add) was actually applied, not just "
+            "that the two paths happen to agree on some other wrong value.",
+        )
+
+    async def test_get_state_returning_unpopulated_values_keeps_delta_fallback(
+        self,
+    ) -> None:
+        """TD-041 guard: an unpopulated/unexpected get_state().values must NOT
+        silently wipe out the delta-accumulated final_state.
+
+        A checkpointer/graph that returns a snapshot whose ``.values`` is not a
+        populated mapping (e.g. an un-configured ``MagicMock`` attribute, as
+        several existing test doubles use for their default "no interrupt"
+        state) must fall back to the naive delta-merged final_state rather than
+        silently producing ``final_state == {}``.
+
+        COUNTER-FACTUAL: A pre-guard implementation doing
+        ``final_state = dict(state_snapshot.values)`` unconditionally would pass
+        a bare ``MagicMock`` to ``dict()`` and get back ``{}`` *without raising*
+        — silently discarding all state instead of merely mis-reducing one
+        channel. That failure mode is strictly worse than the original TD-041
+        bug and would not be caught by the ``except Exception`` guard.
+        """
+        service, mocks = _make_graph_execution_service()
+
+        updates = [
+            ("n1", {"o1": "v1"}),
+            ("n2", {"o2": "v2"}),
+        ]
+
+        class _FakeGraphWithUnpopulatedGetState(_FakeCompiledGraph):
+            def get_state(self, config=None):
+                # Mirrors the "no pending interrupt" default used by several
+                # existing test doubles: a MagicMock whose .values was never
+                # explicitly configured.
+                snapshot = MagicMock(name="unpopulated_state_snapshot")
+                snapshot.tasks = []
+                return snapshot
+
+        def astream_factory(initial_state):
+            return _make_node_updates(*updates)
+
+        fake_graph = _FakeGraphWithUnpopulatedGetState(astream_factory)
+
+        from agentmap.services.graph.graph_execution_service import (
+            _TerminalStreamResult,
+        )
+
+        gen = service.stream_compiled_graph_async(
+            executable_graph=fake_graph,
+            graph_name="unpopulated-get-state-graph",
+            initial_state={"input": "bva"},
+            execution_tracker=mocks["mock_tracker"],
+            config={"configurable": {"thread_id": "t1"}},
+        )
+
+        terminal_result = None
+        async for item in gen:
+            if isinstance(item, _TerminalStreamResult):
+                terminal_result = item.result
+
+        self.assertIsNotNone(terminal_result)
+        self.assertIn(
+            "o1",
+            terminal_result.final_state,
+            "final_state must retain 'o1' from the delta-merge fallback — an "
+            "unpopulated get_state() snapshot must not wipe the state",
+        )
+        self.assertIn(
+            "o2",
+            terminal_result.final_state,
+            "final_state must retain 'o2' from the delta-merge fallback — an "
+            "unpopulated get_state() snapshot must not wipe the state",
+        )
+
+
+# ---------------------------------------------------------------------------
 # TestDisambiguationMechanism — TC-F04-D8
 # (T-E06-F04-004)
 # ---------------------------------------------------------------------------
@@ -2913,6 +3102,35 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
             side_effect=AgentMapNotInitialized("not initialized"),
         ):
             with self.assertRaises(AgentMapNotInitialized):
+                async for _ in run_workflow_stream_async("test-graph", {}):
+                    pass  # pragma: no cover — must raise before yielding
+
+    async def test_setup_stray_exception_propagates_original_type(self) -> None:
+        """TD-040: a stray (unmapped) prelude exception must propagate with its
+        ORIGINAL type, not be collapsed into a RuntimeError.
+
+        COUNTER-FACTUAL: the pre-fix ``except Exception as e: raise
+        RuntimeError(...)`` clause would turn this KeyError into a RuntimeError,
+        losing the original type for callers/telemetry. assertRaises(KeyError)
+        would fail under that behavior.
+        """
+        from agentmap.runtime.workflow_ops import run_workflow_stream_async
+
+        exc = KeyError("unexpected missing config key")
+        fake_container = self._make_fake_container_raising(exc)
+
+        with (
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=fake_container,
+            ),
+        ):
+            _mock_init.return_value = None
+            with self.assertRaises(KeyError):
                 async for _ in run_workflow_stream_async("test-graph", {}):
                     pass  # pragma: no cover — must raise before yielding
 

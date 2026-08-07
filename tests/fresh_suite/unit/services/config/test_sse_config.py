@@ -24,6 +24,7 @@ Caller-Path Contract (per test-plan.md §Caller-Path Contracts):
 import unittest
 from unittest.mock import Mock
 
+from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.config.config_service import ConfigService
 
@@ -336,6 +337,163 @@ class TestSseConfigYamlRoundTrip(unittest.TestCase):
         self.assertGreater(result["idle_timeout_seconds"], 0)
         self.assertGreater(result["heartbeat_interval_seconds"], 0)
         self.assertGreater(result["max_concurrent_streams"], 0)
+
+
+# ---------------------------------------------------------------------------
+# TD-035: http.sse.* validation — negative/zero/non-numeric values must raise
+# a controlled ConfigurationException, not propagate to an uncontrolled 500
+# at semaphore-construction or deadline-arithmetic time.
+# ---------------------------------------------------------------------------
+
+
+class TestGetSseConfigValidation(unittest.TestCase):
+    """
+    get_sse_config() must validate http.sse.* values eagerly and raise
+    ConfigurationException (not AttributeError/ValueError/TypeError) for
+    invalid configuration.
+
+    Counter-factual: an accessor that merges without validating would return
+    the raw invalid value (e.g. max_concurrent_streams=-1) and let the
+    exception surface later from asyncio.Semaphore(int(-1)) as an
+    uncontrolled ValueError/500 instead of here as a ConfigurationException.
+    """
+
+    def _make_with_sse(self, sse_overrides) -> AppConfigService:
+        return _make_service({"http": {"sse": sse_overrides}})
+
+    # -- max_concurrent_streams --------------------------------------------
+
+    def test_negative_max_concurrent_streams_raises_configuration_exception(self):
+        service = self._make_with_sse({"max_concurrent_streams": -1})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    def test_zero_max_concurrent_streams_raises_configuration_exception(self):
+        """max_concurrent_streams=0 is type-valid but semantically poisons the
+        semaphore (permanently locked, silent 503s) — must be rejected."""
+        service = self._make_with_sse({"max_concurrent_streams": 0})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    def test_non_numeric_max_concurrent_streams_raises_configuration_exception(self):
+        service = self._make_with_sse({"max_concurrent_streams": "abc"})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    # -- max_stream_duration_seconds ----------------------------------------
+
+    def test_negative_max_stream_duration_seconds_raises(self):
+        service = self._make_with_sse({"max_stream_duration_seconds": -100})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    def test_zero_max_stream_duration_seconds_raises(self):
+        service = self._make_with_sse({"max_stream_duration_seconds": 0})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    def test_non_numeric_max_stream_duration_seconds_raises(self):
+        service = self._make_with_sse({"max_stream_duration_seconds": "abc"})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    # -- idle_timeout_seconds -------------------------------------------------
+
+    def test_negative_idle_timeout_seconds_raises(self):
+        service = self._make_with_sse({"idle_timeout_seconds": -30})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    def test_zero_idle_timeout_seconds_raises(self):
+        service = self._make_with_sse({"idle_timeout_seconds": 0})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    def test_non_numeric_idle_timeout_seconds_raises(self):
+        service = self._make_with_sse({"idle_timeout_seconds": "abc"})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    # -- heartbeat_interval_seconds: 0 is VALID, negative/non-numeric is not --
+
+    def test_zero_heartbeat_interval_seconds_is_valid(self):
+        """heartbeat_interval_seconds=0 disables keepalive; must NOT raise."""
+        service = self._make_with_sse({"heartbeat_interval_seconds": 0})
+        result = service.get_sse_config()
+        self.assertEqual(result["heartbeat_interval_seconds"], 0)
+
+    def test_negative_heartbeat_interval_seconds_raises(self):
+        service = self._make_with_sse({"heartbeat_interval_seconds": -1})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    def test_non_numeric_heartbeat_interval_seconds_raises(self):
+        service = self._make_with_sse({"heartbeat_interval_seconds": "abc"})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    # -- http.sse section itself must be a dict ------------------------------
+
+    def test_null_sse_section_raises_configuration_exception(self):
+        """http: {sse: null} must not crash _merge_with_defaults with
+        AttributeError; it must raise a controlled ConfigurationException."""
+        service = _make_service({"http": {"sse": None}})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    def test_non_dict_sse_section_raises_configuration_exception(self):
+        service = _make_service({"http": {"sse": "not-a-dict"}})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    def test_list_sse_section_raises_configuration_exception(self):
+        service = _make_service({"http": {"sse": []}})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    # -- error message must be actionable ------------------------------------
+
+    def test_error_message_names_the_offending_key(self):
+        service = self._make_with_sse({"max_concurrent_streams": -1})
+        with self.assertRaises(ConfigurationException) as ctx:
+            service.get_sse_config()
+        self.assertIn("max_concurrent_streams", str(ctx.exception))
+
+    # -- valid boolean-typed values must still be rejected (bool is an int) --
+
+    def test_boolean_max_concurrent_streams_raises(self):
+        """bool is a subclass of int in Python; True/False must not silently
+        pass as valid integers for a concurrency cap."""
+        service = self._make_with_sse({"max_concurrent_streams": True})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    # -- numeric strings (env:VAR resolution always yields str) must pass ----
+
+    def test_numeric_string_max_concurrent_streams_is_valid(self):
+        """ConfigService._resolve_env_vars() resolves env:VAR_NAME entries via
+        os.environ.get(), which always returns str — a valid numeric string
+        (e.g. from env-var substitution) must not be rejected."""
+        service = self._make_with_sse({"max_concurrent_streams": "50"})
+        result = service.get_sse_config()
+        self.assertEqual(result["max_concurrent_streams"], "50")
+
+    def test_negative_numeric_string_max_concurrent_streams_raises(self):
+        service = self._make_with_sse({"max_concurrent_streams": "-1"})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    # -- non-finite floats (NaN/Infinity, parseable by YAML/float()) rejected -
+
+    def test_nan_max_concurrent_streams_raises(self):
+        service = self._make_with_sse({"max_concurrent_streams": float("nan")})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
+
+    def test_infinity_max_stream_duration_seconds_raises(self):
+        service = self._make_with_sse({"max_stream_duration_seconds": float("inf")})
+        with self.assertRaises(ConfigurationException):
+            service.get_sse_config()
 
 
 if __name__ == "__main__":

@@ -91,6 +91,7 @@ class LLMBatchHandle:
     expires_at: Optional[str] = None
     ended_at: Optional[str] = None
     request_counts: Optional[LLMBatchRequestCounts] = None
+    created_at: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -124,6 +125,7 @@ class LLMBatchHandle:
             "expires_at": self.expires_at,
             "ended_at": self.ended_at,
             "request_counts": counts,
+            "created_at": self.created_at,
         }
 
     @classmethod
@@ -155,6 +157,10 @@ class LLMBatchHandle:
             expires_at=data.get("expires_at"),
             ended_at=data.get("ended_at"),
             request_counts=counts,
+            # TD-001/F-MED-5: back-compat — handles persisted before this field
+            # was introduced have no "created_at" key; default to None rather
+            # than raising KeyError.
+            created_at=data.get("created_at"),
         )
 
 

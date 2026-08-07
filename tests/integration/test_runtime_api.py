@@ -336,6 +336,52 @@ class TestRunWorkflow:
 
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+    @patch("agentmap.runtime.workflow_ops.RuntimeManager")
+    @patch("agentmap.runtime.workflow_ops.ensure_initialized")
+    def test_run_workflow_stray_exception_propagates_original_type(
+        self, mock_ensure_init, mock_runtime_manager
+    ):
+        """TD-040: a stray (unmapped) prelude exception must propagate with its
+        ORIGINAL type, not be collapsed into a RuntimeError.
+
+        Counter-factual: pre-fix, the bare ``except Exception as e: raise
+        RuntimeError(...)`` at the bottom of run_workflow wrapped this
+        AttributeError into a RuntimeError, losing the original type for
+        callers/telemetry. pytest.raises(AttributeError) would fail under
+        that behavior.
+        """
+        mock_container = Mock()
+        mock_app_config = Mock()
+        mock_bundle_service = Mock()
+        mock_logging_service = Mock()
+        mock_logger = Mock()
+
+        mock_container.app_config_service.return_value = mock_app_config
+        mock_container.graph_bundle_service.return_value = mock_bundle_service
+        mock_container.logging_service.return_value = mock_logging_service
+        mock_logging_service.get_logger.return_value = mock_logger
+
+        import tempfile
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            csv_repo = Path(temp_dir)
+            test_csv = csv_repo / "test_graph.csv"
+            test_csv.write_text("test content")
+            mock_app_config.get_csv_repository_path.return_value = csv_repo
+
+            mock_bundle_service.get_or_create_bundle.side_effect = AttributeError(
+                "unexpected DI misconfiguration"
+            )
+            mock_runtime_manager.get_container.return_value = mock_container
+
+            with pytest.raises(AttributeError, match="unexpected DI misconfiguration"):
+                run_workflow("test_graph", {"input": "test"})
+        finally:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 class TestResumeWorkflow:
     """Test the resume_workflow facade function."""

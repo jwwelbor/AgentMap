@@ -208,17 +208,43 @@ class AnthropicBatchAdapter:
 
         for item in self._client.messages.batches.results(provider_batch_id):
             custom_id = item.custom_id
+            if custom_id not in custom_to_spec:
+                # TD-001/NB-3: the provider returned a custom_id that was never
+                # sent in this batch's request_id_map. Falling through to use
+                # the raw custom_id as request_id keeps results flowing (no
+                # data loss), but this is unexpected and worth flagging —
+                # completeness (missing ids) is covered separately by
+                # LLMService.reconcile_batch_results().
+                self._logger.warning(
+                    "llm_batch.unexpected_custom_id provider_batch_id=%s "
+                    "custom_id=%s — not present in this batch's request_id_map; "
+                    "using custom_id as request_id",
+                    provider_batch_id,
+                    custom_id,
+                )
             request_id = custom_to_spec.get(custom_id, custom_id)
             result = item.result
 
             if result.type == "succeeded":
                 msg = result.message
-                # Extract text content
+                # Extract text content. Anthropic messages can legitimately
+                # contain multiple content blocks (e.g. tool-use blocks
+                # interleaved with text blocks); join every text block's
+                # ``text`` in order rather than reading only the first block,
+                # so a valid later text block is not mis-reported as empty
+                # (TD-001/NB-2).
                 content: Optional[str] = None
                 raw_content = getattr(msg, "content", None)
                 if raw_content:
-                    first = raw_content[0]
-                    content = getattr(first, "text", None)
+                    text_parts: List[str] = [
+                        block_text
+                        for block_text in (
+                            getattr(block, "text", None) for block in raw_content
+                        )
+                        if isinstance(block_text, str) and block_text
+                    ]
+                    if text_parts:
+                        content = "".join(text_parts)
 
                 # F-MED-2: empty/missing content is a parse error — report as errored
                 if not content:

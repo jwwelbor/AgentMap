@@ -135,6 +135,84 @@ class TestOTELTelemetryService:
         mock_span.set_attribute.assert_any_call("key1", "val1")
         mock_span.set_attribute.assert_any_call("key2", 42)
 
+    def test_record_exception_redacts_labelled_credential(self) -> None:
+        """TD-030: a labelled api_key=... substring is scrubbed before it
+        reaches the span, and the recorded exception is a fresh, generic
+        object (no __cause__) rather than the original."""
+        svc = self._make_service()
+        mock_span = MagicMock()
+        secret = "sk-SUPERSECRETKEY-MUST-NOT-APPEAR"
+        exc = ValueError(f"Authentication failed: api_key={secret}")
+
+        svc.record_exception(mock_span, exc)
+
+        mock_span.record_exception.assert_called_once()
+        recorded_exc = mock_span.record_exception.call_args[0][0]
+        assert secret not in str(recorded_exc)
+        assert recorded_exc is not exc
+        assert recorded_exc.__cause__ is None
+
+        mock_span.set_status.assert_called_once()
+        status_args = mock_span.set_status.call_args[0]
+        assert secret not in str(status_args[1])
+
+    def test_record_exception_redacts_bearer_token(self) -> None:
+        """TD-030: an 'Authorization: Bearer <token>' substring is scrubbed."""
+        svc = self._make_service()
+        mock_span = MagicMock()
+        secret = "abcDEF123.tokenvalue"
+        exc = RuntimeError(f"401: Authorization: Bearer {secret}")
+
+        svc.record_exception(mock_span, exc)
+
+        recorded_exc = mock_span.record_exception.call_args[0][0]
+        assert secret not in str(recorded_exc)
+
+    def test_record_exception_redacts_bare_sk_token(self) -> None:
+        """TD-030: a bare sk-... style token embedded in a message is scrubbed
+        even without a labelled key= prefix."""
+        svc = self._make_service()
+        mock_span = MagicMock()
+        secret_token = "sk-abc123DEADBEEF456789012"
+        exc = ValueError(f"invalid key: {secret_token}")
+
+        svc.record_exception(mock_span, exc)
+
+        recorded_exc = mock_span.record_exception.call_args[0][0]
+        assert secret_token not in str(recorded_exc)
+
+    def test_record_exception_passthrough_when_no_credential(self) -> None:
+        """TD-030: when no credential pattern matches, the original exception
+        object is still recorded unchanged (no behavior change for the
+        common case)."""
+        svc = self._make_service()
+        mock_span = MagicMock()
+        exc = ValueError("plain error with no secrets")
+
+        svc.record_exception(mock_span, exc)
+
+        mock_span.record_exception.assert_called_once_with(exc)
+
+    def test_record_exception_does_not_redact_uuid_in_non_llm_message(self) -> None:
+        """F2 regression: record_exception() is a shared telemetry boundary
+        used by every span in the app (storage, graph-runner, etc.), not
+        just LLM ones. The bare long-opaque-token catch-all from
+        llm_error_utils._SENSITIVE_RE must not be applied here, or an
+        ordinary UUID/thread-id in a non-LLM exception message gets
+        false-positive-redacted and the original exception object/type is
+        silently replaced with a bare Exception."""
+        svc = self._make_service()
+        mock_span = MagicMock()
+        thread_id = "2b7ba91b-5552-4c17-ae2c-8fb42d020dc5"
+        exc = RuntimeError(f"Missing thread_id after checkpoint execution: {thread_id}")
+
+        svc.record_exception(mock_span, exc)
+
+        mock_span.record_exception.assert_called_once_with(exc)
+        recorded_exc = mock_span.record_exception.call_args[0][0]
+        assert isinstance(recorded_exc, RuntimeError)
+        assert thread_id in str(recorded_exc)
+
     def test_add_span_event_delegates(self) -> None:
         """TC-015: add_span_event delegates to span.add_event."""
         svc = self._make_service()
