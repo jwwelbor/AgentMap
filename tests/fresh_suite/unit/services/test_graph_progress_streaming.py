@@ -2916,6 +2916,35 @@ class TestRunWorkflowStreamAsyncErrorPaths(unittest.IsolatedAsyncioTestCase):
                 async for _ in run_workflow_stream_async("test-graph", {}):
                     pass  # pragma: no cover — must raise before yielding
 
+    async def test_setup_stray_exception_propagates_original_type(self) -> None:
+        """TD-040: a stray (unmapped) prelude exception must propagate with its
+        ORIGINAL type, not be collapsed into a RuntimeError.
+
+        COUNTER-FACTUAL: the pre-fix ``except Exception as e: raise
+        RuntimeError(...)`` clause would turn this KeyError into a RuntimeError,
+        losing the original type for callers/telemetry. assertRaises(KeyError)
+        would fail under that behavior.
+        """
+        from agentmap.runtime.workflow_ops import run_workflow_stream_async
+
+        exc = KeyError("unexpected missing config key")
+        fake_container = self._make_fake_container_raising(exc)
+
+        with (
+            patch(
+                "agentmap.runtime.workflow_ops.ensure_initialized_async",
+                new_callable=AsyncMock,
+            ) as _mock_init,
+            patch(
+                "agentmap.runtime.workflow_ops.RuntimeManager.get_container",
+                return_value=fake_container,
+            ),
+        ):
+            _mock_init.return_value = None
+            with self.assertRaises(KeyError):
+                async for _ in run_workflow_stream_async("test-graph", {}):
+                    pass  # pragma: no cover — must raise before yielding
+
 
 # ---------------------------------------------------------------------------
 # TestRunWorkflowStreamAsyncCancellation — TC-F04-006
