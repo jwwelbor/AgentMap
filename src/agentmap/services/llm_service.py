@@ -13,6 +13,7 @@ import mimetypes
 import random
 import re
 import time
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import (
     Any,
@@ -2713,6 +2714,9 @@ class LLMService:
             model=request.model,
             request_id_map=request_id_map,
             expires_at=expires_at,
+            # TD-001/F-MED-5: populate the spec-declared created_at field so
+            # downstream lifecycle tracking/audit tooling can rely on it.
+            created_at=datetime.now(timezone.utc).isoformat(),
         )
 
         if self._batch_repo is not None:
@@ -2767,8 +2771,18 @@ class LLMService:
 
         try:
             return LLMBatchHandle.from_dict(handle_data)
-        except (KeyError, ValueError) as exc:
-            raise LLMServiceError(f"Cannot restore batch handle: {exc}") from exc
+        except KeyError as exc:
+            raise LLMServiceError(
+                f"Cannot restore batch handle: missing required field {exc}. "
+                "See LLMBatchHandle.to_dict()/from_dict() in "
+                "agentmap.models.llm_batch for the expected schema."
+            ) from exc
+        except ValueError as exc:
+            raise LLMServiceError(
+                f"Cannot restore batch handle: invalid field value ({exc}). "
+                "See LLMBatchHandle.to_dict()/from_dict() in "
+                "agentmap.models.llm_batch for the expected schema."
+            ) from exc
 
     def poll_batch(self, handle: LLMBatchHandle) -> LLMBatchHandle:
         """
@@ -2811,6 +2825,7 @@ class LLMService:
             expires_at=poll_result.expires_at or handle.expires_at,
             ended_at=poll_result.ended_at,
             request_counts=poll_result.request_counts,
+            created_at=handle.created_at,
         )
 
         if self._batch_repo is not None:
@@ -2934,6 +2949,26 @@ class LLMService:
         )
         return records
 
+    def delete_batch(self, handle: LLMBatchHandle) -> bool:
+        """
+        Delete the persisted handle file for ``handle`` (TD-001, spec §1.5).
+
+        A no-op returning ``False`` when no batch repository is configured
+        (matching the ``self._batch_repo is not None`` guard used by
+        ``submit_batch``/``poll_batch``). Idempotent — deleting an
+        already-absent handle returns ``False`` rather than raising.
+        """
+        if self._batch_repo is None:
+            return False
+
+        deleted = self._batch_repo.delete(handle.agentmap_batch_id)
+        self._logger.info(
+            "llm_batch.handle_deleted agentmap_batch_id=%s deleted=%s",
+            handle.agentmap_batch_id,
+            deleted,
+        )
+        return deleted
+
     # ------------------------------------------------------------------
     # Async surfaces (REQ-F-006) — wrap sync methods via asyncio.to_thread
     # ------------------------------------------------------------------
@@ -2955,6 +2990,10 @@ class LLMService:
     ) -> "List[LLMBatchResult]":
         """Async wrapper for :meth:`fetch_batch_results` (runs off event-loop thread)."""
         return await asyncio.to_thread(self.fetch_batch_results, handle)
+
+    async def adelete_batch(self, handle: "LLMBatchHandle") -> bool:
+        """Async wrapper for :meth:`delete_batch` (runs off event-loop thread)."""
+        return await asyncio.to_thread(self.delete_batch, handle)
 
     async def wait_for_batch(
         self,

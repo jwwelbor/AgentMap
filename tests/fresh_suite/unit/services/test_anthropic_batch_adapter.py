@@ -723,6 +723,173 @@ class TestSucceededEmptyContent:
         assert isinstance(record.error, LLMExecutionError)
 
 
+class TestFetchResultsUnexpectedCustomId:
+    """TD-001/NB-3: unmapped custom_id must be logged, not silently accepted."""
+
+    def test_unmapped_custom_id_logs_warning(self):
+        """
+        A custom_id absent from request_id_map (a provider-invented or
+        malformed id) must trigger a warning log so the gap is diagnosable,
+        even though results still flow through (no data loss) using the
+        raw custom_id as request_id.
+        """
+        from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
+
+        client_instance = MagicMock()
+        mock_sdk = MagicMock()
+        mock_sdk.Anthropic.return_value = client_instance
+
+        result_item = MagicMock()
+        result_item.custom_id = "unexpected-id-not-in-map"
+        result_item.result.type = "succeeded"
+        msg = MagicMock()
+        msg.content = [MagicMock(text="hi")]
+        msg.model = "claude-sonnet-4-6"
+        msg.usage.input_tokens = 1
+        msg.usage.output_tokens = 1
+        msg.usage.cache_creation_input_tokens = None
+        msg.usage.cache_read_input_tokens = None
+        result_item.result.message = msg
+
+        client_instance.messages.batches.results.return_value = iter([result_item])
+
+        mock_logger = MagicMock()
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            adapter = AnthropicBatchAdapter(api_key="test-key", logger=mock_logger)
+            records = list(
+                adapter.fetch_results(
+                    provider_batch_id="msgbatch_abc",
+                    request_id_map={"spec-1": "spec-1"},  # does not contain custom_id
+                )
+            )
+
+        assert len(records) == 1
+        assert records[0].request_id == "unexpected-id-not-in-map"
+        assert mock_logger.warning.called
+        warning_args = mock_logger.warning.call_args
+        assert "unexpected_custom_id" in warning_args[0][0]
+
+    def test_mapped_custom_id_does_not_log_warning(self):
+        """A normal, mapped custom_id must not trigger the unexpected-id warning."""
+        from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
+
+        client_instance = MagicMock()
+        mock_sdk = MagicMock()
+        mock_sdk.Anthropic.return_value = client_instance
+
+        result_item = MagicMock()
+        result_item.custom_id = "spec-1"
+        result_item.result.type = "succeeded"
+        msg = MagicMock()
+        msg.content = [MagicMock(text="hi")]
+        msg.model = "claude-sonnet-4-6"
+        msg.usage.input_tokens = 1
+        msg.usage.output_tokens = 1
+        msg.usage.cache_creation_input_tokens = None
+        msg.usage.cache_read_input_tokens = None
+        result_item.result.message = msg
+
+        client_instance.messages.batches.results.return_value = iter([result_item])
+
+        mock_logger = MagicMock()
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            adapter = AnthropicBatchAdapter(api_key="test-key", logger=mock_logger)
+            list(
+                adapter.fetch_results(
+                    provider_batch_id="msgbatch_abc",
+                    request_id_map={"spec-1": "spec-1"},
+                )
+            )
+
+        assert not mock_logger.warning.called
+
+
+class TestFetchResultsMultiBlockContent:
+    """TD-001/NB-2: fetch_results must join all text blocks, not just the first."""
+
+    def test_succeeded_with_multiple_text_blocks_joins_all_text(self):
+        """
+        A succeeded message with multiple text content blocks (e.g. a
+        tool-use block followed by two text blocks) must have its text
+        blocks joined in order, not truncated to the first block.
+
+        RED before fix: only ``content[0].text`` used — a leading non-text
+        or empty-text block would surface as content=None/errored even
+        though later blocks carry a valid response.
+        """
+        from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
+
+        client_instance = MagicMock()
+        mock_sdk = MagicMock()
+        mock_sdk.Anthropic.return_value = client_instance
+
+        result_item = MagicMock()
+        result_item.custom_id = "spec-multiblock"
+        result_item.result.type = "succeeded"
+        msg = MagicMock()
+        # First block is a non-text (tool-use-like) block with no .text
+        # attribute value carrying real content; remaining blocks are text.
+        tool_block = MagicMock(text=None)
+        text_block_1 = MagicMock(text="Hello, ")
+        text_block_2 = MagicMock(text="world!")
+        msg.content = [tool_block, text_block_1, text_block_2]
+        msg.model = "claude-sonnet-4-6"
+        msg.usage.input_tokens = 10
+        msg.usage.output_tokens = 5
+        msg.usage.cache_creation_input_tokens = None
+        msg.usage.cache_read_input_tokens = None
+        result_item.result.message = msg
+
+        client_instance.messages.batches.results.return_value = iter([result_item])
+
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
+            records = list(
+                adapter.fetch_results(
+                    provider_batch_id="msgbatch_abc",
+                    request_id_map={"spec-multiblock": "spec-multiblock"},
+                )
+            )
+
+        assert len(records) == 1
+        record = records[0]
+        assert record.status == "succeeded"
+        assert record.text == "Hello, world!"
+
+    def test_succeeded_with_single_text_block_unchanged(self):
+        """A single text block continues to be returned as-is (regression guard)."""
+        from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
+
+        client_instance = MagicMock()
+        mock_sdk = MagicMock()
+        mock_sdk.Anthropic.return_value = client_instance
+
+        result_item = MagicMock()
+        result_item.custom_id = "spec-single"
+        result_item.result.type = "succeeded"
+        msg = MagicMock()
+        msg.content = [MagicMock(text="just one block")]
+        msg.model = "claude-sonnet-4-6"
+        msg.usage.input_tokens = 1
+        msg.usage.output_tokens = 1
+        msg.usage.cache_creation_input_tokens = None
+        msg.usage.cache_read_input_tokens = None
+        result_item.result.message = msg
+
+        client_instance.messages.batches.results.return_value = iter([result_item])
+
+        with patch.dict(sys.modules, {"anthropic": mock_sdk}):
+            adapter = AnthropicBatchAdapter(api_key="test-key", logger=MagicMock())
+            records = list(
+                adapter.fetch_results(
+                    provider_batch_id="msgbatch_abc",
+                    request_id_map={"spec-single": "spec-single"},
+                )
+            )
+
+        assert records[0].text == "just one block"
+
+
 class TestSubmitMalformedSDKResponse:
     """F-MED-4: submit/poll must raise typed error on malformed SDK responses."""
 

@@ -163,3 +163,39 @@ class TestLLMBatchHandleF04:
         assert serialized["status"] == "canceled"
         handle2 = LLMBatchHandle.from_dict(serialized)
         assert handle2.status is LLMBatchStatus.CANCELED
+
+
+class TestLLMBatchHandleCreatedAt:
+    """TD-001/F-MED-5: LLMBatchHandle carries a created_at field per spec §1.1."""
+
+    def test_from_dict_f03_handle_no_created_at(self):
+        """A pre-TD-001 persisted handle (no created_at key) loads without KeyError."""
+        d = _make_f03_handle_dict()
+        assert "created_at" not in d  # confirm it's a true pre-fix dict
+
+        handle = LLMBatchHandle.from_dict(d)
+
+        assert handle.created_at is None
+
+    def test_created_at_roundtrip_when_set(self):
+        """created_at serializes through to_dict/from_dict."""
+        d = _make_f03_handle_dict()
+        d["created_at"] = "2026-08-06T00:00:00+00:00"
+
+        handle = LLMBatchHandle.from_dict(d)
+        assert handle.created_at == "2026-08-06T00:00:00+00:00"
+
+        serialized = handle.to_dict()
+        assert serialized["created_at"] == "2026-08-06T00:00:00+00:00"
+
+        handle2 = LLMBatchHandle.from_dict(serialized)
+        assert handle2.created_at == "2026-08-06T00:00:00+00:00"
+
+    def test_created_at_none_serializes_in_to_dict(self):
+        """to_dict includes the created_at key even when None."""
+        d = _make_f03_handle_dict()
+        handle = LLMBatchHandle.from_dict(d)
+
+        serialized = handle.to_dict()
+        assert "created_at" in serialized
+        assert serialized["created_at"] is None

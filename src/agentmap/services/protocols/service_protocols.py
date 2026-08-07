@@ -440,6 +440,16 @@ class LLMServiceProtocol(Protocol):
         """
         ...
 
+    def delete_batch(self, handle: LLMBatchHandle) -> bool:
+        """
+        Delete the persisted handle file for ``handle`` (TD-001, spec §1.5).
+
+        A no-op returning ``False`` when no batch repository is configured.
+        Idempotent: deleting an already-absent handle returns ``False``
+        rather than raising.
+        """
+        ...
+
     # ------------------------------------------------------------------
     # Async batch surface (E05-F04) — asyncio.to_thread wrappers
     # ------------------------------------------------------------------
@@ -460,6 +470,10 @@ class LLMServiceProtocol(Protocol):
         self, handle: LLMBatchHandle
     ) -> List[LLMBatchResult]:
         """Async variant of ``fetch_batch_results``; runs blocking SDK call off-thread."""
+        ...
+
+    async def adelete_batch(self, handle: LLMBatchHandle) -> bool:
+        """Async variant of ``delete_batch``; runs blocking file I/O off-thread."""
         ...
 
     async def wait_for_batch(

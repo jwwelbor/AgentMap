@@ -93,3 +93,20 @@ class BatchHandleRepository:
         Preserves ``request_id_map`` and all identity fields exactly.
         """
         return LLMBatchHandle.from_dict(data)
+
+    def delete(self, agentmap_batch_id: str) -> bool:
+        """
+        Delete a persisted handle file from disk (TD-001, spec §1.5).
+
+        Idempotent: deleting an already-absent handle is not an error.
+
+        Returns:
+            ``True`` if a file was deleted, ``False`` if it did not exist.
+        """
+        _require_safe_batch_id(agentmap_batch_id)
+        file_path = os.path.join(self._batch_dir, f"{agentmap_batch_id}.json")
+        try:
+            os.unlink(file_path)
+            return True
+        except FileNotFoundError:
+            return False

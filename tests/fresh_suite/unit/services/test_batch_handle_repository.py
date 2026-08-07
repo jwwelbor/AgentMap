@@ -266,3 +266,68 @@ class TestBatchHandleRepositoryPathSafety:
             handle = _make_handle(agentmap_batch_id=valid_id)
             repo.save(handle)
             assert os.path.exists(os.path.join(tmp_path, f"{valid_id}.json"))
+
+
+class TestBatchHandleRepositoryDelete:
+    """TD-001: BatchHandleRepository.delete() per spec §1.5 (file-based pruning)."""
+
+    def test_delete_removes_persisted_file(self):
+        """delete() removes the JSON file written by save()."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle = _make_handle()
+            repo.save(handle)
+            expected_file = os.path.join(tmp_path, f"{handle.agentmap_batch_id}.json")
+            assert os.path.exists(expected_file)
+
+            result = repo.delete(handle.agentmap_batch_id)
+
+            assert result is True
+            assert not os.path.exists(expected_file)
+
+    def test_delete_is_idempotent_for_missing_file(self):
+        """Deleting an already-absent handle returns False, not an error."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            missing_id = "amatch_" + "ab" * 16
+
+            result = repo.delete(missing_id)
+
+            assert result is False
+
+    def test_delete_rejects_path_traversal_id(self):
+        """delete() re-checks path safety like save()/load() (defense-in-depth)."""
+        from agentmap.exceptions import LLMServiceError
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            try:
+                repo.delete("../../etc/passwd")
+                assert False, "delete() must reject a path-traversal agentmap_batch_id"
+            except LLMServiceError:
+                pass
+
+    def test_delete_does_not_affect_other_saved_handles(self):
+        """delete() only removes the targeted handle's file."""
+        from agentmap.services.llm_batch_repository import BatchHandleRepository
+
+        with tempfile.TemporaryDirectory() as tmp_path:
+            repo = BatchHandleRepository(batch_dir=tmp_path)
+            handle_a = _make_handle(agentmap_batch_id="amatch_" + "aa" * 16)
+            handle_b = _make_handle(agentmap_batch_id="amatch_" + "bb" * 16)
+            repo.save(handle_a)
+            repo.save(handle_b)
+
+            repo.delete(handle_a.agentmap_batch_id)
+
+            assert not os.path.exists(
+                os.path.join(tmp_path, f"{handle_a.agentmap_batch_id}.json")
+            )
+            assert os.path.exists(
+                os.path.join(tmp_path, f"{handle_b.agentmap_batch_id}.json")
+            )

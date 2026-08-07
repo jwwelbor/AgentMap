@@ -298,6 +298,26 @@ class TestSubmitBatch:
         json.dumps(d)  # Must not raise
         assert "api_key" not in d
 
+    def test_submit_populates_created_at(self, tmp_path):
+        """TD-001/F-MED-5: submit_batch populates the spec-declared created_at field."""
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+        mock_adapter.submit.return_value = (
+            "msgbatch_abc123",
+            {"s1": "s1"},
+            "2026-06-08T00:00:00Z",
+        )
+
+        request = _make_batch_request(specs=[_make_spec("s1")])
+        handle = service.submit_batch(request)
+
+        assert handle.created_at is not None
+        assert isinstance(handle.created_at, str)
+        # Persisted handle round-trips created_at through disk too.
+        expected_file = os.path.join(str(tmp_path), f"{handle.agentmap_batch_id}.json")
+        with open(expected_file) as f:
+            data = json.loads(f.read())
+        assert data["created_at"] == handle.created_at
+
     def test_submit_empty_requests_raises_before_adapter(self, tmp_path):
         """TC-AC1-02: empty requests raises LLMServiceError before adapter call."""
         service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
@@ -698,6 +718,63 @@ class TestFetchBatchResults:
         assert record.text is None
 
 
+class TestDeleteBatch:
+    """TD-001: LLMService.delete_batch() lifecycle wrapper over the repository."""
+
+    def test_delete_removes_persisted_handle(self, tmp_path):
+        """delete_batch() deletes the handle's file from disk via the real repo."""
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+        mock_adapter.submit.return_value = (
+            "msgbatch_abc123",
+            {"s1": "s1"},
+            "2026-06-08T00:00:00Z",
+        )
+        request = _make_batch_request(specs=[_make_spec("s1")])
+        handle = service.submit_batch(request)
+        expected_file = os.path.join(str(tmp_path), f"{handle.agentmap_batch_id}.json")
+        assert os.path.exists(expected_file)
+
+        result = service.delete_batch(handle)
+
+        assert result is True
+        assert not os.path.exists(expected_file)
+
+    def test_delete_returns_false_when_no_repo_configured(self):
+        """delete_batch() is a no-op returning False when _batch_repo is None."""
+        service, mock_adapter, repo = _make_service()
+        service._batch_repo = None
+        handle = _make_handle()
+
+        result = service.delete_batch(handle)
+
+        assert result is False
+
+    def test_delete_returns_false_for_already_absent_handle(self, tmp_path):
+        """delete_batch() is idempotent — deleting a never-persisted handle returns False."""
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+        handle = _make_handle(agentmap_batch_id="amatch_" + "cd" * 16)
+
+        result = service.delete_batch(handle)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_adelete_batch_delegates_to_delete_batch(self, tmp_path):
+        """adelete_batch() runs delete_batch() off-thread and returns its result."""
+        service, mock_adapter, repo = _make_service(batch_dir=str(tmp_path))
+        mock_adapter.submit.return_value = (
+            "msgbatch_abc123",
+            {"s1": "s1"},
+            "2026-06-08T00:00:00Z",
+        )
+        request = _make_batch_request(specs=[_make_spec("s1")])
+        handle = service.submit_batch(request)
+
+        result = await service.adelete_batch(handle)
+
+        assert result is True
+
+
 # ---------------------------------------------------------------------------
 # AC-6: Unsupported provider
 # ---------------------------------------------------------------------------
@@ -1009,6 +1086,47 @@ class TestRestoreBatchValidation:
         }
         handle = service.restore_batch(handle_data)
         assert handle.agentmap_batch_id == valid_id
+
+
+class TestRestoreBatchErrorContext:
+    """TD-001: restore_batch wraps from_dict failures with actionable context.
+
+    A truncated/malformed handle dict must surface a typed LLMServiceError
+    that names the missing field and points at the schema, rather than a
+    raw KeyError bubbling out of dataclass construction.
+    """
+
+    def test_restore_with_missing_required_field_names_field_in_message(self):
+        """Dropping a required field (e.g. 'model') must name it in the error."""
+        service, mock_adapter, repo = _make_service()
+
+        valid_id = "amatch_" + "a" * 32
+        handle_data = {
+            "agentmap_batch_id": valid_id,
+            "provider_batch_id": "batch_01abc",
+            "provider": "anthropic",
+            "status": "submitted",
+            "request_id_map": {},
+            # 'model' intentionally omitted -> from_dict raises KeyError.
+        }
+        with pytest.raises(LLMServiceError, match="model"):
+            service.restore_batch(handle_data)
+
+    def test_restore_with_invalid_status_value_raises_llm_service_error(self):
+        """An unrecognised status value (ValueError from the enum) is wrapped too."""
+        service, mock_adapter, repo = _make_service()
+
+        valid_id = "amatch_" + "a" * 32
+        handle_data = {
+            "agentmap_batch_id": valid_id,
+            "provider_batch_id": "batch_01abc",
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-6",
+            "status": "not_a_real_status",
+            "request_id_map": {},
+        }
+        with pytest.raises(LLMServiceError, match="invalid field value"):
+            service.restore_batch(handle_data)
 
 
 class TestFetchBatchResultsEndedNoResultsUrl:
