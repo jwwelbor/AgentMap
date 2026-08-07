@@ -7,6 +7,7 @@ Simplified to focus on execution rather than graph building.
 
 import asyncio
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, Optional, Tuple, Union
 
@@ -453,9 +454,23 @@ class GraphExecutionService:
         Iterates ``executable_graph.astream(stream_mode="updates")``.  For each
         completed super-step LangGraph yields ``{node_name: state_delta_dict}``; this
         method yields ``(node_name, state_delta)`` tuples to the caller for each node
-        in execution order.  Deltas are merged into a running ``final_state`` so the
-        terminal ``ExecutionResult`` reflects the fully accumulated state — parity with
-        ``execute_compiled_graph_async`` which returns the full state from ``ainvoke``.
+        in execution order.  Deltas are accumulated into a running ``final_state`` via
+        naive dict merge purely as a fallback base; once the stream is exhausted the
+        terminal state is preferably replaced with LangGraph's own materialized state
+        (``executable_graph.get_state(config)``) so that channel reducers (e.g.
+        ``add_messages``) are correctly applied — parity with ``execute_compiled_graph_async``
+        which returns the full, reducer-applied state from ``ainvoke`` (TD-041).
+
+        **TD-041:** A naive ``dict.update()`` merge of ``stream_mode="updates"`` deltas
+        is only correct for passthrough (overwrite) channels. Channels configured with
+        a reducer (e.g. ``add_messages``, ``operator.add``) require the reduction
+        function to be applied, which ``dict.update()`` bypasses. When ``config`` is
+        available (i.e. the graph was compiled with a checkpointer), this method
+        queries ``executable_graph.get_state(config).values`` after the stream is
+        exhausted to obtain the fully reduced state, discarding the naive merge. When
+        ``config`` is ``None`` (no checkpointer — ``get_state`` is unavailable), the
+        naive delta-merge is used as a best-effort fallback; this fallback is exact
+        for non-reducer-channel graphs and may be imprecise for reducer channels.
 
         **D-8 disambiguation mechanism:** node-update items are **yielded** as
         ``(node_name: str, state_delta: dict)`` tuples.  After stream exhaustion
@@ -500,8 +515,10 @@ class GraphExecutionService:
         )
 
         start_time = time.time()
-        # Accumulate node deltas into final_state so the terminal result is the
-        # fully merged state (parity with ainvoke which returns complete state).
+        # Accumulate node deltas into final_state as a FALLBACK base only — see
+        # TD-041: this naive merge bypasses LangGraph channel reducers and is
+        # replaced below with executable_graph.get_state(config) whenever a
+        # config (checkpointer) is available.
         final_state: Dict[str, Any] = dict(initial_state)
 
         try:
@@ -513,9 +530,52 @@ class GraphExecutionService:
                 # multiple keys possible in parallel graphs).  Confirmed shape: TC-F04-D9.
                 for node_name, state_delta in update.items():
                     # Merge this node's delta into running final_state (Constraint C1:
-                    # state_delta is a materialized dict — never an iterator).
+                    # state_delta is a materialized dict — never an iterator).  This is
+                    # the TD-041 fallback merge; superseded below by get_state() when
+                    # a config/checkpointer is available.
                     final_state.update(state_delta)
                     yield (node_name, dict(state_delta))
+
+            # TD-041: Prefer LangGraph's own materialized, reducer-applied state
+            # over the naive delta-accumulated final_state above. get_state()
+            # requires the compiled graph to have a checkpointer attached, which
+            # (per GraphRunnerService) only happens when `config` was supplied —
+            # so `config is not None` is the correct availability check here,
+            # mirroring the established get_state(config) precedent in
+            # graph_runner_service.py (checkpoint/interrupt detection).
+            if config is not None:
+                try:
+                    state_snapshot = executable_graph.get_state(config)
+                    snapshot_values = getattr(state_snapshot, "values", None)
+                    # Guard: only trust a non-empty Mapping. A checkpointer/graph
+                    # that returns an unpopulated or unexpected snapshot (e.g. no
+                    # checkpoint tuple yet for this thread) must NOT silently wipe
+                    # out the delta-accumulated fallback — that would be strictly
+                    # worse than the TD-041 bug (state loss vs. mis-reduced state).
+                    if isinstance(snapshot_values, Mapping) and snapshot_values:
+                        final_state = dict(snapshot_values)
+                    else:
+                        self.logger.warning(
+                            f"[GraphExecutionService] get_state() returned no "
+                            f"usable materialized state for '{graph_name}' "
+                            f"(values type: {type(snapshot_values).__name__}); "
+                            f"keeping delta-accumulated final_state, which may "
+                            f"bypass channel reducers (TD-041)."
+                        )
+                except Exception as get_state_err:
+                    self.logger.warning(
+                        f"[GraphExecutionService] get_state() failed after "
+                        f"streaming '{graph_name}'; falling back to the "
+                        f"delta-accumulated final_state, which may bypass "
+                        f"channel reducers (TD-041): {get_state_err}"
+                    )
+            else:
+                self.logger.debug(
+                    f"[GraphExecutionService] No config/checkpointer for "
+                    f"'{graph_name}'; using delta-accumulated final_state. "
+                    f"This is exact for non-reducer-channel graphs but may "
+                    f"bypass channel reducers (TD-041)."
+                )
 
             # Stream exhausted — finalize tracker and build ExecutionResult.
             # Identical to execute_compiled_graph_async:316-340.
