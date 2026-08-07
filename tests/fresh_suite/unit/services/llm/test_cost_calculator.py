@@ -168,6 +168,75 @@ class TestCostCalculatorQuantizationAndMalformedRates(unittest.TestCase):
         with self.assertRaises(LLMConfigurationError):
             calculator.calculate(usage, "anthropic", "m")
 
+    def test_tc_001a_nan_rate_raises(self):
+        """TD-045: a catalog rate that parses to Decimal('NaN') must raise a
+        typed config error, not silently flow through into a NaN total_cost."""
+        catalog = {
+            "currency": "USD",
+            "models": {"anthropic": {"m": {"input_per_1m": "NaN"}}},
+        }
+        calculator = _make_calculator(catalog)
+        usage = LLMUsage(input_tokens=100)
+
+        with self.assertRaises(LLMConfigurationError):
+            calculator.calculate(usage, "anthropic", "m")
+
+    def test_tc_001a_positive_infinity_rate_raises(self):
+        """TD-045: a catalog rate that parses to Decimal('Infinity') must
+        raise a typed config error rather than silently flowing through."""
+        catalog = {
+            "currency": "USD",
+            "models": {"anthropic": {"m": {"input_per_1m": "Infinity"}}},
+        }
+        calculator = _make_calculator(catalog)
+        usage = LLMUsage(input_tokens=100)
+
+        with self.assertRaises(LLMConfigurationError):
+            calculator.calculate(usage, "anthropic", "m")
+
+    def test_tc_001a_negative_infinity_rate_raises(self):
+        """TD-045: a catalog rate that parses to Decimal('-Infinity') must
+        raise a typed config error rather than silently flowing through."""
+        catalog = {
+            "currency": "USD",
+            "models": {"anthropic": {"m": {"input_per_1m": "-Infinity"}}},
+        }
+        calculator = _make_calculator(catalog)
+        usage = LLMUsage(input_tokens=100)
+
+        with self.assertRaises(LLMConfigurationError):
+            calculator.calculate(usage, "anthropic", "m")
+
+    def test_tc_001a_negative_finite_rate_raises(self):
+        """TD-045: a negative but finite catalog rate must raise a typed
+        config error rather than silently producing a negative total_cost."""
+        catalog = {
+            "currency": "USD",
+            "models": {"anthropic": {"m": {"input_per_1m": "-1.5"}}},
+        }
+        calculator = _make_calculator(catalog)
+        usage = LLMUsage(input_tokens=100)
+
+        with self.assertRaises(LLMConfigurationError):
+            calculator.calculate(usage, "anthropic", "m")
+
+    def test_tc_001a_zero_and_positive_rates_unaffected(self):
+        """TD-045 regression guard: valid non-negative finite rates (zero and
+        a small positive decimal) continue to be accepted without raising."""
+        catalog = {
+            "currency": "USD",
+            "models": {
+                "anthropic": {"m": {"input_per_1m": "0", "output_per_1m": "2.5"}}
+            },
+        }
+        calculator = _make_calculator(catalog)
+        usage = LLMUsage(input_tokens=100, output_tokens=100)
+
+        result = calculator.calculate(usage, "anthropic", "m")
+
+        self.assertIsNotNone(result)
+        self.assertGreaterEqual(result.total_cost, Decimal("0"))
+
 
 class TestCostCalculatorTwoBucketUsage(unittest.TestCase):
     """TC-002: Two-bucket usage (cache buckets absent)."""
