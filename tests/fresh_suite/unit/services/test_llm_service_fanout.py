@@ -1140,6 +1140,146 @@ class TestAC008BudgetGuardRefusalClassification(unittest.IsolatedAsyncioTestCase
         self.assertEqual(r.error.error_type, "LLMBudgetExceededError")
         self.assertFalse(r.error.retryable)
 
+    async def test_fan_out_item_refused_by_adversarial_setattr_exception_still_marks_true(
+        self,
+    ):
+        """TD-042 regression: a host guard exception whose ``__setattr__``
+        raises defeats the best-effort setattr/getattr marker
+        (``_budget_guard_refusal.py``'s ``mark_as_budget_guard_refusal`` /
+        ``is_budget_guard_refusal``) -- the marker silently fails to stamp,
+        so a caller relying on it alone would see ``is_budget_refusal`` as
+        ``None``/``False`` even though the guard correctly refused dispatch.
+
+        TD-042 fix: ``_execute_fan_out_item`` now catches
+        ``BudgetGuardRefusal`` directly (type-safe ``isinstance`` check,
+        before the marker side-channel is even consulted), so
+        ``is_budget_refusal`` must be ``True`` here regardless of the
+        exception's ``__setattr__`` behavior.
+        """
+
+        class AdversarialSetattrRefusal(Exception):
+            """Exception whose __setattr__ rejects arbitrary attribute
+            assignment (e.g. a security-conscious host guard protecting its
+            own fields) -- defeats the setattr-based marker."""
+
+            def __setattr__(self, key, value):
+                raise AttributeError(
+                    f"AdversarialSetattrRefusal refuses to set {key!r}"
+                )
+
+        original = AdversarialSetattrRefusal("tenant=acme-42 remaining_budget=$0.00")
+
+        # Sanity: prove the marker mechanism really is defeated by this
+        # exception shape, so the assertions below are proving the fix
+        # (not a tautology). Import locally to keep the adversarial-shape
+        # proof colocated with the assertion it backs.
+        from agentmap.services.llm._budget_guard_refusal import (
+            is_budget_guard_refusal,
+            mark_as_budget_guard_refusal,
+        )
+
+        mark_as_budget_guard_refusal(original)
+        self.assertFalse(
+            is_budget_guard_refusal(original),
+            "setup invariant: the marker must silently fail to stamp this "
+            "adversarial exception shape, or this test proves nothing",
+        )
+
+        guard = Mock()
+        guard.check_before_dispatch = AsyncMock(side_effect=original)
+        guard.observe_receipt = AsyncMock(return_value=None)
+        service = self._make_guarded_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(return_value=Mock(content="never"))
+        mock_client.invoke = Mock()
+
+        spec = _make_spec("budget-refused-adversarial-setattr", provider="anthropic")
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            results = await service.call_llm_many_async([spec], max_concurrency=1)
+
+        r = results[0]
+        self.assertEqual(r.status, "failed")
+        self.assertEqual(r.error.error_type, "AdversarialSetattrRefusal")
+        self.assertIs(
+            r.error.is_budget_refusal,
+            True,
+            "TD-042: is_budget_refusal must be True even when the guard's "
+            "exception defeats the setattr/getattr marker side-channel",
+        )
+        self.assertFalse(r.error.retryable)
+        mock_client.ainvoke.assert_not_called()
+        mock_client.invoke.assert_not_called()
+
+    async def test_concurrent_fan_out_budget_refusal_context_does_not_leak_between_items(
+        self,
+    ):
+        """TD-042 concurrency-isolation check: the fix uses a task-scoped
+        ``contextvars.ContextVar`` (not a global/id-keyed registry) so that
+        a refusal recorded while handling one fan-out item's exception is
+        never mistakenly attributed to a concurrently-running sibling item.
+
+        Two specs run at ``max_concurrency=2`` (so both are genuinely
+        in-flight at once, not serialized): the guard refuses spec A with an
+        adversarial-``__setattr__`` exception (defeats the legacy marker,
+        forcing this test onto the ContextVar path) and allows spec B
+        through to a plain ``RuntimeError`` from the provider client. If the
+        ContextVar leaked across the concurrent tasks, spec B would be
+        misclassified as a budget refusal too (``is_budget_refusal=True``,
+        ``retryable=False``) instead of keeping its ordinary
+        ``is_retryable``-derived classification.
+        """
+
+        class AdversarialSetattrRefusal(Exception):
+            def __setattr__(self, key, value):
+                raise AttributeError(f"refuses to set {key!r}")
+
+        refusal_original = AdversarialSetattrRefusal("tenant=acme-42 over budget")
+
+        async def check_before_dispatch(check):
+            if check.resolved_provider == "anthropic":
+                raise refusal_original
+            return None
+
+        guard = Mock()
+        guard.check_before_dispatch = AsyncMock(side_effect=check_before_dispatch)
+        guard.observe_receipt = AsyncMock(return_value=None)
+        service = self._make_guarded_service(guard)
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(side_effect=RuntimeError("provider blew up"))
+        mock_client.invoke = Mock()
+
+        spec_a = _make_spec("concurrent-budget-refused", provider="anthropic")
+        spec_b = _make_spec("concurrent-ordinary-failure", provider="openai")
+        with patch.object(
+            service._client_factory, "get_or_create_client", return_value=mock_client
+        ):
+            results = await service.call_llm_many_async(
+                [spec_a, spec_b], max_concurrency=2
+            )
+
+        by_id = {r.request_id: r for r in results}
+        result_a = by_id["concurrent-budget-refused"]
+        result_b = by_id["concurrent-ordinary-failure"]
+
+        self.assertIs(
+            result_a.error.is_budget_refusal,
+            True,
+            "spec A was genuinely refused by the guard",
+        )
+        self.assertFalse(result_a.error.retryable)
+
+        self.assertIn(
+            result_b.error.is_budget_refusal,
+            (None, False),
+            "TD-042 regression: spec B's ContextVar must not be contaminated "
+            "by spec A's concurrently-recorded budget refusal",
+        )
+        self.assertNotEqual(result_b.error.error_type, "AdversarialSetattrRefusal")
+
     async def test_ordinary_fan_out_failure_unaffected_by_marker_logic(self):
         """Sanity/regression: a plain (non-guard) failure keeps its existing
         is_retryable-derived classification -- the marker check must not
