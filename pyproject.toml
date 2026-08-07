@@ -72,7 +72,7 @@ batch = [
 ]
 all = [
     "langchain-openai>=0.3.17",
-    "langchain-anthropic>=0.3.13,<0.4.0",
+    "langchain-anthropic>=0.3.13,<1.5.0",
     "langchain-google-genai",
     "firebase-admin",
     "unstructured",
