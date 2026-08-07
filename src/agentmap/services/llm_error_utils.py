@@ -16,14 +16,30 @@ from agentmap.exceptions.service_exceptions import (
     LLMTimeoutError,
 )
 
-# Matches common API key patterns (sk-..., key-..., AIza..., etc.)
-_SENSITIVE_RE = re.compile(r"""(?x)
+# Provider-key-prefixed shapes only -- unambiguously credential-shaped
+# regardless of call site (no bare-opaque-token catch-all, which false-
+# positives on ordinary UUIDs/hashes/thread-ids). Public name: shared by
+# generic call sites (e.g. OTELTelemetryService.record_exception(), which
+# scrubs spans app-wide, not just LLM ones) that must not redact non-
+# credential opaque tokens. See TD-030.
+CREDENTIAL_PREFIXED_RE = re.compile(r"""(?x)
     (?:sk-[a-zA-Z0-9]{20,})           |  # OpenAI-style
     (?:key-[a-zA-Z0-9]{20,})          |  # Generic key-prefixed
     (?:AIza[a-zA-Z0-9_-]{30,})        |  # Google-style
-    (?:ant-api[a-zA-Z0-9_-]{20,})     |  # Anthropic-style
-    (?:[a-zA-Z0-9_-]{32,})               # Long opaque tokens
+    (?:ant-api[a-zA-Z0-9_-]{20,})        # Anthropic-style
     """)
+
+# Matches common API key patterns (sk-..., key-..., AIza..., etc.) plus a
+# bare long-opaque-token catch-all. LLM-domain-specific: only safe where the
+# message is already known to originate from an LLM provider call (e.g.
+# _sanitize_error_message() below), since the catch-all also matches
+# ordinary UUIDs/hashes/thread-ids that are not credentials.
+_SENSITIVE_RE = re.compile(
+    CREDENTIAL_PREFIXED_RE.pattern + r"""|
+    (?:[a-zA-Z0-9_-]{32,})               # Long opaque tokens
+    """,
+    re.VERBOSE,
+)
 
 
 def _sanitize_error_message(error: BaseException) -> str:

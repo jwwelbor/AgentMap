@@ -193,6 +193,26 @@ class TestOTELTelemetryService:
 
         mock_span.record_exception.assert_called_once_with(exc)
 
+    def test_record_exception_does_not_redact_uuid_in_non_llm_message(self) -> None:
+        """F2 regression: record_exception() is a shared telemetry boundary
+        used by every span in the app (storage, graph-runner, etc.), not
+        just LLM ones. The bare long-opaque-token catch-all from
+        llm_error_utils._SENSITIVE_RE must not be applied here, or an
+        ordinary UUID/thread-id in a non-LLM exception message gets
+        false-positive-redacted and the original exception object/type is
+        silently replaced with a bare Exception."""
+        svc = self._make_service()
+        mock_span = MagicMock()
+        thread_id = "2b7ba91b-5552-4c17-ae2c-8fb42d020dc5"
+        exc = RuntimeError(f"Missing thread_id after checkpoint execution: {thread_id}")
+
+        svc.record_exception(mock_span, exc)
+
+        mock_span.record_exception.assert_called_once_with(exc)
+        recorded_exc = mock_span.record_exception.call_args[0][0]
+        assert isinstance(recorded_exc, RuntimeError)
+        assert thread_id in str(recorded_exc)
+
     def test_add_span_event_delegates(self) -> None:
         """TC-015: add_span_event delegates to span.add_event."""
         svc = self._make_service()

@@ -19,14 +19,19 @@ from typing import Any, ContextManager, Dict, Optional
 from opentelemetry import metrics, trace
 from opentelemetry.trace import StatusCode
 
-# TD-030: reuse the same credential-shaped-token pattern already relied on
-# by ``classify_llm_error`` (llm_error_utils.py) instead of inventing a
-# second one -- it already covers the provider key shapes
-# (``sk-...``/``key-...``/``AIza...``/``ant-api...``) and long opaque
-# tokens. This is the only cross-module import in this file besides
+# TD-030 / F2 fix: reuse the provider-key-*prefixed* pattern already relied
+# on by ``classify_llm_error`` (llm_error_utils.py) instead of inventing a
+# second one -- it covers the provider key shapes
+# (``sk-...``/``key-...``/``AIza...``/``ant-api...``). Deliberately does
+# NOT use that module's ``_SENSITIVE_RE``, whose bare long-opaque-token
+# catch-all is safe only for LLM-domain messages: ``record_exception()``
+# below is a *shared* telemetry boundary used by every span in the app
+# (storage, graph-runner, etc.), and the catch-all false-positives on
+# ordinary UUIDs/hashes/thread-ids in those non-LLM exception messages.
+# This is the only cross-module import in this file besides
 # ``opentelemetry`` itself; ``llm_error_utils`` has no reverse dependency on
 # telemetry, so there is no import cycle.
-from agentmap.services.llm_error_utils import _SENSITIVE_RE
+from agentmap.services.llm_error_utils import CREDENTIAL_PREFIXED_RE
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +40,8 @@ logger = logging.getLogger(__name__)
 # wrappers (sync, async, streaming) delegate to `record_exception()` below
 # without scrubbing, and a provider SDK exception (outside our control) may
 # embed an api key or bearer token in its message. In addition to the
-# shared ``_SENSITIVE_RE`` pattern (long/opaque tokens), these cover two
-# shapes it does not: labelled `key=`/`token=`/`secret=`/`password=`
+# shared ``CREDENTIAL_PREFIXED_RE`` pattern (provider-key-prefixed shapes),
+# these cover two shapes it does not: labelled `key=`/`token=`/`secret=`/`password=`
 # assignments with shorter values, and `Authorization: Bearer <token>`
 # headers. Deliberately pragmatic, not exhaustive.
 _CREDENTIAL_LABELLED_RE = re.compile(
@@ -57,7 +62,7 @@ def _redact_credentials(text: str) -> str:
     """
     redacted = _CREDENTIAL_LABELLED_RE.sub(lambda m: m.group(1) + _REDACTED, text)
     redacted = _CREDENTIAL_BEARER_RE.sub(lambda m: m.group(1) + _REDACTED, redacted)
-    redacted = _SENSITIVE_RE.sub(_REDACTED, redacted)
+    redacted = CREDENTIAL_PREFIXED_RE.sub(_REDACTED, redacted)
     return redacted
 
 
@@ -115,8 +120,13 @@ class OTELTelemetryService:
         route exceptions through before they reach the span. The exception
         message is scrubbed for credential-shaped substrings (labelled
         ``api_key=``/``token=``/``secret=``/``password=`` values,
-        ``Authorization: Bearer <token>`` headers, bare ``sk-...`` tokens)
-        via ``_redact_credentials()``. When scrubbing changes the message, a
+        ``Authorization: Bearer <token>`` headers, provider-key-prefixed
+        tokens such as ``sk-...``/``AIza...``) via ``_redact_credentials()``.
+        Deliberately does not use the bare long-opaque-token catch-all from
+        ``llm_error_utils._SENSITIVE_RE`` -- this method is a shared
+        telemetry boundary for every span in the app (not just LLM ones),
+        and that catch-all false-positives on ordinary UUIDs/hashes/
+        thread-ids in non-LLM exception messages. When scrubbing changes the message, a
         bare ``Exception`` carrying only the redacted text is recorded
         instead of *exception* itself, so no unredacted ``__cause__``/
         traceback chain reaches the span (mirrors ``telemetry_safe_marker``

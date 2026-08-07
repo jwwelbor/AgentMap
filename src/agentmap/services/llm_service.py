@@ -9,6 +9,7 @@ and resilience (retry with backoff + circuit breaker).
 import asyncio
 import base64
 import inspect
+import math
 import mimetypes
 import random
 import re
@@ -1661,6 +1662,39 @@ class LLMService:
             client, langchain_messages, provider, model
         )
 
+    @staticmethod
+    def _coerce_attempt_timeout(value: Any) -> float:
+        """Coerce a resolved ``retry.attempt_timeout`` config value to a finite float.
+
+        Mirrors ``AppConfigService._coerce_sse_numeric``: accepts real int/float
+        (bool excluded) and numeric strings, since
+        ``ConfigService._resolve_env_vars`` resolves ``env:VAR_NAME`` config
+        entries via ``os.environ.get()``, which always returns ``str``. Without
+        this coercion, an operator setting ``attempt_timeout: env:LLM_TIMEOUT:30``
+        would crash every LLM call with ``TypeError`` inside ``asyncio.timeout()``.
+        """
+        numeric_value: Optional[float] = None
+        if isinstance(value, bool):
+            numeric_value = None
+        elif isinstance(value, (int, float)):
+            numeric_value = float(value)
+        elif isinstance(value, str):
+            try:
+                numeric_value = float(value)
+            except ValueError:
+                numeric_value = None
+
+        if (
+            numeric_value is None
+            or not math.isfinite(numeric_value)
+            or numeric_value <= 0
+        ):
+            raise LLMConfigurationError(
+                "Invalid retry.attempt_timeout: expected a positive finite "
+                f"number, got {type(value).__name__} ({value!r})."
+            )
+        return numeric_value
+
     def _resolve_retry_config(self) -> Tuple[int, float, float, bool, float]:
         """Resolve retry config knobs from ``self._resilience_config``.
 
@@ -1674,7 +1708,7 @@ class LLMService:
             retry_cfg.get("backoff_base", 2.0),
             retry_cfg.get("backoff_max", 30.0),
             retry_cfg.get("jitter", True),
-            retry_cfg.get("attempt_timeout", 30.0),
+            self._coerce_attempt_timeout(retry_cfg.get("attempt_timeout", 30.0)),
         )
 
     async def _run_resilient_retry_loop(
@@ -1916,15 +1950,12 @@ class LLMService:
                 f"{self._circuit_breaker.reset}s)"
             )
 
-        retry_cfg = self._resilience_config.get("retry", {})
-        max_attempts = retry_cfg.get("max_attempts", 3)
-        backoff_base = retry_cfg.get("backoff_base", 2.0)
-        backoff_max = retry_cfg.get("backoff_max", 30.0)
-        jitter = retry_cfg.get("jitter", True)
         # TD-028: per-attempt idle-timeout budget (seconds) -- bounds only the
         # wait for the *next* chunk, never the time the caller spends
         # consuming a yielded chunk (see the manual __anext__ loop below).
-        attempt_timeout = retry_cfg.get("attempt_timeout", 30.0)
+        max_attempts, backoff_base, backoff_max, jitter, attempt_timeout = (
+            self._resolve_retry_config()
+        )
 
         last_error: Optional[Exception] = None
 

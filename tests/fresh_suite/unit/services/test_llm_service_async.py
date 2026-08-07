@@ -665,6 +665,30 @@ class TestLLMServiceAsyncAttemptTimeout(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(ctx.exception.cause, LLMTimeoutError)
         self.assertIn("openai:gpt-4o-mini", self.service._circuit_breaker.opened_at)
 
+    def test_string_typed_attempt_timeout_is_coerced_not_crashed(self):
+        """attempt_timeout resolved via env:VAR substitution comes back as a
+        str -- _resolve_retry_config() must coerce it to float rather than
+        pass it unchanged into asyncio.timeout(), which raises TypeError.
+        """
+        self.service._resilience_config["retry"]["attempt_timeout"] = "0.05"
+
+        _, _, _, _, attempt_timeout = self.service._resolve_retry_config()
+
+        self.assertEqual(attempt_timeout, 0.05)
+        self.assertIsInstance(attempt_timeout, float)
+
+    def test_non_numeric_attempt_timeout_raises_configuration_error(self):
+        self.service._resilience_config["retry"]["attempt_timeout"] = "not-a-number"
+
+        with self.assertRaises(LLMConfigurationError):
+            self.service._resolve_retry_config()
+
+    def test_non_positive_attempt_timeout_raises_configuration_error(self):
+        self.service._resilience_config["retry"]["attempt_timeout"] = -1
+
+        with self.assertRaises(LLMConfigurationError):
+            self.service._resolve_retry_config()
+
 
 class TestLLMServiceCachePassthroughAsync(unittest.IsolatedAsyncioTestCase):
     """UAT-01 / UAT-02 (async): routing_context with requires_prompt_caching
