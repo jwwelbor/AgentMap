@@ -1241,6 +1241,47 @@ class TestOpenAIStreamSeam(unittest.IsolatedAsyncioTestCase):
         # The SDK call must never have been made — zero chunks, no silent forward.
         mock_client.chat.completions.create.assert_not_called()
 
+    async def test_oai8_usage_on_final_content_chunk_is_captured(self):
+        """TD-039: usage attached to a non-empty-choices chunk must still be captured.
+
+        OpenAI's documented behavior emits usage on a separate chunk with
+        choices==[]. However, OpenAI-compatible clients (Azure OpenAI,
+        OpenRouter, vLLM, Groq, LiteLLM) are known to attach usage directly
+        to the final content chunk (choices non-empty) instead. The seam
+        must not silently drop usage in that case.
+        """
+        mock_sdk, mock_client = _make_mock_openai_module()
+
+        # Build a chunk with both choices[0] (text content) and usage set.
+        final_content_with_usage = MagicMock()
+        final_content_with_usage.model = "gpt-4o"
+        final_content_with_usage.choices = [MagicMock()]
+        final_content_with_usage.choices[0].delta = MagicMock()
+        final_content_with_usage.choices[0].delta.content = "final text"
+        final_content_with_usage.choices[0].finish_reason = "stop"
+        final_content_with_usage.usage = MagicMock()
+        final_content_with_usage.usage.prompt_tokens = 10
+        final_content_with_usage.usage.completion_tokens = 8
+
+        oai_chunks = [
+            _make_openai_content_chunk("hello"),
+            final_content_with_usage,  # usage on final content chunk, not separate
+        ]
+
+        seam = self._make_seam(mock_sdk)
+        chunks = await self._collect_chunks(seam, mock_sdk, oai_chunks)
+
+        terminal = chunks[-1]
+        assert terminal.is_final is True
+        # Usage must be captured even though it was on a chunk with choices non-empty.
+        assert terminal.usage is not None, (
+            "Usage on the final content chunk must be captured; "
+            "OpenAI-compatible clients (Azure, OpenRouter, vLLM) emit usage this way."
+        )
+        assert terminal.usage.input_tokens == 10
+        assert terminal.usage.output_tokens == 8
+        assert terminal.finish_reason == "stop"
+
 
 # ---------------------------------------------------------------------------
 # Helpers — fake LangChain AIMessageChunk objects
