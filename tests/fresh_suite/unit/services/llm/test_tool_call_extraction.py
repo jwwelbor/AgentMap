@@ -97,6 +97,18 @@ class TestExtractToolCallsMalformedEntries(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_tc013b_entry_with_non_dict_args_is_skipped_with_debug_log(self):
+        response = _Resp(
+            tool_calls=[{"id": "toolu_1", "name": "get_weather", "args": "not a dict"}],
+        )
+        with self.assertLogs(
+            "agentmap.services.llm.tool_call_extraction", level="DEBUG"
+        ) as ctx:
+            result = extract_tool_calls(response)
+
+        self.assertIsNone(result)
+        self.assertTrue(any("args" in msg for msg in ctx.output))
+
     def test_tc013b_mixed_list_keeps_the_well_formed_entry(self):
         """A single bad entry must not convert a successful call into a
         failure -- the well-formed sibling entry is still extracted."""
