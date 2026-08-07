@@ -575,15 +575,15 @@ class LLMService:
         routing_context: Optional[Dict[str, Any]],
         **kwargs,
     ) -> LLMResponse:
-        """Async telemetry wrapper mirroring the sync LLM span behavior."""
+        """Async telemetry wrapper mirroring the sync LLM span behavior.
+
+        NFR-F-006 waiver (TD-043, permanent): >50 lines by design -- dual
+        exception handling (inner LLM/guard, outer telemetry-isolation
+        fallback) required by REQ-F-009. Rationale/precedent:
+        TD-043.research-report.md Decision 3.
+        """
         assert self._telemetry_service is not None
-        initial_attributes: Dict[str, Any] = {}
-        if provider:
-            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
-                provider
-            )
-        if model:
-            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+        initial_attributes = self._build_llm_span_initial_attributes(provider, model)
 
         try:
             with self._telemetry_service.start_span(
@@ -608,11 +608,9 @@ class LLMService:
                     # __cause__ (unwrapped one frame up, in
                     # _dispatch_call_llm_async) -- record a class-name-only
                     # marker instead of the real chain so span telemetry
-                    # never exports host budget/business data.
-                    if isinstance(e, BudgetGuardRefusal):
-                        self._record_span_exception_safe(span, telemetry_safe_marker(e))
-                    else:
-                        self._record_span_exception_safe(span, e)
+                    # never exports host budget/business data. See
+                    # _record_llm_call_exception_safe (TD-043).
+                    self._record_llm_call_exception_safe(span, e)
                     raise
         except Exception as outer_error:
             if isinstance(
@@ -651,16 +649,14 @@ class LLMService:
         Falls back to ``_call_llm_core`` if span creation fails (Layer 1
         isolation).  LLM errors are re-raised directly -- only telemetry
         infrastructure failures trigger the fallback.
+
+        NFR-F-006 waiver (TD-043, permanent): >50 lines by design -- same
+        dual exception handling as the async sibling above (REQ-F-009).
+        Rationale/precedent: TD-043.research-report.md Decision 1/3.
         """
         assert self._telemetry_service is not None
         # Build initial attributes from known values
-        initial_attributes: Dict[str, Any] = {}
-        if provider:
-            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
-                provider
-            )
-        if model:
-            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+        initial_attributes = self._build_llm_span_initial_attributes(provider, model)
 
         try:
             with self._telemetry_service.start_span(
@@ -686,8 +682,9 @@ class LLMService:
                     return result
 
                 except Exception as e:
-                    # Record exception and set ERROR status on span
-                    self._record_span_exception_safe(span, e)
+                    # Record exception and set ERROR status on span. See
+                    # _record_llm_call_exception_safe (TD-043).
+                    self._record_llm_call_exception_safe(span, e)
                     raise
 
         except Exception as outer_error:
@@ -3437,6 +3434,46 @@ class LLMService:
         except Exception:
             pass
 
+    def _build_llm_span_initial_attributes(
+        self, provider: Optional[str], model: Optional[str]
+    ) -> Dict[str, Any]:
+        """Build the initial ``gen_ai.*`` span attributes for an LLM call span.
+
+        TD-043: extracted from the sync/async/streaming telemetry wrappers,
+        which all built this same 1-2 key dict from the caller-supplied
+        (pre-routing) provider/model before opening the span. Absent values
+        are omitted rather than written as ``None``/empty string.
+        """
+        initial_attributes: Dict[str, Any] = {}
+        if provider:
+            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
+                provider
+            )
+        if model:
+            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+        return initial_attributes
+
+    def _record_llm_call_exception_safe(self, span: Any, exception: Exception) -> None:
+        """Record an LLM-call exception on *span*, substituting a safe marker
+        for budget-guard refusals.
+
+        TD-043: extracted from the sync/async/streaming telemetry wrappers'
+        identical ``except Exception as e`` handling. Preserves TD-030's
+        credential-redaction fix exactly: a ``BudgetGuardRefusal`` still
+        carries the host guard's raw exception via ``__cause__`` at this
+        point, so it is replaced with ``telemetry_safe_marker(e)`` (a
+        class-name-only marker) before being handed to
+        ``_record_span_exception_safe`` -- span telemetry must never export
+        host budget/business data. Non-refusal exceptions are recorded as-is.
+        This does not read or mutate the TD-042 ContextVar; it only branches
+        on ``isinstance(e, BudgetGuardRefusal)``, identical to the pre-TD-043
+        inline checks.
+        """
+        if isinstance(exception, BudgetGuardRefusal):
+            self._record_span_exception_safe(span, telemetry_safe_marker(exception))
+        else:
+            self._record_span_exception_safe(span, exception)
+
     @staticmethod
     def _extract_token_counts(response: Any) -> Tuple[Optional[int], Optional[int]]:
         """Extract (input_tokens, output_tokens) from an LLM response.
@@ -3788,16 +3825,15 @@ class LLMService:
         completion (REQ-F-009). Captures content once at completion (REQ-NF-002, C9).
 
         This is the sibling of ``_call_llm_async_with_telemetry`` (:461).
+
+        NFR-F-006 waiver (TD-043, permanent): >50 lines by design -- yield-safe
+        manual span lifecycle (REQ-F-010) + routing-resolved attribute capture
+        on the final chunk. Rationale/precedent: TD-043.research-report.md
+        Decision 2.
         """
         assert self._telemetry_service is not None
 
-        initial_attributes: Dict[str, Any] = {}
-        if provider:
-            initial_attributes[GEN_AI_SYSTEM] = self._provider_utils.normalize_provider(
-                provider
-            )
-        if model:
-            initial_attributes[GEN_AI_REQUEST_MODEL] = model
+        initial_attributes = self._build_llm_span_initial_attributes(provider, model)
 
         # Explicit span open — must NOT use `with` so the span survives yields.
         span_cm = self._telemetry_service.start_span(
@@ -3845,10 +3881,8 @@ class LLMService:
             # call_llm_stream_async's docstring) still carries the host
             # guard's raw exception via __cause__; substitute a class-name
             # -only marker so span telemetry never exports host budget data.
-            if isinstance(e, BudgetGuardRefusal):
-                self._record_span_exception_safe(span, telemetry_safe_marker(e))
-            else:
-                self._record_span_exception_safe(span, e)
+            # See _record_llm_call_exception_safe (TD-043).
+            self._record_llm_call_exception_safe(span, e)
             raise
         finally:
             span_cm.__exit__(None, None, None)
