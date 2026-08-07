@@ -71,9 +71,7 @@ def extract_tool_calls(response: Any) -> Optional[List[LLMToolCall]]:
 
         arguments = entry.get("args")
         if not isinstance(arguments, dict):
-            logger.debug(
-                "Skipping tool call entry with non-dict args field: %r", entry
-            )
+            logger.debug("Skipping tool call entry with non-dict args field: %r", entry)
             continue
 
         extracted.append(LLMToolCall(id=call_id, name=name, arguments=arguments))
