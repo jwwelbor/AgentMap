@@ -34,6 +34,7 @@ from agentmap.exceptions import (
     LLMProviderError,
     LLMResolvedCallError,
     LLMServiceError,
+    LLMTimeoutError,
 )
 from agentmap.models.llm_batch import (
     LLMBatchHandle,
@@ -1657,10 +1658,12 @@ class LLMService:
             client, langchain_messages, provider, model
         )
 
-    def _resolve_retry_config(self) -> Tuple[int, float, float, bool]:
+    def _resolve_retry_config(self) -> Tuple[int, float, float, bool, float]:
         """Resolve retry config knobs from ``self._resilience_config``.
 
-        Extracted from ``_run_resilient_retry_loop`` (NFR-F-006).
+        Extracted from ``_run_resilient_retry_loop`` (NFR-F-006). ``attempt_timeout``
+        (TD-028) is the per-attempt idle-timeout budget in seconds -- each retry
+        gets a fresh window rather than sharing one deadline across the whole loop.
         """
         retry_cfg = self._resilience_config.get("retry", {})
         return (
@@ -1668,6 +1671,7 @@ class LLMService:
             retry_cfg.get("backoff_base", 2.0),
             retry_cfg.get("backoff_max", 30.0),
             retry_cfg.get("jitter", True),
+            retry_cfg.get("attempt_timeout", 30.0),
         )
 
     async def _run_resilient_retry_loop(
@@ -1685,7 +1689,9 @@ class LLMService:
         failure classification/backoff-or-raise in
         ``_handle_retry_attempt_failure``.
         """
-        max_attempts, backoff_base, backoff_max, jitter = self._resolve_retry_config()
+        max_attempts, backoff_base, backoff_max, jitter, attempt_timeout = (
+            self._resolve_retry_config()
+        )
         last_error: Optional[Exception] = None
 
         for attempt in range(1, max_attempts + 1):
@@ -1695,7 +1701,7 @@ class LLMService:
                     f"(attempt {attempt}/{max_attempts})"
                 )
                 return await self._attempt_llm_call_async(
-                    client, langchain_messages, provider, model
+                    client, langchain_messages, provider, model, attempt_timeout
                 )
             except Exception as e:
                 last_error = await self._handle_retry_attempt_failure(
@@ -1754,6 +1760,7 @@ class LLMService:
         langchain_messages: List[Any],
         provider: str,
         model: str,
+        attempt_timeout: float,
     ) -> LLMResponse:
         """Single provider invocation plus success-path ``LLMResponse`` construction.
 
@@ -1761,9 +1768,24 @@ class LLMService:
         (NFR-F-006). Raises on any provider failure -- classification and the
         retry-vs-terminal decision are the caller's
         (``_run_resilient_retry_loop``'s) responsibility.
+
+        TD-028: the provider invocation is bounded by ``attempt_timeout`` (a
+        fresh per-attempt idle-timeout budget, seconds) so a provider that
+        connects but never returns cannot hang the retry loop indefinitely.
+        A resulting ``TimeoutError`` is converted to ``LLMTimeoutError`` --
+        already a typed, retryable ``LLMServiceError`` -- so it flows through
+        the caller's existing classify/retry/circuit-breaker handling
+        unchanged (``classify_llm_error`` passes already-typed errors through).
         """
         start_time = time.monotonic()
-        response = await self._invoke_provider_async(client, langchain_messages)
+        try:
+            async with asyncio.timeout(attempt_timeout):
+                response = await self._invoke_provider_async(client, langchain_messages)
+        except TimeoutError as e:
+            raise LLMTimeoutError(
+                f"LLM call to {provider}:{model} timed out after "
+                f"{attempt_timeout}s with no response (idle timeout)"
+            ) from e
         duration = time.monotonic() - start_time
 
         text = normalize_response_text(response)
@@ -1896,6 +1918,10 @@ class LLMService:
         backoff_base = retry_cfg.get("backoff_base", 2.0)
         backoff_max = retry_cfg.get("backoff_max", 30.0)
         jitter = retry_cfg.get("jitter", True)
+        # TD-028: per-attempt idle-timeout budget (seconds) -- bounds only the
+        # wait for the *next* chunk, never the time the caller spends
+        # consuming a yielded chunk (see the manual __anext__ loop below).
+        attempt_timeout = retry_cfg.get("attempt_timeout", 30.0)
 
         last_error: Optional[Exception] = None
 
@@ -1907,13 +1933,30 @@ class LLMService:
                     f"LLM streaming call to {provider}:{model} "
                     f"(attempt {attempt}/{max_attempts})"
                 )
-                async for chunk in stream_provider(
+                stream_iter = stream_provider(
                     provider,
                     messages,
                     params,
                     client=streaming_client,
                     credentials=credentials,
-                ):
+                ).__aiter__()
+                while True:
+                    # Each `__anext__()` gets its own fresh timeout window --
+                    # NOT wrapped around `yield`, so time the caller spends
+                    # processing a delivered chunk never counts against the
+                    # provider's idle budget.
+                    try:
+                        async with asyncio.timeout(attempt_timeout):
+                            chunk = await stream_iter.__anext__()
+                    except StopAsyncIteration:
+                        break
+                    except TimeoutError as e:
+                        raise LLMTimeoutError(
+                            f"LLM streaming call to {provider}:{model} timed out "
+                            f"after {attempt_timeout}s waiting for the next chunk "
+                            "(idle timeout)"
+                        ) from e
+
                     # Cut point: once the first chunk is yielded, errors are terminal
                     first_chunk_delivered = True
                     yield chunk

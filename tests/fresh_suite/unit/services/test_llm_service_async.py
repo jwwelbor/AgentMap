@@ -2,6 +2,7 @@
 Async contract tests for LLM service protocols and test doubles.
 """
 
+import asyncio
 import unittest
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, Mock, create_autospec, patch
@@ -529,6 +530,139 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(mock_client.ainvoke.await_count, 3)
         self.assertEqual(mock_sleep.await_count, 2)
+        self.assertIn("openai:gpt-4o-mini", self.service._circuit_breaker.opened_at)
+
+
+class TestLLMServiceAsyncAttemptTimeout(unittest.IsolatedAsyncioTestCase):
+    """TD-028: per-attempt idle timeout for the non-streaming async resilience loop."""
+
+    def setUp(self):
+        self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
+        self.mock_app_config_service = (
+            MockServiceFactory.create_mock_app_config_service()
+        )
+        self.mock_app_config_service.get_llm_resilience_config.return_value = {
+            "retry": {
+                "max_attempts": 2,
+                "backoff_base": 0.01,
+                "backoff_max": 0.01,
+                "jitter": False,
+                "attempt_timeout": 0.05,
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 60,
+            },
+        }
+        self.mock_app_config_service.get_llm_config.side_effect = lambda provider: {
+            "model": f"{provider}-default-model",
+            "api_key": "test-key",
+            "temperature": 0.7,
+        }
+        self.mock_llm_models_config_service = (
+            MockServiceFactory.create_mock_llm_models_config_service()
+        )
+        self.mock_routing_service = Mock()
+        self.mock_routing_config_service = Mock()
+        self.mock_routing_config_service.supports_prompt_caching.return_value = False
+
+        self.service = LLMService(
+            configuration=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            routing_service=self.mock_routing_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+            routing_config_service=self.mock_routing_config_service,
+        )
+
+    async def test_hanging_attempt_times_out_and_is_retried(self):
+        """A provider call that never returns is converted to a retryable
+        LLMTimeoutError after ``attempt_timeout`` and the loop retries --
+        proving the idle timeout engages retry/CB machinery instead of
+        hanging indefinitely.
+        """
+        call_count = 0
+
+        async def hang_then_succeed(_messages):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Simulate a provider that connects but never returns.
+                await asyncio.sleep(5)
+            return Mock(content="recovered")
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(side_effect=hang_then_succeed)
+        mock_client.invoke = Mock()
+
+        cb_mock = MagicMock()
+        cb_mock.is_open.return_value = False
+        cb_mock.reset = 60
+        self.service._circuit_breaker = cb_mock
+
+        with (
+            patch.object(
+                self.service._client_factory,
+                "get_or_create_client",
+                return_value=mock_client,
+            ),
+            patch.object(
+                self.service._message_utils,
+                "convert_messages_to_langchain",
+                return_value=[Mock()],
+            ),
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "hello"}],
+                provider="openai",
+                model="gpt-4o-mini",
+            )
+
+        self.assertEqual(result.text, "recovered")
+        self.assertEqual(
+            call_count, 2, "the hung first attempt must be retried, not hang forever"
+        )
+        # Idle timeout on a non-terminal attempt must NOT record a circuit
+        # breaker failure -- only the eventual success is recorded.
+        cb_mock.record_failure.assert_not_called()
+        cb_mock.record_success.assert_called_once_with("openai", "gpt-4o-mini")
+
+    async def test_hanging_attempt_terminal_exhaustion_opens_circuit_breaker(self):
+        """When every attempt hangs, the final timeout is terminal: it is
+        classified as LLMTimeoutError, propagates, and records a circuit
+        breaker failure like any other terminal retry-loop failure.
+        """
+        self.service._resilience_config["retry"]["max_attempts"] = 1
+        self.service._resilience_config["circuit_breaker"]["failure_threshold"] = 1
+        self.service._circuit_breaker.threshold = 1
+
+        async def always_hangs(_messages):
+            await asyncio.sleep(5)
+            return Mock(content="unreachable")
+
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(side_effect=always_hangs)
+        mock_client.invoke = Mock()
+
+        with (
+            patch.object(
+                self.service._client_factory,
+                "get_or_create_client",
+                return_value=mock_client,
+            ),
+            patch.object(
+                self.service._message_utils,
+                "convert_messages_to_langchain",
+                return_value=[Mock()],
+            ),
+        ):
+            with self.assertRaises(LLMResolvedCallError) as ctx:
+                await self.service.call_llm_async(
+                    messages=[{"role": "user", "content": "hello"}],
+                    provider="openai",
+                    model="gpt-4o-mini",
+                )
+
+        self.assertIsInstance(ctx.exception.cause, LLMTimeoutError)
         self.assertIn("openai:gpt-4o-mini", self.service._circuit_breaker.opened_at)
 
 

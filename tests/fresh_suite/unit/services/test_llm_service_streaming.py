@@ -39,6 +39,7 @@ Framework: unittest.IsolatedAsyncioTestCase for async tests; plain unittest.Test
 for sync assertions. No real network calls. asyncio_mode NOT auto.
 """
 
+import asyncio
 import unittest
 from typing import AsyncIterator, get_type_hints
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -1572,6 +1573,151 @@ class TestInvokeWithResilienceStreamRetry(unittest.IsolatedAsyncioTestCase):
 
         cb_mock.record_success.assert_called_once_with("anthropic", "test-model")
         cb_mock.record_failure.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TD-028: per-attempt idle timeout for the streaming resilience loop
+# ---------------------------------------------------------------------------
+
+
+async def _hang_forever_stream():
+    """An async generator that never yields (simulates a stalled provider).
+
+    The trailing ``yield`` is unreachable at runtime -- the preceding
+    ``asyncio.sleep`` is cancelled by the enclosing ``asyncio.timeout`` --
+    but its presence is what makes this a generator function at all.
+    """
+    await asyncio.sleep(3600)
+    yield LLMStreamChunk(  # pragma: no cover
+        text_delta="unreachable", chunk_index=0, is_final=True
+    )
+
+
+class TestInvokeWithResilienceStreamIdleTimeout(unittest.IsolatedAsyncioTestCase):
+    """TD-028: a stalled pre-first-chunk stream is timed out and retried;
+    exhaustion is terminal and records a circuit-breaker failure like any
+    other terminal retry-loop failure.
+    """
+
+    async def test_pre_first_chunk_hang_times_out_and_retries(self):
+        """First attempt hangs past attempt_timeout with no chunk yielded;
+        it is converted to a retryable LLMTimeoutError and retried. Second
+        attempt succeeds and the caller receives the full stream.
+        """
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=2)
+        svc._resilience_config["retry"]["attempt_timeout"] = 0.05
+
+        call_count = 0
+
+        def fake_sp(provider, messages, params, *, client, credentials):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _hang_forever_stream()
+            return make_stream("recovered")
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            collected = []
+            async for chunk in svc._invoke_with_resilience_stream_async(
+                messages=[{"role": "user", "content": "hi"}],
+                params={"model": "test-model"},
+                provider="anthropic",
+                model="test-model",
+                streaming_client=MagicMock(),
+                credentials={},
+            ):
+                collected.append(chunk)
+
+        self.assertEqual(
+            call_count, 2, "stream_provider must be invoked twice after idle timeout"
+        )
+        self.assertTrue(
+            any(c.is_final for c in collected), "must receive the retried stream"
+        )
+        # A pre-first-chunk idle timeout on a non-terminal attempt must NOT
+        # record a circuit breaker failure -- only the eventual success is.
+        cb_mock.record_failure.assert_not_called()
+        cb_mock.record_success.assert_called_once_with("anthropic", "test-model")
+
+    async def test_pre_first_chunk_timeout_exhausted_is_terminal(self):
+        """When every attempt hangs before any chunk, exhaustion is terminal:
+        an LLMTimeoutError propagates and the circuit breaker records exactly
+        one failure (mirrors other terminal retry-loop failures).
+        """
+        from agentmap.exceptions import LLMTimeoutError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=1)
+        svc._resilience_config["retry"]["attempt_timeout"] = 0.05
+
+        def fake_sp(provider, messages, params, *, client, credentials):
+            return _hang_forever_stream()
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            raised = None
+            try:
+                async for _ in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    pass
+            except LLMTimeoutError as e:
+                raised = e
+
+        self.assertIsNotNone(raised, "Idle timeout must surface as LLMTimeoutError")
+        cb_mock.record_failure.assert_called_once_with("anthropic", "test-model")
+        cb_mock.record_success.assert_not_called()
+
+    async def test_post_first_chunk_hang_is_terminal_not_retried(self):
+        """A chunk is delivered, then the provider stalls indefinitely: the
+        idle timeout still fires, but per post-first-chunk semantics it is
+        terminal (no retry) even though the underlying error is a timeout.
+        """
+        from agentmap.exceptions import LLMTimeoutError
+
+        svc, cb_mock = _make_svc_for_resilience(max_attempts=3)
+        svc._resilience_config["retry"]["attempt_timeout"] = 0.05
+
+        call_count = 0
+
+        async def fake_sp(provider, messages, params, *, client, credentials):
+            nonlocal call_count
+            call_count += 1
+            yield LLMStreamChunk(text_delta="chunk0", chunk_index=0, is_final=False)
+            await asyncio.sleep(3600)  # stalls after the first chunk
+            yield LLMStreamChunk(  # pragma: no cover
+                text_delta="unreachable", chunk_index=1, is_final=True
+            )
+
+        with patch(
+            "agentmap.services.llm_service.stream_provider", side_effect=fake_sp
+        ):
+            collected = []
+            raised = None
+            try:
+                async for chunk in svc._invoke_with_resilience_stream_async(
+                    messages=[{"role": "user", "content": "hi"}],
+                    params={"model": "test-model"},
+                    provider="anthropic",
+                    model="test-model",
+                    streaming_client=MagicMock(),
+                    credentials={},
+                ):
+                    collected.append(chunk)
+            except LLMTimeoutError as e:
+                raised = e
+
+        self.assertEqual(len(collected), 1, "the first chunk must be delivered")
+        self.assertIsNotNone(raised, "post-first-chunk idle timeout must propagate")
+        self.assertEqual(call_count, 1, "no retry after first chunk, even on a timeout")
+        cb_mock.record_failure.assert_called_once_with("anthropic", "test-model")
 
 
 # ---------------------------------------------------------------------------
