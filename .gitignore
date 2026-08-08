@@ -196,6 +196,7 @@ dev-artifacts/
 .sharkconfig.json
 shark-tasks.*
 shark-templates/
+shark-data/
 CLAUDE.md
 
 .idea
