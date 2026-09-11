@@ -148,6 +148,17 @@ class TestBareAsyncFallbackReceiptNormalization(unittest.IsolatedAsyncioTestCase
         self.assertEqual(response.text_status, "non_text")
         self.assertNotIn(secret, response.text)
 
+    def test_sync_resilience_hook_normalizes_structured_content_for_sync_call(self):
+        secret = "do-not-expose-this-provider-payload"
+        invoke_fn = Mock(
+            return_value=[{"type": "tool_use", "input": {"secret": secret}}]
+        )
+        handler = _make_fallback_handler(invoke_fn=invoke_fn)
+
+        result = handler._invoke_client(Mock(), [], "anthropic", "claude-test")
+
+        self.assertEqual(result, "")
+
 
 class TestMessagesTypeHintAllowsAny(unittest.TestCase):
     """

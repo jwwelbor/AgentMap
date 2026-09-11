@@ -71,6 +71,7 @@ from agentmap.services.llm.stream_seam import stream_provider
 from agentmap.services.llm.tool_call_extraction import (
     extract_tool_calls,
     normalize_response_content,
+    normalize_response_content_value,
 )
 from agentmap.services.llm_batch_errors import (
     LLMBatchCancelNotSupportedError,
@@ -1479,9 +1480,10 @@ class LLMService:
                 duration = time.monotonic() - start_time
 
                 # Extract content
-                result = (
+                raw_content = (
                     response.content if hasattr(response, "content") else str(response)
                 )
+                result, _ = normalize_response_content_value(raw_content)
 
                 # Track circuit breaker close transition (was open -> now success)
                 was_open = self._circuit_breaker.is_open(provider, model)

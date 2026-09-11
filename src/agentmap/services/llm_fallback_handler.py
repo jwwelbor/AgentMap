@@ -37,7 +37,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         logging_service: LoggingService,
         routing_config: Optional[LLMRoutingConfigService] = None,
         features_registry: Optional[FeaturesRegistryService] = None,
-        invoke_fn: Optional[Callable[..., str]] = None,
+        invoke_fn: Optional[Callable[..., Any]] = None,
         invoke_async_fn: Optional[Callable[..., Awaitable[LLMResponse]]] = None,
     ):
         """
@@ -47,8 +47,9 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
             logging_service: Logging service
             routing_config: Optional routing configuration service
             features_registry: Optional features registry service
-            invoke_fn: Optional callable (client, messages, provider, model) -> str
-                       that wraps invocation with resilience (retry + circuit breaker).
+            invoke_fn: Optional callable (client, messages, provider, model) -> raw
+                       provider content that wraps invocation with resilience
+                       (retry + circuit breaker).
                        When None, falls back to direct ``client.invoke()``.
         """
         self._logger = logging_service.get_class_logger("agentmap.llm.fallback")
@@ -66,9 +67,14 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
     ) -> str:
         """Invoke client through resilience layer when available, else direct."""
         if self._invoke_fn is not None:
-            return self._invoke_fn(client, langchain_messages, provider, model)
-        response = client.invoke(langchain_messages)
-        return response.content if hasattr(response, "content") else str(response)
+            raw_content = self._invoke_fn(client, langchain_messages, provider, model)
+        else:
+            response = client.invoke(langchain_messages)
+            raw_content = (
+                response.content if hasattr(response, "content") else str(response)
+            )
+        text, _ = normalize_response_content_value(raw_content)
+        return text
 
     async def _invoke_client_async(
         self,
@@ -90,9 +96,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
                 client, langchain_messages, provider, model
             )
         if self._invoke_fn is not None:
-            raw_content = self._invoke_client(
-                client, langchain_messages, provider, model
-            )
+            raw_content = self._invoke_fn(client, langchain_messages, provider, model)
             text, text_status = normalize_response_content_value(raw_content)
             return LLMResponse(
                 text=text,
