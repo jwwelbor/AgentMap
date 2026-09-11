@@ -15,6 +15,7 @@ from agentmap.models.llm_execution import LLMMessage, LLMResponse
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.llm.fallback_ladder import LLMFallbackAsyncLadderMixin
+from agentmap.services.llm.tool_call_extraction import normalize_response_content
 from agentmap.services.llm_message_service import LLMMessageService
 from agentmap.services.logging_service import LoggingService
 
@@ -85,13 +86,16 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
             return await self._invoke_async_fn(
                 client, langchain_messages, provider, model
             )
-        # Bare fallback: no resilience layer available; wrap sync result.
-        text = self._invoke_client(client, langchain_messages, provider, model)
+        # Bare fallback: no resilience layer available; still construct the
+        # same safe receipt shape as the resilience path.
+        response = client.invoke(langchain_messages)
+        text, text_status = normalize_response_content(response)
         return LLMResponse(
             text=text,
             resolved_provider=provider,
             resolved_model=model,
             usage=None,
+            text_status=text_status,
         )
 
     def get_fallback_model(

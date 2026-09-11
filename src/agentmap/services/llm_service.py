@@ -1825,7 +1825,16 @@ class LLMService:
                 f"{attempt_timeout}s with no response (idle timeout)"
             ) from e
         duration = time.monotonic() - start_time
+        return self._build_success_llm_response(response, provider, model, duration)
 
+    def _build_success_llm_response(
+        self,
+        response: Any,
+        provider: str,
+        model: str,
+        duration: float,
+    ) -> LLMResponse:
+        """Record a successful raw response and construct its safe receipt."""
         text, text_status = normalize_response_content(response)
 
         was_open = self._circuit_breaker.is_open(provider, model)

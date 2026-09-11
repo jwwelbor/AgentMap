@@ -100,20 +100,21 @@ def normalize_response_content(response: Any) -> Tuple[str, ResponseTextStatus]:
 
     if isinstance(content, list):
         parts: List[str] = []
-        has_text_block = False
+        has_non_text_block = False
         for block in content:
             if not isinstance(block, dict) or block.get("type") != "text":
+                has_non_text_block = True
                 continue
             text_value = block.get("text", "")
             if not isinstance(text_value, str):
                 logger.debug("Skipping text block with non-string text value")
+                has_non_text_block = True
                 continue
-            has_text_block = True
             parts.append(text_value)
         text = "".join(parts)
         if text:
             return text, "text"
-        return text, "empty" if has_text_block or not content else "non_text"
+        return text, "non_text" if has_non_text_block else "empty"
 
     if isinstance(content, Mapping):
         return "", "empty" if not content else "non_text"

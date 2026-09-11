@@ -210,6 +210,14 @@ class TestNormalizeResponseContentStatus(unittest.TestCase):
             ("", "", "empty"),
             ([], "", "empty"),
             ([{"type": "text", "text": ""}], "", "empty"),
+            (
+                [
+                    {"type": "text", "text": ""},
+                    {"type": "tool_use", "name": "get_weather"},
+                ],
+                "",
+                "non_text",
+            ),
             ("hello", "hello", "text"),
         )
 

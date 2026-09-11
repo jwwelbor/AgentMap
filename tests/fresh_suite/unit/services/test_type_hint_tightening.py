@@ -19,6 +19,7 @@ Production entrypoints:
 import inspect
 import unittest
 from typing import get_type_hints
+from unittest.mock import Mock
 
 from agentmap.models.llm_execution import LLMRequest, LLMResponse
 from agentmap.services.llm_fallback_handler import LLMFallbackHandler
@@ -95,6 +96,25 @@ class TestInvokeAsyncFnTypeHint(unittest.TestCase):
         # This should not raise — the callable signature matches the declared type
         handler = _make_fallback_handler(invoke_async_fn=fake_async_fn)
         self.assertIs(handler._invoke_async_fn, fake_async_fn)
+
+
+class TestBareAsyncFallbackReceiptNormalization(unittest.IsolatedAsyncioTestCase):
+    """The fallback receipt keeps the LLMResponse text/status invariant."""
+
+    async def test_non_text_content_is_not_projected_by_bare_fallback(self):
+        secret = "do-not-expose-this-provider-payload"
+        client = Mock()
+        client.invoke.return_value = Mock(
+            content=[{"type": "tool_use", "input": {"secret": secret}}]
+        )
+
+        response = await _make_fallback_handler()._invoke_client_async(
+            client, [], "anthropic", "claude-test"
+        )
+
+        self.assertEqual(response.text, "")
+        self.assertEqual(response.text_status, "non_text")
+        self.assertNotIn(secret, response.text)
 
 
 class TestMessagesTypeHintAllowsAny(unittest.TestCase):
