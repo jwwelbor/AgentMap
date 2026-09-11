@@ -1,5 +1,5 @@
 """
-Unit tests for ``extract_tool_calls`` / ``normalize_response_text``
+Unit tests for ``extract_tool_calls`` / ``normalize_response_content``
 (T-E05-F06-005).
 
 Covers TC-013a, TC-013b (REQ-F-005 / AC-7 -- field-level extraction cases)
@@ -24,10 +24,10 @@ itself -- there is no lower seam to mock (spec.md Component Change 8:
 response object).
 
 Data-integrity note for TC-028a's third sub-case (non-string ``text``
-value): spec.md does not pin coerce-vs-skip. This implementation coerces via
-``str(...)`` (see ``normalize_response_text`` docstring) so a non-string
-text payload is never silently dropped; this test file's assertion matches
-that choice explicitly rather than assuming it silently.
+value): B005 treats malformed structured values as non-text. The normalizer
+skips them rather than stringifying provider payloads into user-visible text;
+when no genuine text remains, the receipt reports ``text_status ==
+"non_text"``.
 """
 
 import logging
@@ -36,7 +36,7 @@ import unittest
 from agentmap.models.llm_tool_call import LLMToolCall
 from agentmap.services.llm.tool_call_extraction import (
     extract_tool_calls,
-    normalize_response_text,
+    normalize_response_content,
 )
 
 
@@ -170,7 +170,7 @@ class TestNormalizeResponseTextBlockList(unittest.TestCase):
                 },
             ]
         )
-        result = normalize_response_text(response)
+        result = normalize_response_content(response)[0]
         self.assertEqual(result, "Let me check.")
         self.assertIsInstance(result, str)
 
@@ -189,7 +189,7 @@ class TestNormalizeResponseTextNoTextBlock(unittest.TestCase):
                 }
             ]
         )
-        result = normalize_response_text(response)
+        result = normalize_response_content(response)[0]
         self.assertEqual(result, "")
         self.assertIsInstance(result, str)
 
@@ -199,7 +199,48 @@ class TestNormalizeResponseTextPlainString(unittest.TestCase):
 
     def test_tc028_plain_string_content_used_verbatim(self):
         response = _Resp(content="hello")
-        self.assertEqual(normalize_response_text(response), "hello")
+        self.assertEqual(normalize_response_content(response)[0], "hello")
+
+
+class TestNormalizeResponseContentStatus(unittest.TestCase):
+    """B005: normal text and ordinary empty content have distinct states."""
+
+    def test_b005_returns_the_expected_status_for_visible_and_empty_content(self):
+        cases = (
+            ("", "", "empty"),
+            ([], "", "empty"),
+            ([{"type": "text", "text": ""}], "", "empty"),
+            ("hello", "hello", "text"),
+        )
+
+        for content, expected_text, expected_status in cases:
+            with self.subTest(content=content):
+                self.assertEqual(
+                    normalize_response_content(_Resp(content=content)),
+                    (expected_text, expected_status),
+                )
+
+    def test_b005_sensitive_structured_content_is_not_projected_as_text(self):
+        response = _Resp(
+            content={
+                "type": "thinking",
+                "secret": "do-not-expose-this-provider-payload",
+            }
+        )
+
+        text, status = normalize_response_content(response)
+
+        self.assertEqual(text, "")
+        self.assertEqual(status, "non_text")
+        self.assertNotIn("do-not-expose-this-provider-payload", text)
+
+    def test_b005_empty_structured_content_is_an_empty_receipt(self):
+        self.assertEqual(normalize_response_content(_Resp(content={})), ("", "empty"))
+
+    def test_b005_non_string_scalar_content_is_not_projected_as_text(self):
+        self.assertEqual(
+            normalize_response_content(_Resp(content=123)), ("", "non_text")
+        )
 
 
 class TestNormalizeResponseTextMalformedBlocks(unittest.TestCase):
@@ -207,26 +248,50 @@ class TestNormalizeResponseTextMalformedBlocks(unittest.TestCase):
 
     def test_tc028a_non_dict_list_entry_is_skipped(self):
         response = _Resp(content=["plain string entry", {"type": "text", "text": "b"}])
-        self.assertEqual(normalize_response_text(response), "b")
+        self.assertEqual(normalize_response_content(response)[0], "b")
 
     def test_tc028a_text_block_missing_text_key_contributes_empty_string(self):
         response = _Resp(content=[{"type": "text"}])
-        self.assertEqual(normalize_response_text(response), "")
+        self.assertEqual(normalize_response_content(response)[0], "")
 
-    def test_tc028a_text_block_with_non_string_text_value_is_coerced(self):
-        """Spec.md does not pin coerce-vs-skip for this sub-case; this
-        implementation coerces via str(...) -- see module docstring."""
-        response = _Resp(content=[{"type": "text", "text": 123}])
-        self.assertEqual(normalize_response_text(response), "123")
+    def test_b005_text_blocks_with_structured_values_are_not_projected(self):
+        """Only genuine strings may reach the user-visible receipt text."""
+        secret = "do-not-expose-this-provider-payload"
+        for value in ({"secret": secret}, [secret], 123):
+            with self.subTest(value=value):
+                text, status = normalize_response_content(
+                    _Resp(content=[{"type": "text", "text": value}])
+                )
+
+                self.assertEqual(text, "")
+                self.assertEqual(status, "non_text")
+                self.assertNotIn(secret, text)
+
+    def test_b005_rejected_structured_text_value_is_not_logged(self):
+        """The diagnostic must not disclose a rejected provider payload."""
+        secret = "do-not-log-this-provider-payload"
+        logger = logging.getLogger("agentmap.services.llm.tool_call_extraction")
+        logger_was_disabled = logger.disabled
+        logger.disabled = False
+        self.addCleanup(setattr, logger, "disabled", logger_was_disabled)
+
+        with self.assertLogs(logger.name, level="DEBUG") as captured:
+            text, status = normalize_response_content(
+                _Resp(content=[{"type": "text", "text": {"secret": secret}}])
+            )
+
+        self.assertEqual(text, "")
+        self.assertEqual(status, "non_text")
+        self.assertNotIn(secret, "\n".join(captured.output))
 
     def test_tc028a_empty_list_yields_empty_string(self):
         response = _Resp(content=[])
-        self.assertEqual(normalize_response_text(response), "")
+        self.assertEqual(normalize_response_content(response)[0], "")
 
 
-class TestNormalizeResponseTextNoContentAttribute(unittest.TestCase):
-    """Fallback parity with the pre-existing catch-all this helper replaces."""
+class TestNormalizeResponseContentNoContentAttribute(unittest.TestCase):
+    """Missing content is an empty receipt, not a stringified response object."""
 
-    def test_response_without_content_attribute_falls_back_to_str(self):
+    def test_response_without_content_attribute_is_empty(self):
         response = object()
-        self.assertEqual(normalize_response_text(response), str(response))
+        self.assertEqual(normalize_response_content(response), ("", "empty"))

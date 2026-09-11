@@ -482,7 +482,9 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
 
                 response = await llm_service.call_llm_async(**call_params)
 
-            # Extract the text from the LLMResponse
+            # Keep the user-visible text safe while exposing its receipt state
+            # to workflow consumers. Non-text provider blocks are never copied
+            # into agent state.
             result = response.text
 
             add_assistant_message(inputs, result, self.memory_key)
@@ -492,7 +494,11 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
 
             self.log_info("LLM processing completed successfully")
 
-            return {"output": result, self.memory_key: inputs.get(self.memory_key, [])}
+            return {
+                "output": result,
+                "llm_response_status": response.text_status,
+                self.memory_key: inputs.get(self.memory_key, []),
+            }
 
         except Exception as e:
             provider_name = (
@@ -534,6 +540,8 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
                     self.output_field: output_value,
                     self.memory_key: memory,
                 }
+                if "llm_response_status" in output:
+                    state_updates["llm_response_status"] = output["llm_response_status"]
                 return state, {"state_updates": state_updates}
 
         return state, output

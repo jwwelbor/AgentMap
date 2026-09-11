@@ -183,7 +183,7 @@ Routing filters candidates to providers whose `routing.provider_capabilities.<pr
 
 ### Pattern 4: Async vision (`ask_vision_async()`)
 
-`ask_vision_async()` sends an image plus a text prompt through the full async stack — intelligent routing, tiered fallback, and resilience — and returns a rich `LLMResponse` (text, `resolved_provider`, `resolved_model`, `usage`, and `finish_reason`). It builds the multimodal message for you, so callers pass raw bytes (or a path) and a prompt, not hand-built content blocks. `requires_vision=True` is injected into the routing context automatically.
+`ask_vision_async()` sends an image plus a text prompt through the full async stack — intelligent routing, tiered fallback, and resilience — and returns a rich `LLMResponse` (text, `text_status`, `resolved_provider`, `resolved_model`, `usage`, and `finish_reason`). It builds the multimodal message for you, so callers pass raw bytes (or a path) and a prompt, not hand-built content blocks. `requires_vision=True` is injected into the routing context automatically.
 
 ```python
 response = await llm_service.ask_vision_async(
@@ -603,7 +603,7 @@ CodeBot,Review,Review code,llm,Done,Error,code,feedback,You are a code reviewer,
 
 `call_llm_many_async()` submits many LLM requests in a single async call and returns one terminal result record per submitted request. It reuses the existing async realtime path — routing, retries, timeouts, fallback, circuit-breaker, and E05-F01 cache-aware request support all apply per item.
 
-Fan-out is additive. The synchronous `call_llm() -> str` and the high-level `ask()`, `ask_async()`, `ask_vision()` interfaces are unchanged. The internal `call_llm_async()` method now returns `LLMResponse` (carrying resolved provider, model, and usage) rather than a plain `str`; the public `ask_async()` method continues to return `str` by extracting `.text` from the response.
+Fan-out is additive. The synchronous `call_llm() -> str` and the high-level `ask()`, `ask_async()`, `ask_vision()` interfaces are unchanged. The internal `call_llm_async()` method returns `LLMResponse` (carrying text, text status, resolved provider, model, and usage) rather than a plain `str`; the public `ask_async()` method continues to return `str` by extracting `.text` from the response.
 
 ### Request shape
 
@@ -692,6 +692,7 @@ for result in results:
 | `resolved_provider` | `Optional[str]` | The provider that **actually handled** this item (after routing or fallback tier selection). `None` only when a routing failure occurred before provider resolution. |
 | `resolved_model` | `Optional[str]` | The model that **actually handled** this item (after routing or fallback tier selection). `None` only when a routing failure occurred before model resolution. |
 | `text` | `Optional[str]` | Response text. Present only on success. |
+| `text_status` | `Optional[Literal["text", "empty", "non_text"]]` | Receipt state copied from `LLMResponse` on success. `non_text` means the provider returned non-text content; its raw blocks are not exposed in `text`. |
 | `usage` | `Optional[LLMUsage]` | Normalized usage envelope. Present when the provider returned usage metadata. This includes routed and fallback items — the resolved provider's raw response is used to extract usage, so cache-aware fields such as `cache_read_input_tokens` are available on routed cache-aware requests. |
 | `error` | `Optional[LLMExecutionError]` | Structured error payload. Present only on failure. |
 
@@ -807,12 +808,13 @@ An unsupported cache mode (e.g. requesting prompt caching from a provider that d
 
 ## Cost Receipts
 
-`call_llm_async()` — and the async wrappers built on it (`ask_async()`, `ask_vision_async()`) — returns an `LLMResponse` carrying two additive fields (`agentmap.models.llm_execution.LLMResponse`):
+`call_llm_async()` returns an `LLMResponse` with a safe text projection and three additive receipt fields (`agentmap.models.llm_execution.LLMResponse`). `ask_vision_async()` returns the same rich receipt. `ask_async()` remains text-only, so use `call_llm_async()` when you need receipt status.
 
 | Field | Type | Description |
 |---|---|---|
 | `cost` | `Optional[LLMCostBreakdown]` | Deterministic cost computed from `usage` and the configured `llm.pricing` catalog. `None` when pricing is unconfigured, no catalog entry matches the resolved provider/model, or any positive-count usage bucket lacks a configured rate — never a partial or fabricated total. |
 | `tool_calls` | `Optional[List[LLMToolCall]]` | Normalized tool calls the model requested. `None` when the response carried none — never an empty list. See [Tool Calling](#tool-calling) below. |
+| `text_status` | `Literal["text", "empty", "non_text"]` | `text` means visible text is available. `empty` means the provider returned no visible content. `non_text` means the provider returned only non-text content. In both non-text cases, raw provider blocks are not copied into `text`. |
 
 `LLMCostBreakdown` (`agentmap.models.llm_cost.LLMCostBreakdown`) fields:
 

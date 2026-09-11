@@ -1293,7 +1293,7 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
     unittest.IsolatedAsyncioTestCase
 ):
     """TC-013 / TC-026 / TC-027 / TC-028 / TC-028a / TC-029 (T-E05-F06-005):
-    ``extract_tool_calls`` / ``normalize_response_text`` wired into the live
+    ``extract_tool_calls`` / ``normalize_response_content`` wired into the live
     async receipt-construction path (``_invoke_with_resilience_async``), not
     merely unit-testable in isolation (that's ``test_tool_call_extraction.py``).
 
@@ -1303,7 +1303,7 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
       - Lowest allowed mock seam: ``_client_factory.get_or_create_client``
         returning a client whose ``ainvoke`` resolves to a raw response
         object carrying ``.tool_calls`` / list-or-str ``.content`` directly.
-      - Forbidden mocks: ``extract_tool_calls`` / ``normalize_response_text``
+      - Forbidden mocks: ``extract_tool_calls`` / ``normalize_response_content``
         are never mocked here -- the real extraction/normalization must run.
 
     Scope-boundary note (TC-013): TC-013's own Caller-Path Contract also
@@ -1316,6 +1316,19 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
     ``bind_tools`` assertion is made; that assertion is TC-014/TC-014a's,
     covered by T-E05-F06-006.
     """
+
+    PRICING_CATALOG = {
+        "catalog_version": "2026-09-11",
+        "currency": "USD",
+        "models": {
+            "anthropic": {
+                "anthropic-default-model": {
+                    "input_per_1m": "3.00",
+                    "output_per_1m": "15.00",
+                }
+            }
+        },
+    }
 
     def setUp(self):
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
@@ -1339,6 +1352,9 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
             "api_key": "test-key",
             "temperature": 0.7,
         }
+        self.mock_app_config_service.get_llm_pricing_config.return_value = (
+            self.PRICING_CATALOG
+        )
         self.mock_llm_models_config_service = (
             MockServiceFactory.create_mock_llm_models_config_service()
         )
@@ -1451,10 +1467,9 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
         self.assertEqual(result.text, "Let me check.")
         self.assertIsInstance(result.text, str)
 
-    async def test_tc027_block_list_content_with_no_text_block_is_empty_string(
-        self,
-    ):
-        """TC-027: block-list content with no text block -> "" (not None)."""
+    async def test_b005_tool_use_only_response_is_explicitly_non_text(self):
+        """B005: a successful non-text response is not indistinguishable
+        from an ordinary empty textual response in the receipt."""
         mock_client = Mock()
         mock_client.ainvoke = AsyncMock(
             return_value=Mock(
@@ -1466,6 +1481,15 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
                         "input": {},
                     }
                 ],
+                tool_calls=[
+                    {
+                        "id": "toolu_1",
+                        "name": "get_weather",
+                        "args": {"city": "Oslo"},
+                    }
+                ],
+                response_metadata={"stop_reason": "tool_use"},
+                usage_metadata={"input_tokens": 100, "output_tokens": 20},
             )
         )
         with patch.object(
@@ -1479,6 +1503,47 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
             )
 
         self.assertEqual(result.text, "")
+        self.assertEqual(result.text_status, "non_text")
+        self.assertEqual(result.finish_reason, "tool_use")
+        self.assertEqual(result.usage.input_tokens, 100)
+        self.assertEqual(result.usage.output_tokens, 20)
+        self.assertIsNotNone(result.cost)
+        self.assertEqual(result.cost.total_cost, Decimal("0.000600"))
+        self.assertEqual(
+            result.tool_calls,
+            [LLMToolCall(id="toolu_1", name="get_weather", arguments={"city": "Oslo"})],
+        )
+
+    async def test_b005_structured_provider_content_never_reaches_receipt_text(self):
+        """B005 caller-path guard: structured provider values never reach text."""
+        secret = "do-not-expose-this-provider-payload"
+        for content in (
+            {"type": "thinking", "secret": secret},
+            [{"type": "text", "text": {"secret": secret}}],
+            [{"type": "text", "text": [secret]}],
+            [{"type": "text", "text": 123}],
+        ):
+            with self.subTest(content=content):
+                mock_client = Mock()
+                mock_client.ainvoke = AsyncMock(
+                    return_value=Mock(
+                        content=content,
+                        response_metadata={"stop_reason": "tool_use"},
+                    )
+                )
+                with patch.object(
+                    self.service._client_factory,
+                    "get_or_create_client",
+                    return_value=mock_client,
+                ):
+                    result = await self.service.call_llm_async(
+                        messages=[{"role": "user", "content": "Use a tool"}],
+                        provider="anthropic",
+                    )
+
+                self.assertEqual(result.text, "")
+                self.assertEqual(result.text_status, "non_text")
+                self.assertNotIn(secret, result.text)
 
     async def test_tc028_plain_string_content_unchanged(self):
         """TC-028: plain string content -> response.text unchanged
