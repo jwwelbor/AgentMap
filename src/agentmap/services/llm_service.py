@@ -14,6 +14,7 @@ import mimetypes
 import random
 import re
 import time
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import (
@@ -1839,11 +1840,21 @@ class LLMService:
             if isinstance(resp_meta, dict)
             else None
         )
+        finish_reason = self._extract_finish_reason(response)
+        usage = self._extract_llm_usage(response)
+        if text_status == "non_text":
+            self._log_non_text_response_diagnostic(
+                response,
+                provider=provider,
+                model=model,
+                request_id=req_id,
+                finish_reason=finish_reason,
+                usage_present=usage is not None,
+            )
         self._logger.debug(
             f"LLM call successful, response length: {len(text)}"
             + (f", request_id: {req_id}" if req_id else "")
         )
-        usage = self._extract_llm_usage(response)
         cost = self._cost_calculator.calculate(usage, provider, model)
         self._record_cost_span_attribute(cost)
         return LLMResponse(
@@ -1851,10 +1862,51 @@ class LLMService:
             resolved_provider=provider,
             resolved_model=model,
             usage=usage,
-            finish_reason=self._extract_finish_reason(response),
+            finish_reason=finish_reason,
             cost=cost,
             tool_calls=extract_tool_calls(response),
             text_status=text_status,
+        )
+
+    def _log_non_text_response_diagnostic(
+        self,
+        response: Any,
+        *,
+        provider: str,
+        model: str,
+        request_id: Optional[str],
+        finish_reason: Optional[str],
+        usage_present: bool,
+    ) -> None:
+        """Log content-free evidence for a successful non-text receipt.
+
+        CC-005 requires observation before selecting a recovery policy.  The
+        provider content itself may include reasoning, tool arguments, or
+        other sensitive data, so this diagnostic records only the ordered
+        block-type labels and metadata already available at the receipt seam.
+        """
+        content = getattr(response, "content", None)
+        blocks = content if isinstance(content, list) else [content]
+        block_types = [
+            (
+                block_type
+                if isinstance(block, Mapping)
+                and isinstance((block_type := block.get("type")), str)
+                else "unknown"
+            )
+            for block in blocks
+        ]
+        self._logger.debug(
+            "LLM non-text response diagnostic: %s",
+            {
+                "provider": provider,
+                "model": model,
+                "request_id": request_id,
+                "finish_reason": finish_reason,
+                "usage_present": usage_present,
+                "block_count": len(blocks),
+                "block_types": block_types,
+            },
         )
 
     def _raise_terminal_retry_failure(

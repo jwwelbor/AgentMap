@@ -1514,6 +1514,58 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
             [LLMToolCall(id="toolu_1", name="get_weather", arguments={"city": "Oslo"})],
         )
 
+    async def test_cc005_non_text_receipt_logs_safe_block_type_diagnostic(self):
+        """CC-005: the real async caller path records only metadata needed
+        to identify a future non-text response; provider payloads stay private."""
+        secret = "do-not-log-this-provider-payload"
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content=[
+                    {"type": "thinking", "thinking": secret},
+                    {"type": "redacted_thinking", "data": secret},
+                ],
+                response_metadata={
+                    "id": "msg_safe_diagnostic",
+                    "stop_reason": "end_turn",
+                },
+                usage_metadata={"input_tokens": 100, "output_tokens": 20},
+            )
+        )
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "Continue"}],
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text_status, "non_text")
+        diagnostics = [
+            call
+            for call in self.service._logger.calls
+            if call[0] == "debug" and call[1] == "LLM non-text response diagnostic: %s"
+        ]
+        self.assertEqual(len(diagnostics), 1)
+        _, _, args, _ = diagnostics[0]
+        self.assertEqual(
+            args,
+            (
+                {
+                    "provider": "anthropic",
+                    "model": "anthropic-default-model",
+                    "request_id": "msg_safe_diagnostic",
+                    "finish_reason": "end_turn",
+                    "usage_present": True,
+                    "block_count": 2,
+                    "block_types": ["thinking", "redacted_thinking"],
+                },
+            ),
+        )
+        self.assertNotIn(secret, repr(diagnostics))
+
     async def test_b005_structured_provider_content_never_reaches_receipt_text(self):
         """B005 caller-path guard: structured provider values never reach text."""
         secret = "do-not-expose-this-provider-payload"
