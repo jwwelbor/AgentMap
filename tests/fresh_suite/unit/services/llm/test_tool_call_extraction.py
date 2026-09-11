@@ -97,6 +97,18 @@ class TestExtractToolCallsMalformedEntries(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_tc013b_entry_with_non_string_id_or_name_is_skipped(self):
+        response = _Resp(
+            tool_calls=[{"id": 7, "name": 9, "args": {}}],
+        )
+
+        with self.assertLogs(
+            "agentmap.services.llm.tool_call_extraction", level="DEBUG"
+        ):
+            result = extract_tool_calls(response)
+
+        self.assertIsNone(result)
+
     def test_tc013b_entry_with_non_dict_args_is_skipped_with_debug_log(self):
         secret = "do-not-log-this-tool-argument"
         response = _Resp(

@@ -49,10 +49,10 @@ def extract_tool_calls(response: Any) -> Optional[List[LLMToolCall]]:
     any unset attribute access, so a bare truthiness check would treat a
     Mock's un-configured ``.tool_calls`` as present and then fail trying to
     iterate over it. A real LangChain response always carries a real list.
-    Entries missing ``id`` or ``name``, or carrying a non-dict ``args``, are
-    skipped with a debug log rather than raising, so a malformed entry never
-    converts a successful call into a failure; a well-formed entry elsewhere
-    in the same list is still extracted.
+    Entries with missing or non-string ``id``/``name`` fields, or carrying a
+    non-dict ``args``, are skipped with a debug log rather than raising, so a
+    malformed entry never converts a successful call into a failure; a
+    well-formed entry elsewhere in the same list is still extracted.
     """
     raw_tool_calls = getattr(response, "tool_calls", None)
     if not isinstance(raw_tool_calls, list) or not raw_tool_calls:
@@ -66,6 +66,9 @@ def extract_tool_calls(response: Any) -> Optional[List[LLMToolCall]]:
 
         call_id = entry.get("id")
         name = entry.get("name")
+        if not isinstance(call_id, str) or not isinstance(name, str):
+            logger.debug("Skipping tool call entry with non-string id/name field")
+            continue
         if not call_id or not name:
             logger.debug("Skipping tool call entry missing required id/name field")
             continue
