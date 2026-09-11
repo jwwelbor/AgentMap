@@ -440,8 +440,6 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             Response dict with output and memory fields, or error dict on failure.
             Same logical shape as process() for equivalent inputs.
         """
-        llm_service = self.llm_service
-
         try:
             self._initialize_memory_if_needed(inputs)
 
@@ -458,47 +456,8 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
                 add_user_message(inputs, user_input, self.memory_key)
                 messages = get_memory(inputs, self.memory_key)
 
-            routing_context = self._prepare_routing_context(inputs)
-
-            if routing_context:
-                self.log_debug(
-                    f"Using routing mode for task_type: {routing_context.get('task_type')}"
-                )
-                response = await llm_service.call_llm_async(
-                    messages=messages,
-                    provider="auto",
-                    routing_context=routing_context,
-                )
-            else:
-                self.log_debug(f"Using legacy mode with provider: {self.provider_name}")
-                call_params: Dict[str, Any] = {
-                    "messages": messages,
-                    "provider": self.provider_name,
-                    "model": self.model,
-                    "temperature": self.temperature,
-                }
-                if self.max_tokens is not None:
-                    call_params["max_tokens"] = self.max_tokens
-
-                response = await llm_service.call_llm_async(**call_params)
-
-            # Keep the user-visible text safe while exposing its receipt state
-            # to workflow consumers. Non-text provider blocks are never copied
-            # into agent state.
-            result = response.text
-
-            add_assistant_message(inputs, result, self.memory_key)
-
-            if self.max_memory_messages:
-                truncate_memory(inputs, self.max_memory_messages, self.memory_key)
-
-            self.log_info("LLM processing completed successfully")
-
-            return {
-                "output": result,
-                "llm_response_status": response.text_status,
-                self.memory_key: inputs.get(self.memory_key, []),
-            }
+            response = await self._call_llm_async(messages, inputs)
+            return self._build_async_success_output(inputs, response)
 
         except Exception as e:
             provider_name = (
@@ -506,6 +465,45 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             )
             self.log_error(f"Error in {provider_name} processing: {e}")
             return {"error": str(e), "last_action_success": False}
+
+    async def _call_llm_async(self, messages: list[Any], inputs: Dict[str, Any]) -> Any:
+        """Call the LLM service through the configured routing mode."""
+        routing_context = self._prepare_routing_context(inputs)
+        if routing_context:
+            self.log_debug(
+                f"Using routing mode for task_type: {routing_context.get('task_type')}"
+            )
+            return await self.llm_service.call_llm_async(
+                messages=messages,
+                provider="auto",
+                routing_context=routing_context,
+            )
+
+        self.log_debug(f"Using legacy mode with provider: {self.provider_name}")
+        call_params: Dict[str, Any] = {
+            "messages": messages,
+            "provider": self.provider_name,
+            "model": self.model,
+            "temperature": self.temperature,
+        }
+        if self.max_tokens is not None:
+            call_params["max_tokens"] = self.max_tokens
+        return await self.llm_service.call_llm_async(**call_params)
+
+    def _build_async_success_output(
+        self, inputs: Dict[str, Any], response: Any
+    ) -> Dict[str, Any]:
+        """Store a safe response projection and return the agent result."""
+        result = response.text
+        add_assistant_message(inputs, result, self.memory_key)
+        if self.max_memory_messages:
+            truncate_memory(inputs, self.max_memory_messages, self.memory_key)
+        self.log_info("LLM processing completed successfully")
+        return {
+            "output": result,
+            "llm_response_status": response.text_status,
+            self.memory_key: inputs.get(self.memory_key, []),
+        }
 
     def _post_process(
         self, state: Any, inputs: Dict[str, Any], output: Any

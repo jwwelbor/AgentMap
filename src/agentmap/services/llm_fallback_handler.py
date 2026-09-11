@@ -86,6 +86,15 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
             return await self._invoke_async_fn(
                 client, langchain_messages, provider, model
             )
+        if self._invoke_fn is not None:
+            text = self._invoke_client(client, langchain_messages, provider, model)
+            return LLMResponse(
+                text=text,
+                resolved_provider=provider,
+                resolved_model=model,
+                usage=None,
+                text_status="text" if text else "empty",
+            )
         # Bare fallback: no resilience layer available; still construct the
         # same safe receipt shape as the resilience path.
         response = client.invoke(langchain_messages)
