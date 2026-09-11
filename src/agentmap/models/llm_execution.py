@@ -63,11 +63,11 @@ class LLMResponse:
     text: str
     resolved_provider: str
     resolved_model: str
+    text_status: ResponseTextStatus
     usage: Optional["LLMUsage"] = None
     finish_reason: Optional[str] = None
     cost: Optional["LLMCostBreakdown"] = None
     tool_calls: Optional[List["LLMToolCall"]] = None
-    text_status: ResponseTextStatus = "text"
 
 
 @dataclass

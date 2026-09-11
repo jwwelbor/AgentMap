@@ -131,6 +131,22 @@ from agentmap.services.telemetry.constants import (
     ROUTING_PROVIDER,
 )
 
+_SAFE_NON_TEXT_BLOCK_TYPES = frozenset(
+    {
+        "audio",
+        "document",
+        "function_call",
+        "function_response",
+        "image",
+        "redacted_thinking",
+        "text",
+        "thinking",
+        "tool_result",
+        "tool_use",
+        "video",
+    }
+)
+
 # Keys that ``call_llm_async`` accepts as explicit parameters.  If any of these
 # appear in ``LLMRequest.request_options`` they would collide with the explicit
 # keyword arguments in ``_execute_fan_out_item``, causing a TypeError at runtime.
@@ -1926,6 +1942,7 @@ class LLMService:
                 block_type
                 if isinstance(block, Mapping)
                 and isinstance((block_type := block.get("type")), str)
+                and block_type in _SAFE_NON_TEXT_BLOCK_TYPES
                 else "unknown"
             )
             for block in blocks

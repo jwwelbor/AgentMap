@@ -72,6 +72,7 @@ class TestLLMAgentRunAsync_TC003(unittest.TestCase):
             text="Async LLM response for testing",
             resolved_provider="openai",
             resolved_model="gpt-4o-mini",
+            text_status="text",
             usage=None,
         )
         self.mock_llm_service.call_llm_async = AsyncMock(
@@ -360,6 +361,7 @@ class TestLLMAgentRunAsync_TC004(unittest.TestCase):
             text="Routed LLM response",
             resolved_provider="anthropic",
             resolved_model="claude-sonnet-4-6",
+            text_status="text",
             usage=None,
         )
         self.mock_llm_service.call_llm_async = AsyncMock(

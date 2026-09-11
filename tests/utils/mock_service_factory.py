@@ -1130,6 +1130,7 @@ class MockServiceFactory:
                 text="Mock LLM response",
                 resolved_provider="mock-provider",
                 resolved_model="mock-model",
+                text_status="text",
                 usage=None,
             )
         )
@@ -1139,6 +1140,7 @@ class MockServiceFactory:
                 text="Mock LLM response",
                 resolved_provider="mock-provider",
                 resolved_model="mock-model",
+                text_status="text",
                 usage=None,
                 finish_reason="end_turn",
             )

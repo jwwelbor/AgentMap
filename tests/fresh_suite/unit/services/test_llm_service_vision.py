@@ -408,6 +408,7 @@ class TestAskVisionAsync(unittest.IsolatedAsyncioTestCase):
             text="Extracted text.",
             resolved_provider="anthropic",
             resolved_model="claude-haiku-4-5-20251001",
+            text_status="text",
             usage=LLMUsage(input_tokens=120, output_tokens=44),
             finish_reason="end_turn",
         )

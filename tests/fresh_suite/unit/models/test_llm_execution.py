@@ -26,24 +26,40 @@ from agentmap.models.llm_tool_call import LLMToolCall
 # LLMResponse extension — new fields default to None, still frozen
 # ---------------------------------------------------------------------------
 class TestLLMResponseExtension:
+    def test_text_status_is_required(self):
+        """Every receipt explicitly identifies text, empty, or non-text content."""
+        with pytest.raises(TypeError):
+            LLMResponse(
+                text="hello", resolved_provider="anthropic", resolved_model="claude"
+            )
+
     def test_cost_defaults_to_none(self):
         """LLMResponse.cost defaults to None when not supplied (NFR-F-004)."""
         response = LLMResponse(
-            text="hello", resolved_provider="anthropic", resolved_model="claude"
+            text="hello",
+            resolved_provider="anthropic",
+            resolved_model="claude",
+            text_status="text",
         )
         assert response.cost is None
 
     def test_tool_calls_defaults_to_none(self):
         """LLMResponse.tool_calls defaults to None when not supplied (NFR-F-004)."""
         response = LLMResponse(
-            text="hello", resolved_provider="anthropic", resolved_model="claude"
+            text="hello",
+            resolved_provider="anthropic",
+            resolved_model="claude",
+            text_status="text",
         )
         assert response.tool_calls is None
 
     def test_response_still_frozen(self):
         """LLMResponse remains frozen=True; mutation raises FrozenInstanceError."""
         response = LLMResponse(
-            text="hello", resolved_provider="anthropic", resolved_model="claude"
+            text="hello",
+            resolved_provider="anthropic",
+            resolved_model="claude",
+            text_status="text",
         )
         with pytest.raises(dataclasses.FrozenInstanceError):
             response.cost = None  # type: ignore[misc]
@@ -66,6 +82,7 @@ class TestLLMResponseExtension:
             text="hello",
             resolved_provider="anthropic",
             resolved_model="claude",
+            text_status="text",
             cost=cost,
             tool_calls=tool_calls,
         )
@@ -79,6 +96,7 @@ class TestLLMResponseExtension:
             text="hi",
             resolved_provider="openai",
             resolved_model="gpt",
+            text_status="text",
             usage=usage,
             finish_reason="stop",
         )

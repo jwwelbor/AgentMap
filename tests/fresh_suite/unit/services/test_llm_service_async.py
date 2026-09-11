@@ -262,6 +262,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
             text="routed response",
             resolved_provider="anthropic",
             resolved_model="claude-3-7-sonnet-20250219",
+            text_status="text",
         )
         with patch.object(
             self.service,
@@ -309,6 +310,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
             text="fallback response",
             resolved_provider="openai",
             resolved_model="openai-default-model",
+            text_status="text",
         )
         with patch.object(
             self.service,
@@ -352,6 +354,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
                     text="default response",
                     resolved_provider="anthropic",
                     resolved_model="anthropic-default-model",
+                    text_status="text",
                 )
             ),
         ) as mock_call_llm_async:
@@ -1564,6 +1567,33 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
                 },
             ),
         )
+        self.assertNotIn(secret, repr(diagnostics))
+
+    async def test_cc005_non_text_diagnostic_redacts_unknown_block_types(self):
+        secret = "do-not-log-this-provider-type"
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content=[{"type": secret, "payload": {"secret": secret}}],
+                response_metadata={"stop_reason": "end_turn"},
+            )
+        )
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "Continue"}],
+                provider="anthropic",
+            )
+
+        diagnostics = [
+            call
+            for call in self.service._logger.calls
+            if call[0] == "debug" and call[1] == "LLM non-text response diagnostic: %s"
+        ]
+        self.assertEqual(diagnostics[0][2][0]["block_types"], ["unknown"])
         self.assertNotIn(secret, repr(diagnostics))
 
     async def test_b005_structured_provider_content_never_reaches_receipt_text(self):

@@ -72,6 +72,7 @@ def _llm_response(text: str, model: str) -> LLMResponse:
         text=text,
         resolved_provider="openai",
         resolved_model=model,
+        text_status="text" if text else "empty",
     )
 
 

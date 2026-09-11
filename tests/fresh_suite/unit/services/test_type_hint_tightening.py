@@ -90,6 +90,7 @@ class TestInvokeAsyncFnTypeHint(unittest.TestCase):
                 text="ok",
                 resolved_provider=provider,
                 resolved_model=model,
+                text_status="text",
                 usage=None,
             )
 
