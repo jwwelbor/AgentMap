@@ -1293,7 +1293,7 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
     unittest.IsolatedAsyncioTestCase
 ):
     """TC-013 / TC-026 / TC-027 / TC-028 / TC-028a / TC-029 (T-E05-F06-005):
-    ``extract_tool_calls`` / ``normalize_response_text`` wired into the live
+    ``extract_tool_calls`` / ``normalize_response_content`` wired into the live
     async receipt-construction path (``_invoke_with_resilience_async``), not
     merely unit-testable in isolation (that's ``test_tool_call_extraction.py``).
 
@@ -1303,7 +1303,7 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
       - Lowest allowed mock seam: ``_client_factory.get_or_create_client``
         returning a client whose ``ainvoke`` resolves to a raw response
         object carrying ``.tool_calls`` / list-or-str ``.content`` directly.
-      - Forbidden mocks: ``extract_tool_calls`` / ``normalize_response_text``
+      - Forbidden mocks: ``extract_tool_calls`` / ``normalize_response_content``
         are never mocked here -- the real extraction/normalization must run.
 
     Scope-boundary note (TC-013): TC-013's own Caller-Path Contract also

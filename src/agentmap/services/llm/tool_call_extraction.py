@@ -1,7 +1,7 @@
 """
 Tool-call extraction and receipt normalization for LLM async receipts (E05-F06).
 
-Three pure, module-level helpers used at ``LLMResponse`` construction in
+Two pure, module-level helpers used at ``LLMResponse`` construction in
 ``LLMService._attempt_llm_call_async``:
 
 - ``extract_tool_calls`` reads LangChain's already-normalized ``tool_calls``
@@ -10,13 +10,11 @@ Three pure, module-level helpers used at ``LLMResponse`` construction in
   (REQ-F-005). AgentMap does not re-derive the three incompatible provider
   shapes itself -- the same reuse posture ``LLMService._extract_llm_usage``
   takes toward ``usage_metadata``.
-- ``normalize_response_text`` guarantees ``LLMResponse.text`` is always a
-  ``str`` even when a provider's ``content`` is a block list (REQ-F-012),
-  which is the mechanism that keeps REQ-F-005/REQ-F-006's text guarantees
-  true once tool-bound calls exist.
 - ``normalize_response_content`` derives that safe text projection and its
-  provider-neutral receipt status, so a successful non-text block list is not
-  indistinguishable from an ordinary empty textual response (B005).
+  provider-neutral receipt status. Its text projection is always a ``str``
+  even when a provider's ``content`` is a block list (REQ-F-012), and a
+  successful non-text block list is not indistinguishable from ordinary empty
+  textual content (B005).
 
 Both functions mirror ``_extract_llm_usage``'s per-field tolerance: a
 malformed entry is skipped with a debug log rather than raising, so a single
@@ -81,27 +79,6 @@ def extract_tool_calls(response: Any) -> Optional[List[LLMToolCall]]:
         extracted.append(LLMToolCall(id=call_id, name=name, arguments=arguments))
 
     return extracted or None
-
-
-def normalize_response_text(response: Any) -> str:
-    """Normalize a provider response into ``LLMResponse.text`` -- always a ``str``.
-
-    Provider-agnostic, shape-keyed rule (REQ-F-012):
-    - No ``content`` attribute at all: fall back to ``str(response)``
-      (matches the pre-existing catch-all this helper replaces).
-    - ``content`` is a ``str``: used verbatim (the common path -- must not
-      change behavior).
-    - ``content`` is a ``list``: concatenate the ``text`` value of every
-      block whose ``type == "text"``, yielding ``""`` when there are none.
-      Non-dict entries are skipped rather than raising. A ``text`` key that
-      is missing contributes ``""`` for that block. A ``text`` value that is
-      present but not a ``str`` is coerced via ``str(...)`` -- spec.md does
-      not pin this sub-case; coercion (over skipping) was chosen so a
-      non-string text payload is never silently dropped.
-    - Anything else (non-str, non-list ``content``): fall back to
-      ``str(content)``.
-    """
-    return normalize_response_content(response)[0]
 
 
 def normalize_response_content(response: Any) -> Tuple[str, ResponseTextStatus]:

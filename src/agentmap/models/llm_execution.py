@@ -175,9 +175,9 @@ class LLMFanoutResult:
     Terminal per-item result for a fan-out submission.
 
     ``status`` is a closed terminal set: ``"succeeded"`` or ``"failed"``.
-    Successful results carry ``text`` and ``usage``; failed results carry
-    ``error``. ``resolved_provider`` and ``resolved_model`` may be ``None``
-    when the failure occurs before provider resolution.
+    Successful results carry ``text``, ``text_status``, and ``usage``; failed
+    results carry ``error``. ``resolved_provider`` and ``resolved_model`` may
+    be ``None`` when the failure occurs before provider resolution.
 
     Field names mirror ``LLMResponse`` so the realtime and fan-out result
     envelopes read as one family.
@@ -188,5 +188,6 @@ class LLMFanoutResult:
     resolved_provider: Optional[str] = None
     resolved_model: Optional[str] = None
     text: Optional[str] = None
+    text_status: Optional[ResponseTextStatus] = None
     usage: Optional[LLMUsage] = None
     error: Optional[LLMExecutionError] = None

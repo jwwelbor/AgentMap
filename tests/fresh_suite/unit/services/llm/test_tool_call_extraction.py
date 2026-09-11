@@ -1,5 +1,5 @@
 """
-Unit tests for ``extract_tool_calls`` / ``normalize_response_text``
+Unit tests for ``extract_tool_calls`` / ``normalize_response_content``
 (T-E05-F06-005).
 
 Covers TC-013a, TC-013b (REQ-F-005 / AC-7 -- field-level extraction cases)
@@ -25,7 +25,7 @@ response object).
 
 Data-integrity note for TC-028a's third sub-case (non-string ``text``
 value): spec.md does not pin coerce-vs-skip. This implementation coerces via
-``str(...)`` (see ``normalize_response_text`` docstring) so a non-string
+``str(...)`` (see ``normalize_response_content`` docstring) so a non-string
 text payload is never silently dropped; this test file's assertion matches
 that choice explicitly rather than assuming it silently.
 """
@@ -37,7 +37,6 @@ from agentmap.models.llm_tool_call import LLMToolCall
 from agentmap.services.llm.tool_call_extraction import (
     extract_tool_calls,
     normalize_response_content,
-    normalize_response_text,
 )
 
 
@@ -171,7 +170,7 @@ class TestNormalizeResponseTextBlockList(unittest.TestCase):
                 },
             ]
         )
-        result = normalize_response_text(response)
+        result = normalize_response_content(response)[0]
         self.assertEqual(result, "Let me check.")
         self.assertIsInstance(result, str)
 
@@ -190,7 +189,7 @@ class TestNormalizeResponseTextNoTextBlock(unittest.TestCase):
                 }
             ]
         )
-        result = normalize_response_text(response)
+        result = normalize_response_content(response)[0]
         self.assertEqual(result, "")
         self.assertIsInstance(result, str)
 
@@ -200,7 +199,7 @@ class TestNormalizeResponseTextPlainString(unittest.TestCase):
 
     def test_tc028_plain_string_content_used_verbatim(self):
         response = _Resp(content="hello")
-        self.assertEqual(normalize_response_text(response), "hello")
+        self.assertEqual(normalize_response_content(response)[0], "hello")
 
 
 class TestNormalizeResponseContentStatus(unittest.TestCase):
@@ -227,21 +226,21 @@ class TestNormalizeResponseTextMalformedBlocks(unittest.TestCase):
 
     def test_tc028a_non_dict_list_entry_is_skipped(self):
         response = _Resp(content=["plain string entry", {"type": "text", "text": "b"}])
-        self.assertEqual(normalize_response_text(response), "b")
+        self.assertEqual(normalize_response_content(response)[0], "b")
 
     def test_tc028a_text_block_missing_text_key_contributes_empty_string(self):
         response = _Resp(content=[{"type": "text"}])
-        self.assertEqual(normalize_response_text(response), "")
+        self.assertEqual(normalize_response_content(response)[0], "")
 
     def test_tc028a_text_block_with_non_string_text_value_is_coerced(self):
         """Spec.md does not pin coerce-vs-skip for this sub-case; this
         implementation coerces via str(...) -- see module docstring."""
         response = _Resp(content=[{"type": "text", "text": 123}])
-        self.assertEqual(normalize_response_text(response), "123")
+        self.assertEqual(normalize_response_content(response)[0], "123")
 
     def test_tc028a_empty_list_yields_empty_string(self):
         response = _Resp(content=[])
-        self.assertEqual(normalize_response_text(response), "")
+        self.assertEqual(normalize_response_content(response)[0], "")
 
 
 class TestNormalizeResponseTextNoContentAttribute(unittest.TestCase):
@@ -249,4 +248,4 @@ class TestNormalizeResponseTextNoContentAttribute(unittest.TestCase):
 
     def test_response_without_content_attribute_falls_back_to_str(self):
         response = object()
-        self.assertEqual(normalize_response_text(response), str(response))
+        self.assertEqual(normalize_response_content(response)[0], str(response))

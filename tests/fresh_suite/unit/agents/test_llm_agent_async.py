@@ -144,6 +144,25 @@ class TestLLMAgentRunAsync_TC003(unittest.TestCase):
         self.assertIn("response", result)
         self.assertEqual(result["response"], "Async LLM response for testing")
 
+    def test_b005_run_async_exposes_non_text_receipt_state_without_content(self):
+        """B005 regression: the production agent entrypoint must preserve a
+        successful non-text receipt as state, not silently emit a blank answer."""
+        self.mock_llm_service.call_llm_async.return_value = LLMResponse(
+            text="",
+            text_status="non_text",
+            resolved_provider="anthropic",
+            resolved_model="claude-sonnet-4-6",
+        )
+        agent = self._make_agent()
+
+        result = asyncio.run(
+            agent.run_async({"prompt": "Use the weather tool", "memory": []})
+        )
+
+        self.assertEqual(result["response"], "")
+        self.assertEqual(result["llm_response_status"], "non_text")
+        self.assertNotIn("tool_use", str(result))
+
     def test_run_async_returns_memory_in_state_updates(self):
         """
         TC-003 memory update: run_async() includes memory in the state update,

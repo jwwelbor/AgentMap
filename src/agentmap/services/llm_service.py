@@ -2534,6 +2534,7 @@ class LLMService:
                     resolved_provider=llm_response.resolved_provider,
                     resolved_model=llm_response.resolved_model,
                     text=llm_response.text,
+                    text_status=llm_response.text_status,
                     usage=llm_response.usage,
                 )
             except LLMResolvedCallError as exc:

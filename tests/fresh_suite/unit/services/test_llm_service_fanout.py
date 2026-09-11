@@ -573,6 +573,27 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status, "succeeded")
         self.assertEqual(r.text, "great answer")
 
+    async def test_b005_succeeded_result_preserves_non_text_receipt_status(self):
+        """B005: fan-out must not turn a successful non-text receipt into an
+        indistinguishable empty result."""
+        spec = _make_spec("non-text-result", provider="anthropic")
+        response = LLMResponse(
+            text="",
+            text_status="non_text",
+            resolved_provider="anthropic",
+            resolved_model="claude-3-haiku",
+        )
+
+        with patch.object(
+            self.service,
+            "call_llm_async",
+            new=AsyncMock(return_value=response),
+        ):
+            results = await self.service.call_llm_many_async([spec], max_concurrency=1)
+
+        self.assertEqual(results[0].text, "")
+        self.assertEqual(results[0].text_status, "non_text")
+
     async def test_tc_ac7_01_succeeded_result_carries_resolved_provider_and_model(self):
         """TC-AC7-01: result.provider/model carry resolved values from LLMResponse."""
         spec = _make_spec("prov-check", provider="anthropic", model="claude-3-haiku")
