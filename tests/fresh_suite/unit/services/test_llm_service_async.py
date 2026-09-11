@@ -1451,10 +1451,9 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
         self.assertEqual(result.text, "Let me check.")
         self.assertIsInstance(result.text, str)
 
-    async def test_tc027_block_list_content_with_no_text_block_is_empty_string(
-        self,
-    ):
-        """TC-027: block-list content with no text block -> "" (not None)."""
+    async def test_b005_tool_use_only_response_is_explicitly_non_text(self):
+        """B005: a successful non-text response is not indistinguishable
+        from an ordinary empty textual response in the receipt."""
         mock_client = Mock()
         mock_client.ainvoke = AsyncMock(
             return_value=Mock(
@@ -1466,6 +1465,14 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
                         "input": {},
                     }
                 ],
+                tool_calls=[
+                    {
+                        "id": "toolu_1",
+                        "name": "get_weather",
+                        "args": {"city": "Oslo"},
+                    }
+                ],
+                response_metadata={"stop_reason": "tool_use"},
             )
         )
         with patch.object(
@@ -1479,6 +1486,11 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
             )
 
         self.assertEqual(result.text, "")
+        self.assertEqual(result.text_status, "non_text")
+        self.assertEqual(
+            result.tool_calls,
+            [LLMToolCall(id="toolu_1", name="get_weather", arguments={"city": "Oslo"})],
+        )
 
     async def test_tc028_plain_string_content_unchanged(self):
         """TC-028: plain string content -> response.text unchanged

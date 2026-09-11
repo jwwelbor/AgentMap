@@ -69,7 +69,7 @@ from agentmap.services.llm.cost_calculator import LLMCostCalculator
 from agentmap.services.llm.stream_seam import stream_provider
 from agentmap.services.llm.tool_call_extraction import (
     extract_tool_calls,
-    normalize_response_text,
+    normalize_response_content,
 )
 from agentmap.services.llm_batch_errors import (
     LLMBatchCancelNotSupportedError,
@@ -1825,7 +1825,7 @@ class LLMService:
             ) from e
         duration = time.monotonic() - start_time
 
-        text = normalize_response_text(response)
+        text, text_status = normalize_response_content(response)
 
         was_open = self._circuit_breaker.is_open(provider, model)
         self._circuit_breaker.record_success(provider, model)
@@ -1854,6 +1854,7 @@ class LLMService:
             finish_reason=self._extract_finish_reason(response),
             cost=cost,
             tool_calls=extract_tool_calls(response),
+            text_status=text_status,
         )
 
     def _raise_terminal_retry_failure(

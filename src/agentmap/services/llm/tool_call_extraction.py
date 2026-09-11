@@ -25,8 +25,9 @@ receive-side extraction and the text-shape guard.
 """
 
 import logging
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
+from agentmap.models.llm_execution import ResponseTextStatus
 from agentmap.models.llm_tool_call import LLMToolCall
 
 logger = logging.getLogger(__name__)
@@ -97,24 +98,39 @@ def normalize_response_text(response: Any) -> str:
     - Anything else (non-str, non-list ``content``): fall back to
       ``str(content)``.
     """
+    return normalize_response_content(response)[0]
+
+
+def normalize_response_content(response: Any) -> Tuple[str, ResponseTextStatus]:
+    """Return the safe text projection and its provider-neutral receipt state.
+
+    A non-empty block list with no text blocks is a successful, non-text
+    response rather than an ordinary empty answer.  The raw blocks are not
+    exposed: they can contain provider-specific tool arguments or reasoning.
+    """
     if not hasattr(response, "content"):
-        return str(response)
+        text = str(response)
+        return text, "empty" if not text else "text"
 
     content = response.content
     if isinstance(content, str):
-        return content
+        return content, "empty" if not content else "text"
 
     if isinstance(content, list):
         parts: List[str] = []
+        has_text_block = False
         for block in content:
-            if not isinstance(block, dict):
+            if not isinstance(block, dict) or block.get("type") != "text":
                 continue
-            if block.get("type") != "text":
-                continue
+            has_text_block = True
             text_value = block.get("text", "")
             if not isinstance(text_value, str):
                 text_value = str(text_value)
             parts.append(text_value)
-        return "".join(parts)
+        text = "".join(parts)
+        if text:
+            return text, "text"
+        return text, "empty" if has_text_block or not content else "non_text"
 
-    return str(content)
+    text = str(content)
+    return text, "empty" if not text else "text"

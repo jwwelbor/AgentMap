@@ -7,7 +7,7 @@ no business logic lives here.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from agentmap.models.llm_cost import LLMCostBreakdown
 from agentmap.models.llm_tool_call import LLMToolCall
@@ -18,6 +18,7 @@ from agentmap.models.llm_tool_call import LLMToolCall
 # OpenAI / Anthropic SDKs, both of which accept heterogeneous content types.
 LLMMessage = Dict[str, Any]
 DEFAULT_TOKEN_LIMIT = 10000
+ResponseTextStatus = Literal["text", "empty", "non_text"]
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,11 @@ class LLMResponse:
     ``tool_calls`` is the normalized tool-call list extracted from the
     provider response (E05-F06). It is ``None`` when the response carried no
     tool calls; it is never an empty list (REQ-F-005).
+
+    ``text_status`` distinguishes an ordinary empty textual response
+    (``"empty"``) from a successful response containing only non-text
+    blocks (``"non_text"``). ``text`` remains a safe, user-visible string;
+    raw provider blocks and reasoning content are never projected into it.
     """
 
     text: str
@@ -61,6 +67,7 @@ class LLMResponse:
     finish_reason: Optional[str] = None
     cost: Optional["LLMCostBreakdown"] = None
     tool_calls: Optional[List["LLMToolCall"]] = None
+    text_status: ResponseTextStatus = "text"
 
 
 @dataclass
