@@ -1492,6 +1492,31 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
             [LLMToolCall(id="toolu_1", name="get_weather", arguments={"city": "Oslo"})],
         )
 
+    async def test_b005_structured_provider_content_never_reaches_receipt_text(self):
+        """B005 caller-path guard: provider mappings remain observable only as
+        receipt state, never as user-visible content."""
+        secret = "do-not-expose-this-provider-payload"
+        mock_client = Mock()
+        mock_client.ainvoke = AsyncMock(
+            return_value=Mock(
+                content={"type": "thinking", "secret": secret},
+                response_metadata={"stop_reason": "tool_use"},
+            )
+        )
+        with patch.object(
+            self.service._client_factory,
+            "get_or_create_client",
+            return_value=mock_client,
+        ):
+            result = await self.service.call_llm_async(
+                messages=[{"role": "user", "content": "Use a tool"}],
+                provider="anthropic",
+            )
+
+        self.assertEqual(result.text, "")
+        self.assertEqual(result.text_status, "non_text")
+        self.assertNotIn(secret, result.text)
+
     async def test_tc028_plain_string_content_unchanged(self):
         """TC-028: plain string content -> response.text unchanged
         (regression -- the common path)."""

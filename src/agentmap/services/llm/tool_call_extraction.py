@@ -26,6 +26,7 @@ receive-side extraction and receipt normalization.
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any, List, Optional, Tuple
 
 from agentmap.models.llm_execution import ResponseTextStatus
@@ -87,10 +88,11 @@ def normalize_response_content(response: Any) -> Tuple[str, ResponseTextStatus]:
     A non-empty block list with no text blocks is a successful, non-text
     response rather than an ordinary empty answer.  The raw blocks are not
     exposed: they can contain provider-specific tool arguments or reasoning.
+    The same rule applies to non-list structured content; only provider text
+    strings become ``LLMResponse.text``.
     """
     if not hasattr(response, "content"):
-        text = str(response)
-        return text, "empty" if not text else "text"
+        return "", "empty"
 
     content = response.content
     if isinstance(content, str):
@@ -112,5 +114,10 @@ def normalize_response_content(response: Any) -> Tuple[str, ResponseTextStatus]:
             return text, "text"
         return text, "empty" if has_text_block or not content else "non_text"
 
-    text = str(content)
-    return text, "empty" if not text else "text"
+    if isinstance(content, Mapping):
+        return "", "empty" if not content else "non_text"
+
+    if content is None:
+        return "", "empty"
+
+    return "", "non_text"

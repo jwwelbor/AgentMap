@@ -220,6 +220,28 @@ class TestNormalizeResponseContentStatus(unittest.TestCase):
                     (expected_text, expected_status),
                 )
 
+    def test_b005_sensitive_structured_content_is_not_projected_as_text(self):
+        response = _Resp(
+            content={
+                "type": "thinking",
+                "secret": "do-not-expose-this-provider-payload",
+            }
+        )
+
+        text, status = normalize_response_content(response)
+
+        self.assertEqual(text, "")
+        self.assertEqual(status, "non_text")
+        self.assertNotIn("do-not-expose-this-provider-payload", text)
+
+    def test_b005_empty_structured_content_is_an_empty_receipt(self):
+        self.assertEqual(normalize_response_content(_Resp(content={})), ("", "empty"))
+
+    def test_b005_non_string_scalar_content_is_not_projected_as_text(self):
+        self.assertEqual(
+            normalize_response_content(_Resp(content=123)), ("", "non_text")
+        )
+
 
 class TestNormalizeResponseTextMalformedBlocks(unittest.TestCase):
     """TC-028a: malformed block-list content -- closed input-model enumeration."""
@@ -243,9 +265,9 @@ class TestNormalizeResponseTextMalformedBlocks(unittest.TestCase):
         self.assertEqual(normalize_response_content(response)[0], "")
 
 
-class TestNormalizeResponseTextNoContentAttribute(unittest.TestCase):
-    """Fallback parity with the pre-existing catch-all this helper replaces."""
+class TestNormalizeResponseContentNoContentAttribute(unittest.TestCase):
+    """Missing content is an empty receipt, not a stringified response object."""
 
-    def test_response_without_content_attribute_falls_back_to_str(self):
+    def test_response_without_content_attribute_is_empty(self):
         response = object()
-        self.assertEqual(normalize_response_content(response)[0], str(response))
+        self.assertEqual(normalize_response_content(response), ("", "empty"))
