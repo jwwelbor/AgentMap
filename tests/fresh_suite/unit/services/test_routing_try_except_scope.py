@@ -293,6 +293,7 @@ class TestAsyncRoutingTryExceptScope(unittest.IsolatedAsyncioTestCase):
             text="fallback text",
             resolved_provider="openai",
             resolved_model="openai-default-model",
+            text_status="text",
         )
 
         with patch.object(
@@ -540,6 +541,7 @@ class TestBuildTierPlanAsyncPath(unittest.IsolatedAsyncioTestCase):
                 text="async response",
                 resolved_provider=provider,
                 resolved_model=model,
+                text_status="text",
             )
 
         handler._invoke_async_fn = fake_invoke_async

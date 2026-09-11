@@ -124,6 +124,7 @@ class TestLLMStreamChunkTerminalFields(unittest.TestCase):
             text="accumulated text",
             resolved_provider=self.terminal.resolved_provider,
             resolved_model=self.terminal.resolved_model,
+            text_status="text",
             usage=self.terminal.usage,
             finish_reason=self.terminal.finish_reason,
         )
@@ -288,6 +289,7 @@ class TestLLMStreamChunkNonFrozen(unittest.TestCase):
             text="hello",
             resolved_provider="anthropic",
             resolved_model="claude-3-5-haiku-20241022",
+            text_status="text",
         )
         with self.assertRaises(FrozenInstanceError):
             response.finish_reason = "stop"  # type: ignore[misc]

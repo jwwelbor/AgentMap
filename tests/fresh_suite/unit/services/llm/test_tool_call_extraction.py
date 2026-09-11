@@ -97,9 +97,22 @@ class TestExtractToolCallsMalformedEntries(unittest.TestCase):
 
         self.assertIsNone(result)
 
-    def test_tc013b_entry_with_non_dict_args_is_skipped_with_debug_log(self):
+    def test_tc013b_entry_with_non_string_id_or_name_is_skipped(self):
         response = _Resp(
-            tool_calls=[{"id": "toolu_1", "name": "get_weather", "args": "not a dict"}],
+            tool_calls=[{"id": 7, "name": 9, "args": {}}],
+        )
+
+        with self.assertLogs(
+            "agentmap.services.llm.tool_call_extraction", level="DEBUG"
+        ):
+            result = extract_tool_calls(response)
+
+        self.assertIsNone(result)
+
+    def test_tc013b_entry_with_non_dict_args_is_skipped_with_debug_log(self):
+        secret = "do-not-log-this-tool-argument"
+        response = _Resp(
+            tool_calls=[{"id": "toolu_1", "name": "get_weather", "args": secret}],
         )
         with self.assertLogs(
             "agentmap.services.llm.tool_call_extraction", level="DEBUG"
@@ -108,6 +121,7 @@ class TestExtractToolCallsMalformedEntries(unittest.TestCase):
 
         self.assertIsNone(result)
         self.assertTrue(any("args" in msg for msg in ctx.output))
+        self.assertFalse(any(secret in msg for msg in ctx.output))
 
     def test_tc013b_mixed_list_keeps_the_well_formed_entry(self):
         """A single bad entry must not convert a successful call into a
@@ -210,6 +224,14 @@ class TestNormalizeResponseContentStatus(unittest.TestCase):
             ("", "", "empty"),
             ([], "", "empty"),
             ([{"type": "text", "text": ""}], "", "empty"),
+            (
+                [
+                    {"type": "text", "text": ""},
+                    {"type": "tool_use", "name": "get_weather"},
+                ],
+                "",
+                "non_text",
+            ),
             ("hello", "hello", "text"),
         )
 

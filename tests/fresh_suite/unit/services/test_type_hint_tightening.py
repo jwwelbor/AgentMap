@@ -19,6 +19,7 @@ Production entrypoints:
 import inspect
 import unittest
 from typing import get_type_hints
+from unittest.mock import Mock
 
 from agentmap.models.llm_execution import LLMRequest, LLMResponse
 from agentmap.services.llm_fallback_handler import LLMFallbackHandler
@@ -89,12 +90,75 @@ class TestInvokeAsyncFnTypeHint(unittest.TestCase):
                 text="ok",
                 resolved_provider=provider,
                 resolved_model=model,
+                text_status="text",
                 usage=None,
             )
 
         # This should not raise — the callable signature matches the declared type
         handler = _make_fallback_handler(invoke_async_fn=fake_async_fn)
         self.assertIs(handler._invoke_async_fn, fake_async_fn)
+
+
+class TestBareAsyncFallbackReceiptNormalization(unittest.IsolatedAsyncioTestCase):
+    """The fallback receipt keeps the LLMResponse text/status invariant."""
+
+    async def test_non_text_content_is_not_projected_by_bare_fallback(self):
+        secret = "do-not-expose-this-provider-payload"
+        client = Mock()
+        client.invoke.return_value = Mock(
+            content=[{"type": "tool_use", "input": {"secret": secret}}]
+        )
+
+        response = await _make_fallback_handler()._invoke_client_async(
+            client, [], "anthropic", "claude-test"
+        )
+
+        self.assertEqual(response.text, "")
+        self.assertEqual(response.text_status, "non_text")
+        self.assertNotIn(secret, response.text)
+
+    async def test_sync_resilience_hook_is_preserved_without_async_hook(self):
+        invoke_fn = Mock(return_value="wrapped")
+        client = Mock()
+        handler = _make_fallback_handler(invoke_fn=invoke_fn)
+
+        response = await handler._invoke_client_async(
+            client, [], "anthropic", "claude-test"
+        )
+
+        invoke_fn.assert_called_once_with(client, [], "anthropic", "claude-test")
+        client.invoke.assert_not_called()
+        self.assertEqual(response.text, "wrapped")
+        self.assertEqual(response.text_status, "text")
+
+    async def test_sync_resilience_hook_normalizes_structured_content(self):
+        secret = "do-not-expose-this-provider-payload"
+        invoke_fn = Mock(
+            return_value=[{"type": "tool_use", "input": {"secret": secret}}]
+        )
+        client = Mock()
+        handler = _make_fallback_handler(invoke_fn=invoke_fn)
+
+        response = await handler._invoke_client_async(
+            client, [], "anthropic", "claude-test"
+        )
+
+        invoke_fn.assert_called_once_with(client, [], "anthropic", "claude-test")
+        client.invoke.assert_not_called()
+        self.assertEqual(response.text, "")
+        self.assertEqual(response.text_status, "non_text")
+        self.assertNotIn(secret, response.text)
+
+    def test_sync_resilience_hook_normalizes_structured_content_for_sync_call(self):
+        secret = "do-not-expose-this-provider-payload"
+        invoke_fn = Mock(
+            return_value=[{"type": "tool_use", "input": {"secret": secret}}]
+        )
+        handler = _make_fallback_handler(invoke_fn=invoke_fn)
+
+        result = handler._invoke_client(Mock(), [], "anthropic", "claude-test")
+
+        self.assertEqual(result, "")
 
 
 class TestMessagesTypeHintAllowsAny(unittest.TestCase):

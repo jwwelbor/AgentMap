@@ -72,6 +72,7 @@ class TestLLMAgentRunAsync_TC003(unittest.TestCase):
             text="Async LLM response for testing",
             resolved_provider="openai",
             resolved_model="gpt-4o-mini",
+            text_status="text",
             usage=None,
         )
         self.mock_llm_service.call_llm_async = AsyncMock(
@@ -143,6 +144,19 @@ class TestLLMAgentRunAsync_TC003(unittest.TestCase):
         # The result should contain the output field
         self.assertIn("response", result)
         self.assertEqual(result["response"], "Async LLM response for testing")
+
+    def test_process_async_propagates_missing_llm_service_configuration(self):
+        agent = LLMAgent(
+            name="unconfigured_llm_agent",
+            prompt="You are a helpful AI assistant.",
+            context=self.test_context,
+            logger=self.mock_logger,
+            execution_tracking_service=self.mock_execution_tracking_service,
+            state_adapter_service=self.mock_state_adapter_service,
+        )
+
+        with self.assertRaises(ValueError):
+            asyncio.run(agent.process_async({"prompt": "Hello", "memory": []}))
 
     def test_b005_run_async_exposes_non_text_receipt_state_without_content(self):
         """B005 regression: the production agent entrypoint must preserve a
@@ -347,6 +361,7 @@ class TestLLMAgentRunAsync_TC004(unittest.TestCase):
             text="Routed LLM response",
             resolved_provider="anthropic",
             resolved_model="claude-sonnet-4-6",
+            text_status="text",
             usage=None,
         )
         self.mock_llm_service.call_llm_async = AsyncMock(

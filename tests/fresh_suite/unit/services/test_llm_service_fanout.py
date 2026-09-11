@@ -93,6 +93,7 @@ def _llm_response(
         text=text,
         resolved_provider=provider,
         resolved_model=model,
+        text_status="text" if text else "empty",
         usage=usage,
     )
 
@@ -632,6 +633,7 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
             text="answer with usage",
             resolved_provider="anthropic",
             resolved_model="claude-3-haiku",
+            text_status="text",
             usage=usage,
         )
 
@@ -666,6 +668,7 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
             text="partial usage answer",
             resolved_provider="openai",
             resolved_model="gpt-4o",
+            text_status="text",
             usage=usage,
         )
 
@@ -750,6 +753,7 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
             text="routed answer",
             resolved_provider="anthropic",
             resolved_model="claude-haiku",
+            text_status="text",
             usage=expected_usage,
         )
 
@@ -840,6 +844,7 @@ class TestAC007SuccessNormalization(unittest.IsolatedAsyncioTestCase):
             text="fallback answer",
             resolved_provider="anthropic",
             resolved_model="claude-haiku",
+            text_status="text",
             usage=fallback_usage,
         )
 

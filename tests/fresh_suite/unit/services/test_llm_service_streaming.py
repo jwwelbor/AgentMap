@@ -2430,6 +2430,7 @@ class TestCallLLMStreamAsyncDirectFallback(unittest.IsolatedAsyncioTestCase):
             text="fallback text",
             resolved_provider="openai",
             resolved_model="gpt-4o",
+            text_status="text",
             finish_reason="stop",
             usage=None,
         )
@@ -2491,6 +2492,7 @@ class TestCallLLMStreamAsyncDirectFallback(unittest.IsolatedAsyncioTestCase):
             text="fallback text",
             resolved_provider="openai",  # different from "anthropic" request
             resolved_model="gpt-4o",  # different from "test-model" request
+            text_status="text",
             finish_reason="stop",
             usage=None,
         )
@@ -2549,6 +2551,7 @@ class TestCallLLMStreamAsyncDirectFallback(unittest.IsolatedAsyncioTestCase):
             text="fallback text",
             resolved_provider="openai",
             resolved_model="gpt-4o",
+            text_status="text",
             finish_reason="length",
             usage=fallback_usage,
         )
@@ -2691,6 +2694,7 @@ class TestCallLLMStreamAsyncDirectDependencyConfigShortCircuit(
             text="fallback text",
             resolved_provider="openai",
             resolved_model="gpt-4o",
+            text_status="text",
             finish_reason="stop",
             usage=None,
         )
@@ -4953,6 +4957,7 @@ class TestF04HandOffContract(unittest.IsolatedAsyncioTestCase):
             text=materialized_text,
             resolved_provider=terminal.resolved_provider,
             resolved_model=terminal.resolved_model,
+            text_status="text" if materialized_text else "empty",
             usage=terminal.usage,
             finish_reason=terminal.finish_reason,
         )

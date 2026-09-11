@@ -49,10 +49,10 @@ def extract_tool_calls(response: Any) -> Optional[List[LLMToolCall]]:
     any unset attribute access, so a bare truthiness check would treat a
     Mock's un-configured ``.tool_calls`` as present and then fail trying to
     iterate over it. A real LangChain response always carries a real list.
-    Entries missing ``id`` or ``name``, or carrying a non-dict ``args``, are
-    skipped with a debug log rather than raising, so a malformed entry never
-    converts a successful call into a failure; a well-formed entry elsewhere
-    in the same list is still extracted.
+    Entries with missing or non-string ``id``/``name`` fields, or carrying a
+    non-dict ``args``, are skipped with a debug log rather than raising, so a
+    malformed entry never converts a successful call into a failure; a
+    well-formed entry elsewhere in the same list is still extracted.
     """
     raw_tool_calls = getattr(response, "tool_calls", None)
     if not isinstance(raw_tool_calls, list) or not raw_tool_calls:
@@ -61,20 +61,21 @@ def extract_tool_calls(response: Any) -> Optional[List[LLMToolCall]]:
     extracted: List[LLMToolCall] = []
     for entry in raw_tool_calls:
         if not isinstance(entry, dict):
-            logger.debug("Skipping malformed tool call entry (not a dict): %r", entry)
+            logger.debug("Skipping malformed tool call entry with non-mapping shape")
             continue
 
         call_id = entry.get("id")
         name = entry.get("name")
+        if not isinstance(call_id, str) or not isinstance(name, str):
+            logger.debug("Skipping tool call entry with non-string id/name field")
+            continue
         if not call_id or not name:
-            logger.debug(
-                "Skipping tool call entry missing required id/name field: %r", entry
-            )
+            logger.debug("Skipping tool call entry missing required id/name field")
             continue
 
         arguments = entry.get("args")
         if not isinstance(arguments, dict):
-            logger.debug("Skipping tool call entry with non-dict args field: %r", entry)
+            logger.debug("Skipping tool call entry with non-dict args field")
             continue
 
         extracted.append(LLMToolCall(id=call_id, name=name, arguments=arguments))
@@ -94,26 +95,32 @@ def normalize_response_content(response: Any) -> Tuple[str, ResponseTextStatus]:
     if not hasattr(response, "content"):
         return "", "empty"
 
-    content = response.content
+    return normalize_response_content_value(response.content)
+
+
+def normalize_response_content_value(content: Any) -> Tuple[str, ResponseTextStatus]:
+    """Return the safe receipt projection for a raw provider content value."""
+
     if isinstance(content, str):
         return content, "empty" if not content else "text"
 
     if isinstance(content, list):
         parts: List[str] = []
-        has_text_block = False
+        has_non_text_block = False
         for block in content:
             if not isinstance(block, dict) or block.get("type") != "text":
+                has_non_text_block = True
                 continue
             text_value = block.get("text", "")
             if not isinstance(text_value, str):
                 logger.debug("Skipping text block with non-string text value")
+                has_non_text_block = True
                 continue
-            has_text_block = True
             parts.append(text_value)
         text = "".join(parts)
         if text:
             return text, "text"
-        return text, "empty" if has_text_block or not content else "non_text"
+        return text, "non_text" if has_non_text_block else "empty"
 
     if isinstance(content, Mapping):
         return "", "empty" if not content else "non_text"
