@@ -1504,6 +1504,7 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
 
         self.assertEqual(result.text, "")
         self.assertEqual(result.text_status, "non_text")
+        self.assertEqual(result.finish_reason, "tool_use")
         self.assertEqual(result.usage.input_tokens, 100)
         self.assertEqual(result.usage.output_tokens, 20)
         self.assertIsNotNone(result.cost)

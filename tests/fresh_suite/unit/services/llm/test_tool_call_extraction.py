@@ -24,10 +24,10 @@ itself -- there is no lower seam to mock (spec.md Component Change 8:
 response object).
 
 Data-integrity note for TC-028a's third sub-case (non-string ``text``
-value): spec.md does not pin coerce-vs-skip. This implementation coerces via
-``str(...)`` (see ``normalize_response_content`` docstring) so a non-string
-text payload is never silently dropped; this test file's assertion matches
-that choice explicitly rather than assuming it silently.
+value): B005 treats malformed structured values as non-text. The normalizer
+skips them rather than stringifying provider payloads into user-visible text;
+when no genuine text remains, the receipt reports ``text_status ==
+"non_text"``.
 """
 
 import logging
@@ -266,6 +266,23 @@ class TestNormalizeResponseTextMalformedBlocks(unittest.TestCase):
                 self.assertEqual(text, "")
                 self.assertEqual(status, "non_text")
                 self.assertNotIn(secret, text)
+
+    def test_b005_rejected_structured_text_value_is_not_logged(self):
+        """The diagnostic must not disclose a rejected provider payload."""
+        secret = "do-not-log-this-provider-payload"
+        logger = logging.getLogger("agentmap.services.llm.tool_call_extraction")
+        logger_was_disabled = logger.disabled
+        logger.disabled = False
+        self.addCleanup(setattr, logger, "disabled", logger_was_disabled)
+
+        with self.assertLogs(logger.name, level="DEBUG") as captured:
+            text, status = normalize_response_content(
+                _Resp(content=[{"type": "text", "text": {"secret": secret}}])
+            )
+
+        self.assertEqual(text, "")
+        self.assertEqual(status, "non_text")
+        self.assertNotIn(secret, "\n".join(captured.output))
 
     def test_tc028a_empty_list_yields_empty_string(self):
         response = _Resp(content=[])
