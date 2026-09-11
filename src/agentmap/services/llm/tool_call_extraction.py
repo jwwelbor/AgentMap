@@ -94,7 +94,12 @@ def normalize_response_content(response: Any) -> Tuple[str, ResponseTextStatus]:
     if not hasattr(response, "content"):
         return "", "empty"
 
-    content = response.content
+    return normalize_response_content_value(response.content)
+
+
+def normalize_response_content_value(content: Any) -> Tuple[str, ResponseTextStatus]:
+    """Return the safe receipt projection for a raw provider content value."""
+
     if isinstance(content, str):
         return content, "empty" if not content else "text"
 

@@ -307,7 +307,6 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         """
         # Check service configuration first (let configuration errors bubble up)
         llm_service = self.llm_service
-
         try:
             # Initialize memory if needed (handle both direct process() calls and run() calls)
             self._initialize_memory_if_needed(inputs)
@@ -440,6 +439,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             Response dict with output and memory fields, or error dict on failure.
             Same logical shape as process() for equivalent inputs.
         """
+        llm_service = self.llm_service
         try:
             self._initialize_memory_if_needed(inputs)
 
@@ -456,7 +456,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
                 add_user_message(inputs, user_input, self.memory_key)
                 messages = get_memory(inputs, self.memory_key)
 
-            response = await self._call_llm_async(messages, inputs)
+            response = await self._call_llm_async(llm_service, messages, inputs)
             return self._build_async_success_output(inputs, response)
 
         except Exception as e:
@@ -466,14 +466,19 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             self.log_error(f"Error in {provider_name} processing: {e}")
             return {"error": str(e), "last_action_success": False}
 
-    async def _call_llm_async(self, messages: list[Any], inputs: Dict[str, Any]) -> Any:
+    async def _call_llm_async(
+        self,
+        llm_service: LLMServiceProtocol,
+        messages: list[Any],
+        inputs: Dict[str, Any],
+    ) -> Any:
         """Call the LLM service through the configured routing mode."""
         routing_context = self._prepare_routing_context(inputs)
         if routing_context:
             self.log_debug(
                 f"Using routing mode for task_type: {routing_context.get('task_type')}"
             )
-            return await self.llm_service.call_llm_async(
+            return await llm_service.call_llm_async(
                 messages=messages,
                 provider="auto",
                 routing_context=routing_context,
@@ -488,7 +493,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         }
         if self.max_tokens is not None:
             call_params["max_tokens"] = self.max_tokens
-        return await self.llm_service.call_llm_async(**call_params)
+        return await llm_service.call_llm_async(**call_params)
 
     def _build_async_success_output(
         self, inputs: Dict[str, Any], response: Any

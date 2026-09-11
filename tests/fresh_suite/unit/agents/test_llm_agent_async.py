@@ -144,6 +144,19 @@ class TestLLMAgentRunAsync_TC003(unittest.TestCase):
         self.assertIn("response", result)
         self.assertEqual(result["response"], "Async LLM response for testing")
 
+    def test_process_async_propagates_missing_llm_service_configuration(self):
+        agent = LLMAgent(
+            name="unconfigured_llm_agent",
+            prompt="You are a helpful AI assistant.",
+            context=self.test_context,
+            logger=self.mock_logger,
+            execution_tracking_service=self.mock_execution_tracking_service,
+            state_adapter_service=self.mock_state_adapter_service,
+        )
+
+        with self.assertRaises(ValueError):
+            asyncio.run(agent.process_async({"prompt": "Hello", "memory": []}))
+
     def test_b005_run_async_exposes_non_text_receipt_state_without_content(self):
         """B005 regression: the production agent entrypoint must preserve a
         successful non-text receipt as state, not silently emit a blank answer."""

@@ -15,7 +15,10 @@ from agentmap.models.llm_execution import LLMMessage, LLMResponse
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.llm.fallback_ladder import LLMFallbackAsyncLadderMixin
-from agentmap.services.llm.tool_call_extraction import normalize_response_content
+from agentmap.services.llm.tool_call_extraction import (
+    normalize_response_content,
+    normalize_response_content_value,
+)
 from agentmap.services.llm_message_service import LLMMessageService
 from agentmap.services.logging_service import LoggingService
 
@@ -87,13 +90,16 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
                 client, langchain_messages, provider, model
             )
         if self._invoke_fn is not None:
-            text = self._invoke_client(client, langchain_messages, provider, model)
+            raw_content = self._invoke_client(
+                client, langchain_messages, provider, model
+            )
+            text, text_status = normalize_response_content_value(raw_content)
             return LLMResponse(
                 text=text,
                 resolved_provider=provider,
                 resolved_model=model,
                 usage=None,
-                text_status="text" if text else "empty",
+                text_status=text_status,
             )
         # Bare fallback: no resilience layer available; still construct the
         # same safe receipt shape as the resilience path.
