@@ -254,11 +254,18 @@ class TestNormalizeResponseTextMalformedBlocks(unittest.TestCase):
         response = _Resp(content=[{"type": "text"}])
         self.assertEqual(normalize_response_content(response)[0], "")
 
-    def test_tc028a_text_block_with_non_string_text_value_is_coerced(self):
-        """Spec.md does not pin coerce-vs-skip for this sub-case; this
-        implementation coerces via str(...) -- see module docstring."""
-        response = _Resp(content=[{"type": "text", "text": 123}])
-        self.assertEqual(normalize_response_content(response)[0], "123")
+    def test_b005_text_blocks_with_structured_values_are_not_projected(self):
+        """Only genuine strings may reach the user-visible receipt text."""
+        secret = "do-not-expose-this-provider-payload"
+        for value in ({"secret": secret}, [secret], 123):
+            with self.subTest(value=value):
+                text, status = normalize_response_content(
+                    _Resp(content=[{"type": "text", "text": value}])
+                )
+
+                self.assertEqual(text, "")
+                self.assertEqual(status, "non_text")
+                self.assertNotIn(secret, text)
 
     def test_tc028a_empty_list_yields_empty_string(self):
         response = _Resp(content=[])

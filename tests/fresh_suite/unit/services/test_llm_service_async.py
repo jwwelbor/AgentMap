@@ -1317,6 +1317,19 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
     covered by T-E05-F06-006.
     """
 
+    PRICING_CATALOG = {
+        "catalog_version": "2026-09-11",
+        "currency": "USD",
+        "models": {
+            "anthropic": {
+                "anthropic-default-model": {
+                    "input_per_1m": "3.00",
+                    "output_per_1m": "15.00",
+                }
+            }
+        },
+    }
+
     def setUp(self):
         self.mock_logging_service = MockServiceFactory.create_mock_logging_service()
         self.mock_app_config_service = (
@@ -1339,6 +1352,9 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
             "api_key": "test-key",
             "temperature": 0.7,
         }
+        self.mock_app_config_service.get_llm_pricing_config.return_value = (
+            self.PRICING_CATALOG
+        )
         self.mock_llm_models_config_service = (
             MockServiceFactory.create_mock_llm_models_config_service()
         )
@@ -1473,6 +1489,7 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
                     }
                 ],
                 response_metadata={"stop_reason": "tool_use"},
+                usage_metadata={"input_tokens": 100, "output_tokens": 20},
             )
         )
         with patch.object(
@@ -1487,35 +1504,45 @@ class TestLLMServiceToolCallAndTextNormalizationWiring(
 
         self.assertEqual(result.text, "")
         self.assertEqual(result.text_status, "non_text")
+        self.assertEqual(result.usage.input_tokens, 100)
+        self.assertEqual(result.usage.output_tokens, 20)
+        self.assertIsNotNone(result.cost)
+        self.assertEqual(result.cost.total_cost, Decimal("0.000600"))
         self.assertEqual(
             result.tool_calls,
             [LLMToolCall(id="toolu_1", name="get_weather", arguments={"city": "Oslo"})],
         )
 
     async def test_b005_structured_provider_content_never_reaches_receipt_text(self):
-        """B005 caller-path guard: provider mappings remain observable only as
-        receipt state, never as user-visible content."""
+        """B005 caller-path guard: structured provider values never reach text."""
         secret = "do-not-expose-this-provider-payload"
-        mock_client = Mock()
-        mock_client.ainvoke = AsyncMock(
-            return_value=Mock(
-                content={"type": "thinking", "secret": secret},
-                response_metadata={"stop_reason": "tool_use"},
-            )
-        )
-        with patch.object(
-            self.service._client_factory,
-            "get_or_create_client",
-            return_value=mock_client,
+        for content in (
+            {"type": "thinking", "secret": secret},
+            [{"type": "text", "text": {"secret": secret}}],
+            [{"type": "text", "text": [secret]}],
+            [{"type": "text", "text": 123}],
         ):
-            result = await self.service.call_llm_async(
-                messages=[{"role": "user", "content": "Use a tool"}],
-                provider="anthropic",
-            )
+            with self.subTest(content=content):
+                mock_client = Mock()
+                mock_client.ainvoke = AsyncMock(
+                    return_value=Mock(
+                        content=content,
+                        response_metadata={"stop_reason": "tool_use"},
+                    )
+                )
+                with patch.object(
+                    self.service._client_factory,
+                    "get_or_create_client",
+                    return_value=mock_client,
+                ):
+                    result = await self.service.call_llm_async(
+                        messages=[{"role": "user", "content": "Use a tool"}],
+                        provider="anthropic",
+                    )
 
-        self.assertEqual(result.text, "")
-        self.assertEqual(result.text_status, "non_text")
-        self.assertNotIn(secret, result.text)
+                self.assertEqual(result.text, "")
+                self.assertEqual(result.text_status, "non_text")
+                self.assertNotIn(secret, result.text)
 
     async def test_tc028_plain_string_content_unchanged(self):
         """TC-028: plain string content -> response.text unchanged

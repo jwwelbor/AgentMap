@@ -104,10 +104,11 @@ def normalize_response_content(response: Any) -> Tuple[str, ResponseTextStatus]:
         for block in content:
             if not isinstance(block, dict) or block.get("type") != "text":
                 continue
-            has_text_block = True
             text_value = block.get("text", "")
             if not isinstance(text_value, str):
-                text_value = str(text_value)
+                logger.debug("Skipping text block with non-string text value")
+                continue
+            has_text_block = True
             parts.append(text_value)
         text = "".join(parts)
         if text:
