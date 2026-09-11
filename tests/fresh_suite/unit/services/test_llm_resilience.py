@@ -91,6 +91,19 @@ class TestInvokeWithResilience(unittest.TestCase):
 
         self.assertEqual(result, "")
 
+    def test_success_without_content_does_not_use_provider_representation(self):
+        class SensitiveResponse:
+            def __str__(self) -> str:
+                return "secret-provider-payload"
+
+        self.mock_client.invoke.return_value = SensitiveResponse()
+
+        result = self.svc._invoke_with_resilience(
+            self.mock_client, self.msgs, "openai", "gpt-4"
+        )
+
+        self.assertEqual(result, "")
+
     def test_success_records_to_circuit_breaker(self):
         self.mock_client.invoke.return_value = Mock(content="ok")
 

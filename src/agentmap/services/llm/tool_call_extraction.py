@@ -61,20 +61,18 @@ def extract_tool_calls(response: Any) -> Optional[List[LLMToolCall]]:
     extracted: List[LLMToolCall] = []
     for entry in raw_tool_calls:
         if not isinstance(entry, dict):
-            logger.debug("Skipping malformed tool call entry (not a dict): %r", entry)
+            logger.debug("Skipping malformed tool call entry with non-mapping shape")
             continue
 
         call_id = entry.get("id")
         name = entry.get("name")
         if not call_id or not name:
-            logger.debug(
-                "Skipping tool call entry missing required id/name field: %r", entry
-            )
+            logger.debug("Skipping tool call entry missing required id/name field")
             continue
 
         arguments = entry.get("args")
         if not isinstance(arguments, dict):
-            logger.debug("Skipping tool call entry with non-dict args field: %r", entry)
+            logger.debug("Skipping tool call entry with non-dict args field")
             continue
 
         extracted.append(LLMToolCall(id=call_id, name=name, arguments=arguments))

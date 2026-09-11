@@ -68,12 +68,10 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         """Invoke client through resilience layer when available, else direct."""
         if self._invoke_fn is not None:
             raw_content = self._invoke_fn(client, langchain_messages, provider, model)
+            text, _ = normalize_response_content_value(raw_content)
         else:
             response = client.invoke(langchain_messages)
-            raw_content = (
-                response.content if hasattr(response, "content") else str(response)
-            )
-        text, _ = normalize_response_content_value(raw_content)
+            text, _ = normalize_response_content(response)
         return text
 
     async def _invoke_client_async(

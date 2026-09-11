@@ -71,7 +71,6 @@ from agentmap.services.llm.stream_seam import stream_provider
 from agentmap.services.llm.tool_call_extraction import (
     extract_tool_calls,
     normalize_response_content,
-    normalize_response_content_value,
 )
 from agentmap.services.llm_batch_errors import (
     LLMBatchCancelNotSupportedError,
@@ -1450,97 +1449,121 @@ class LLMService:
             LLMProviderError (or subclass): After retries exhausted or
                 circuit open or non-retryable error.
         """
-        # Record circuit breaker state on current span (E02-F03)
+        retry_cfg = self._resilience_config.get("retry", {})
         self._record_circuit_breaker_state(provider, model)
+        self._raise_if_circuit_open(provider, model)
+        return self._retry_resilient_invocation(
+            client, langchain_messages, provider, model, retry_cfg
+        )
 
-        # Circuit breaker check
+    def _raise_if_circuit_open(self, provider: str, model: str) -> None:
+        """Raise the typed circuit-open error before a provider invocation."""
         if self._circuit_breaker.is_open(provider, model):
             raise LLMProviderError(
                 f"Circuit breaker open for {provider}:{model} -- "
-                f"skipping call (resets after "
-                f"{self._circuit_breaker.reset}s)"
+                f"skipping call (resets after {self._circuit_breaker.reset}s)"
             )
 
-        retry_cfg = self._resilience_config.get("retry", {})
+    def _retry_resilient_invocation(
+        self,
+        client: Any,
+        langchain_messages: List[Any],
+        provider: str,
+        model: str,
+        retry_cfg: Dict[str, Any],
+    ) -> str:
+        """Retry one safe synchronous provider invocation when appropriate."""
         max_attempts = retry_cfg.get("max_attempts", 3)
-        backoff_base = retry_cfg.get("backoff_base", 2.0)
-        backoff_max = retry_cfg.get("backoff_max", 30.0)
-        jitter = retry_cfg.get("jitter", True)
 
         last_error: Optional[Exception] = None
 
         for attempt in range(1, max_attempts + 1):
             try:
-                self._logger.debug(
-                    f"LLM call to {provider}:{model} "
-                    f"(attempt {attempt}/{max_attempts})"
+                return self._complete_resilient_invocation(
+                    client, langchain_messages, provider, model, attempt, max_attempts
                 )
-                start_time = time.monotonic()
-                response = client.invoke(langchain_messages)
-                duration = time.monotonic() - start_time
-
-                # Extract content
-                raw_content = (
-                    response.content if hasattr(response, "content") else str(response)
-                )
-                result, _ = normalize_response_content_value(raw_content)
-
-                # Track circuit breaker close transition (was open -> now success)
-                was_open = self._circuit_breaker.is_open(provider, model)
-                self._circuit_breaker.record_success(provider, model)
-                self._record_circuit_breaker_metric_on_close(was_open, provider, model)
-
-                # Record duration metric
-                self._record_duration_metric(duration, provider, model)
-
-                # Record token counts, response model on span, and token metrics
-                self._record_llm_response_attributes(response, provider, model)
-
-                # Log request ID for debugging
-                resp_meta = getattr(response, "response_metadata", None)
-                req_id = (
-                    self._extract_provider_request_id(resp_meta, provider)
-                    if isinstance(resp_meta, dict)
-                    else None
-                )
-                self._logger.debug(
-                    f"LLM call successful, response length: {len(result)}"
-                    + (f", request_id: {req_id}" if req_id else "")
-                )
-                return result
 
             except Exception as e:
                 typed_error = classify_llm_error(e, provider)
                 last_error = typed_error
 
-                # Non-retryable -> fail immediately
                 if not is_retryable(typed_error):
-                    self._circuit_breaker.record_failure(provider, model)
-                    self._record_error_metric(typed_error, provider, model)
-                    self._record_circuit_breaker_metric_on_open(provider, model)
+                    self._record_resilience_failure(typed_error, provider, model)
                     raise typed_error
-
-                # Last attempt -> no more retries
                 if attempt == max_attempts:
                     break
-
-                # Exponential backoff with optional jitter
-                delay = min(backoff_base ** (attempt - 1), backoff_max)
-                if jitter:
-                    delay = delay * (0.5 + random.random())
-
-                self._logger.warning(
-                    f"Retryable error on {provider}:{model} "
-                    f"(attempt {attempt}/{max_attempts}): {typed_error}. "
-                    f"Retrying in {delay:.1f}s"
+                self._wait_before_retry(
+                    retry_cfg, attempt, max_attempts, provider, model, typed_error
                 )
-                time.sleep(delay)
 
-        # All retries exhausted
-        self._circuit_breaker.record_failure(provider, model)
-        self._record_error_metric(last_error, provider, model)
-        self._record_circuit_breaker_metric_on_open(provider, model)
+        self._record_resilience_failure(last_error, provider, model)
         raise last_error  # type: ignore[misc]
+
+    def _complete_resilient_invocation(
+        self,
+        client: Any,
+        langchain_messages: List[Any],
+        provider: str,
+        model: str,
+        attempt: int,
+        max_attempts: int,
+    ) -> str:
+        """Invoke once, normalize its text boundary, and record success telemetry."""
+        self._logger.debug(f"LLM call to {provider}:{model} ({attempt}/{max_attempts})")
+        start_time = time.monotonic()
+        response = client.invoke(langchain_messages)
+        duration = time.monotonic() - start_time
+        result, _ = normalize_response_content(response)
+        was_open = self._circuit_breaker.is_open(provider, model)
+        self._circuit_breaker.record_success(provider, model)
+        self._record_circuit_breaker_metric_on_close(was_open, provider, model)
+        self._record_duration_metric(duration, provider, model)
+        self._record_llm_response_attributes(response, provider, model)
+        self._log_resilient_success(response, provider, result)
+        return result
+
+    def _wait_before_retry(
+        self,
+        retry_cfg: Dict[str, Any],
+        attempt: int,
+        max_attempts: int,
+        provider: str,
+        model: str,
+        error: Exception,
+    ) -> None:
+        """Log and apply the configured exponential-backoff delay."""
+        delay = min(
+            retry_cfg.get("backoff_base", 2.0) ** (attempt - 1),
+            retry_cfg.get("backoff_max", 30.0),
+        )
+        if retry_cfg.get("jitter", True):
+            delay *= 0.5 + random.random()
+        self._logger.warning(
+            f"Retryable error on {provider}:{model} (attempt {attempt}/{max_attempts}): "
+            f"{error}. Retrying in {delay:.1f}s"
+        )
+        time.sleep(delay)
+
+    def _record_resilience_failure(
+        self, error: Optional[Exception], provider: str, model: str
+    ) -> None:
+        """Record one terminal resilience failure across existing telemetry sinks."""
+        self._circuit_breaker.record_failure(provider, model)
+        self._record_error_metric(error, provider, model)
+        self._record_circuit_breaker_metric_on_open(provider, model)
+
+    def _log_resilient_success(self, response: Any, provider: str, result: str) -> None:
+        """Log safe success metadata without projecting provider content."""
+        resp_meta = getattr(response, "response_metadata", None)
+        req_id = (
+            self._extract_provider_request_id(resp_meta, provider)
+            if isinstance(resp_meta, dict)
+            else None
+        )
+        self._logger.debug(
+            f"LLM call successful, response length: {len(result)}"
+            + (f", request_id: {req_id}" if req_id else "")
+        )
 
     def _build_budget_check(
         self,
