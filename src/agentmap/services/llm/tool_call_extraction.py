@@ -1,8 +1,8 @@
 """
-Tool-call extraction and text normalization for LLM async receipts (E05-F06).
+Tool-call extraction and receipt normalization for LLM async receipts (E05-F06).
 
-Two pure, module-level helpers used at ``LLMResponse`` construction in
-``LLMService._invoke_with_resilience_async``:
+Three pure, module-level helpers used at ``LLMResponse`` construction in
+``LLMService._attempt_llm_call_async``:
 
 - ``extract_tool_calls`` reads LangChain's already-normalized ``tool_calls``
   channel (populated for Anthropic ``tool_use`` blocks, OpenAI ``tool_calls``,
@@ -14,6 +14,9 @@ Two pure, module-level helpers used at ``LLMResponse`` construction in
   ``str`` even when a provider's ``content`` is a block list (REQ-F-012),
   which is the mechanism that keeps REQ-F-005/REQ-F-006's text guarantees
   true once tool-bound calls exist.
+- ``normalize_response_content`` derives that safe text projection and its
+  provider-neutral receipt status, so a successful non-text block list is not
+  indistinguishable from an ordinary empty textual response (B005).
 
 Both functions mirror ``_extract_llm_usage``'s per-field tolerance: a
 malformed entry is skipped with a debug log rather than raising, so a single
@@ -21,7 +24,7 @@ bad field never converts a successful provider call into a failed one.
 
 Not wired into ``LLMService`` here in the sense of ``tools=``/``bind_tools``
 send-path support -- that is T-E05-F06-006. This module only supplies the
-receive-side extraction and the text-shape guard.
+receive-side extraction and receipt normalization.
 """
 
 import logging

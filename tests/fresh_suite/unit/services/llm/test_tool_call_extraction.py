@@ -36,6 +36,7 @@ import unittest
 from agentmap.models.llm_tool_call import LLMToolCall
 from agentmap.services.llm.tool_call_extraction import (
     extract_tool_calls,
+    normalize_response_content,
     normalize_response_text,
 )
 
@@ -200,6 +201,25 @@ class TestNormalizeResponseTextPlainString(unittest.TestCase):
     def test_tc028_plain_string_content_used_verbatim(self):
         response = _Resp(content="hello")
         self.assertEqual(normalize_response_text(response), "hello")
+
+
+class TestNormalizeResponseContentStatus(unittest.TestCase):
+    """B005: normal text and ordinary empty content have distinct states."""
+
+    def test_b005_returns_the_expected_status_for_visible_and_empty_content(self):
+        cases = (
+            ("", "", "empty"),
+            ([], "", "empty"),
+            ([{"type": "text", "text": ""}], "", "empty"),
+            ("hello", "hello", "text"),
+        )
+
+        for content, expected_text, expected_status in cases:
+            with self.subTest(content=content):
+                self.assertEqual(
+                    normalize_response_content(_Resp(content=content)),
+                    (expected_text, expected_status),
+                )
 
 
 class TestNormalizeResponseTextMalformedBlocks(unittest.TestCase):
