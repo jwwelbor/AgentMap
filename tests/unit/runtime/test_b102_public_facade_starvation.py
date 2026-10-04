@@ -71,20 +71,20 @@ def runtime_container(tmp_path: Path):
     )
 
 
-def install_owner_gate(monkeypatch):
+def install_owner_gate(monkeypatch, *, ack=True):
     acquired, release, skip_lifecycle = (asyncio.Event() for _ in range(3))
     original = RuntimeManager._run_initialization_transaction
 
     async def gated(cls, startup, *, refresh: bool, config_file: str | None):
-        acquired.set()
+        if ack:
+            acquired.set()
         await release.wait()
         if skip_lifecycle.is_set():
             return
         await original(startup, refresh=refresh, config_file=config_file)
 
-    monkeypatch.setattr(
-        RuntimeManager, "_run_initialization_transaction", classmethod(gated)
-    )
+    transaction = classmethod(gated)
+    monkeypatch.setattr(RuntimeManager, "_run_initialization_transaction", transaction)
     return acquired, release, skip_lifecycle
 
 
@@ -174,11 +174,8 @@ async def guard_completion(
         outcomes, cancellation = await reap_tasks([task, *tasks])
         if primary is None:
             primary = cancellation
-    failures = [
-        outcome
-        for outcome in outcomes
-        if isinstance(outcome, BaseException) and outcome is not primary
-    ]
+    failures = [x for x in outcomes if isinstance(x, BaseException)]
+    failures = [x for x in failures if x is not primary]
     if failures:
         secondary = BaseExceptionGroup("deadlock guard cleanup failed", failures)
         if primary is not None:
@@ -274,26 +271,30 @@ async def test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102(route):
     assert timeout_cleanup.is_set() is (route == "timeout")
 
 
+@pytest.mark.parametrize("ack", [True, False], ids=["guard", "acquisition-timeout"])
 @pytest.mark.asyncio
-async def test_timeout_lets_live_owner_release_its_transaction__b102(monkeypatch):
-    acquired, release, skip_lifecycle = install_owner_gate(monkeypatch)
+async def test_live_owner_timeout_cleanup__b102(monkeypatch, ack):
+    acquired, release, skip = install_owner_gate(monkeypatch, ack=ack)
     RuntimeManager.reset()
     owner = asyncio.create_task(ensure_initialized_async())
     try:
-        await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
-        with pytest.raises(AssertionError, match=f"^{TIMEOUT_MESSAGE}$") as caught:
-            await guard_completion(
-                owner, release, [], timeout=0.01, on_timeout=skip_lifecycle.set
-            )
-        assert caught.value.__cause__ is None
-        assert owner.done() and owner.result() is None
-        with RuntimeManager._transaction_condition:
-            assert RuntimeManager._transaction_owner is None
+        if ack:
+            await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
+            with pytest.raises(AssertionError, match=f"^{TIMEOUT_MESSAGE}$") as caught:
+                await guard_completion(
+                    owner, release, [], timeout=0.01, on_timeout=skip.set
+                )
+            assert caught.value.__cause__ is None and owner.result() is None
+        else:
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
     finally:
-        skip_lifecycle.set()
+        skip.set()
         release.set()
         owner.cancel()
         await reap_tasks([owner])
+    with RuntimeManager._transaction_condition:
+        assert owner.done() and RuntimeManager._transaction_owner is None
 
 
 @pytest.mark.parametrize("workers", [1, 2])
