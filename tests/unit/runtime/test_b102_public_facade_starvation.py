@@ -17,7 +17,7 @@ from agentmap.runtime.workflow_ops import (
     validate_workflow_async,
 )
 
-GUARD_SECONDS = 10
+GUARD_SECONDS, TEST_TIMEOUT_SECONDS = 10, 1
 CANCELLATION_MESSAGE = "offline caller cancellation"
 TIMEOUT_MESSAGE = "public facades starved the runtime lifecycle"
 
@@ -252,13 +252,11 @@ async def test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102(route):
         await entered.wait()
         if route == "cancellation":
             guard.cancel(CANCELLATION_MESSAGE)
-        done, _ = await asyncio.wait([guard], timeout=1)
+        done, _ = await asyncio.wait([guard], timeout=TEST_TIMEOUT_SECONDS)
         assert done == {guard}
         with pytest.raises(expected) as caught:
             guard.result()
-        expected_message = (
-            CANCELLATION_MESSAGE if route == "cancellation" else TIMEOUT_MESSAGE
-        )
+        expected_message = (CANCELLATION_MESSAGE, TIMEOUT_MESSAGE)[route == "timeout"]
         assert caught.value.args == (expected_message,)
         assert caught.value.__cause__ is None
         assert release.is_set()
@@ -271,9 +269,9 @@ async def test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102(route):
         cleanup_outcomes, cleanup_cancellation = await reap_tasks(
             [owner, facade, completion, guard]
         )
-    assert cleanup_cancellation is None
-    assert cleanup_outcomes[:3] == [None, None, None]
+    assert cleanup_cancellation is None and cleanup_outcomes[:3] == [None, None, None]
     assert isinstance(cleanup_outcomes[3], expected)
+    assert timeout_cleanup.is_set() is (route == "timeout")
 
 
 @pytest.mark.asyncio
@@ -281,8 +279,8 @@ async def test_timeout_lets_live_owner_release_its_transaction__b102(monkeypatch
     acquired, release, skip_lifecycle = install_owner_gate(monkeypatch)
     RuntimeManager.reset()
     owner = asyncio.create_task(ensure_initialized_async())
-    await acquired.wait()
     try:
+        await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
         with pytest.raises(AssertionError, match=f"^{TIMEOUT_MESSAGE}$") as caught:
             await guard_completion(
                 owner, release, [], timeout=0.01, on_timeout=skip_lifecycle.set
@@ -294,7 +292,8 @@ async def test_timeout_lets_live_owner_release_its_transaction__b102(monkeypatch
     finally:
         skip_lifecycle.set()
         release.set()
-        await asyncio.gather(owner, return_exceptions=True)
+        owner.cancel()
+        await reap_tasks([owner])
 
 
 @pytest.mark.parametrize("workers", [1, 2])
@@ -320,31 +319,31 @@ async def test_public_sync_facades_cannot_starve_async_transaction_owner__b102(
 
     RuntimeManager.reset()
     owner = asyncio.create_task(ensure_initialized_async())
-    await acquired.wait()
-    calls = [
-        asyncio.create_task(facade_call(facade_name, graph_file))
-        for _ in range(workers)
-    ]
-
-    async def exercise_ordered_startup():
-        await executor.all_workers_active.wait()
-        assert acquired.is_set()
-        assert not lifecycle_started.is_set()
-        release.set()
-        await lifecycle_started.wait()
-        await asyncio.gather(owner, *calls)
-
-    completion = asyncio.create_task(exercise_ordered_startup())
     try:
+        await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
+        facades = (facade_call(facade_name, graph_file) for _ in range(workers))
+        calls = [asyncio.create_task(call) for call in facades]
+
+        async def exercise_ordered_startup():
+            await executor.all_workers_active.wait()
+            assert acquired.is_set() and not lifecycle_started.is_set()
+            release.set()
+            await lifecycle_started.wait()
+            await asyncio.gather(owner, *calls)
+
+        completion = asyncio.create_task(exercise_ordered_startup())
         await guard_completion(
             completion,
             release,
             [owner, *calls],
             on_timeout=skip_lifecycle.set,
         )
-        assert owner.result() is None
         assert all(call.result()["success"] for call in calls)
         assert RuntimeManager.is_initialized()
     finally:
+        skip_lifecycle.set()
+        release.set()
+        owner.cancel()
+        await reap_tasks([owner])
         if RuntimeManager.is_initialized():
             await RuntimeManager.shutdown()
