@@ -6,7 +6,9 @@ implementing a singleton pattern for DI container lifecycle management.
 """
 
 import asyncio
+import contextvars
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Optional
 
 from agentmap.async_lifecycle import TerminalTaskOutcome, await_terminal_task
@@ -24,6 +26,9 @@ class RuntimeManager:
     """
 
     _lock = threading.RLock()
+    _lifecycle_executor = ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="agentmap-runtime-lifecycle"
+    )
     _transaction_condition = threading.Condition()
     _transaction_owner: object | None = None
     _transaction_async_waiters: set[tuple[Any, Any]] = set()
@@ -92,19 +97,34 @@ class RuntimeManager:
             cls._raise_initialization_outcome(shutdown, TerminalTaskOutcome())
         install_refresh = refresh and previous is None
         task = asyncio.create_task(
-            asyncio.to_thread(
-                cls._install_and_startup,
-                startup,
-                install_refresh,
-                refresh,
-                config_file,
-            )
+            cls._run_install_and_startup(startup, install_refresh, refresh, config_file)
         )
         outcome = await await_terminal_task(task)
         if outcome.task_error is None and outcome.caller_cancellation is None:
             return
         cleanup = await cls._rollback_candidate(previous, refresh)
         cls._raise_initialization_outcome(outcome, cleanup)
+
+    @classmethod
+    async def _run_install_and_startup(
+        cls,
+        startup: Callable[[Any, bool], None],
+        install_refresh: bool,
+        cache_refresh: bool,
+        config_file: Optional[str],
+    ) -> None:
+        """Run blocking lifecycle work outside the shared default executor."""
+        loop = asyncio.get_running_loop()
+        context = contextvars.copy_context()
+        await loop.run_in_executor(
+            cls._lifecycle_executor,
+            context.run,
+            cls._install_and_startup,
+            startup,
+            install_refresh,
+            cache_refresh,
+            config_file,
+        )
 
     @classmethod
     def _install_and_startup(
