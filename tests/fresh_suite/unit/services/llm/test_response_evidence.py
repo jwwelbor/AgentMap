@@ -212,6 +212,18 @@ async def test_error_body_is_not_exported_in_error_or_logs__b102(
     assert "body-secret" not in str(service._logger.mock_calls)
 
 
+def provider_error_markers():
+    return {
+        "body": "body-marker-b102",
+        "authorization": "auth-marker-b102",
+        "header": "header-marker-b102",
+        "query": "query-marker-b102",
+        "sdk_repr": "sdk-repr-marker-b102",
+        "client_repr": "client-repr-marker-b102",
+        "observer": "observer-marker-b102",
+    }
+
+
 def mark_sdk_error_repr(provider, monkeypatch, marker):
     """Seed the real provider exception representation without replacing it."""
     if provider == "openai":
@@ -226,8 +238,16 @@ def mark_sdk_error_repr(provider, monkeypatch, marker):
         from google.genai import errors as google_errors
 
         error_type = google_errors.ClientError
+    seen = []
+    original_init = error_type.__init__
+
+    def capture_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        seen.append(self)
+
+    monkeypatch.setattr(error_type, "__init__", capture_init)
     monkeypatch.setattr(error_type, "__repr__", lambda self: marker)
-    return error_type
+    return seen
 
 
 def marked_error_transport(monkeypatch, markers, body):
@@ -273,6 +293,15 @@ def assert_error_markers_confined(
 ):
     projections = (str(outcome), repr(outcome), str(caught), repr(caught))
     projections += (str(service._logger.mock_calls), str(span.mock_calls), caplog.text)
+    pending = [caught]
+    seen = set()
+    while pending:
+        error = pending.pop()
+        if id(error) in seen:
+            continue
+        seen.add(id(error))
+        projections += (str(error), repr(error))
+        pending.extend(e for e in (error.__cause__, error.__context__) if e is not None)
     for name, marker in {
         **markers,
         "response_repr": "response-repr-marker-b102",
@@ -286,24 +315,26 @@ def assert_error_markers_confined(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("provider,model", PROVIDERS)
+@pytest.mark.parametrize("capture_failure", [False, True])
 async def test_provider_error_secrets_reach_only_response_evidence__b102(
-    provider, model, monkeypatch, caplog
+    provider, model, capture_failure, monkeypatch, caplog
 ):
     """A real SDK error must not project transport objects into public sinks."""
     from agentmap.exceptions import LLMResolvedCallError
+    from agentmap.services.llm import response_observer
+    from agentmap.services.llm.response_observer import ResponseCaptureFailure
     from agentmap.services.telemetry.otel_telemetry_service import OTELTelemetryService
 
-    markers = {
-        "body": "body-marker-b102",
-        "authorization": "auth-marker-b102",
-        "header": "header-marker-b102",
-        "query": "query-marker-b102",
-        "sdk_repr": "sdk-repr-marker-b102",
-        "client_repr": "client-repr-marker-b102",
-    }
+    markers = provider_error_markers()
     body = json.dumps({"error": {"message": markers["body"], "code": 400}}).encode()
-    sdk_error_type = mark_sdk_error_repr(provider, monkeypatch, markers["sdk_repr"])
+    seen_sdk_errors = mark_sdk_error_repr(provider, monkeypatch, markers["sdk_repr"])
     requests = marked_error_transport(monkeypatch, markers, body)
+    if capture_failure:
+        monkeypatch.setattr(
+            response_observer,
+            "_evidence",
+            Mock(side_effect=ValueError(markers["observer"])),
+        )
 
     telemetry = OTELTelemetryService()
     span = Mock()
@@ -314,7 +345,8 @@ async def test_provider_error_secrets_reach_only_response_evidence__b102(
         return_value={"api_key": markers["authorization"], "model": model}
     )
     ledger = Ledger()
-    with pytest.raises(LLMResolvedCallError) as caught:
+    expected_error = ResponseCaptureFailure if capture_failure else LLMResolvedCallError
+    with pytest.raises(expected_error) as caught:
         await invoke(service, provider, model, ledger)
 
     assert len(requests) == 1
@@ -322,11 +354,11 @@ async def test_provider_error_secrets_reach_only_response_evidence__b102(
     outcome = ledger.rows["1"]
     assert outcome.response_evidence.body == body
     assert outcome.response_evidence.status == "available"
-    error_chain = caught.value.__context__
-    while error_chain is not None and not isinstance(error_chain, sdk_error_type):
-        error_chain = error_chain.__context__
-    assert error_chain is not None
-    assert repr(error_chain) == markers["sdk_repr"]
+    assert outcome.classification == (
+        "capture_error" if capture_failure else "provider_error"
+    )
+    assert len(seen_sdk_errors) == 1
+    assert repr(seen_sdk_errors[0]) == markers["sdk_repr"]
     assert_error_markers_confined(
         markers, body, outcome, caught.value, service, span, caplog
     )

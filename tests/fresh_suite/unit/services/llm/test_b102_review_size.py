@@ -25,6 +25,10 @@ ROOT = Path(__file__).resolve().parents[5]
         ),
         (
             "tests/fresh_suite/unit/services/llm/test_response_evidence.py",
+            "provider_error_markers",
+        ),
+        (
+            "tests/fresh_suite/unit/services/llm/test_response_evidence.py",
             "marked_error_transport",
         ),
         (

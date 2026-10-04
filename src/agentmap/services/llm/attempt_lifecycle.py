@@ -91,7 +91,7 @@ async def settle_cancelled(
     attempt_id: str,
     outcome: LLMAttemptOutcome,
     cancellation: asyncio.CancelledError,
-) -> None:
+) -> NoReturn:
     """Attempt settlement, preserving cancellation even when cleanup fails.
 
     The host's committed pending intent survives failed or interrupted cleanup.
@@ -157,14 +157,13 @@ async def invoke_governed_attempt(
     read_evidence: Callable[[Any], Tuple[LLMAttemptOutcome, Optional[Exception]]],
     build_response: Callable[[Any, float], LLMResponse],
 ) -> LLMResponse:
-    """Settle every admitted call once, including cancellation and failures.
-
-    Completion stays outside the provider exception boundary to prevent retries.
-    """
+    """Settle once, outside the raw provider exception's active context."""
     attempt_id = await begin_attempt(lifecycle, description)
     collector = ResponseCollector()
     token = response_collector.set(collector)
     outcome = LLMAttemptOutcome(classification="provider_error")
+    failure: Optional[Exception] = None
+    cancelled: Optional[asyncio.CancelledError] = None
     try:
         response, duration = await invoke()
         outcome, error = read_evidence(response)
@@ -175,25 +174,28 @@ async def invoke_governed_attempt(
         result = build_response(response, duration)
         outcome = replace(outcome, classification=result.text_status)
     except asyncio.CancelledError as cancellation:
+        cancelled = cancellation
         outcome = replace(
             outcome,
             classification="cancelled",
             error_type="CancelledError",
             response_evidence=collector.seal(),
         )
-        await settle_cancelled(lifecycle, attempt_id, outcome, cancellation)
-        raise
     except Exception as error:
+        failure = error
+    finally:
+        collector.seal()
+        response_collector.reset(token)
+    if cancelled is not None:
+        await settle_cancelled(lifecycle, attempt_id, outcome, cancelled)
+    if failure is not None:
         await settle_failed_attempt(
             lifecycle,
             attempt_id,
             outcome,
             collector,
-            error,
+            failure,
             description.resolved_provider,
         )
-    finally:
-        collector.seal()
-        response_collector.reset(token)
     await settle_successful_attempt(lifecycle, attempt_id, outcome, collector)
     return result
