@@ -60,12 +60,7 @@ class LLMClientFactory:
         *,
         governed: bool = False,
     ) -> Any:
-        """Get a client cached by provider, config, streaming and retry policy.
-
-        ``streaming`` enables provider-specific usage opt-ins. ``governed``
-        selects a separate single-dispatch client; it never mutates a cached
-        ungoverned client's SDK defaults. Both flags must be bools.
-        """
+        """Cache separate ordinary, streaming, and governed clients."""
         streaming = self._validate_streaming_flag(streaming)
         if not isinstance(governed, bool):
             raise TypeError("governed must be a bool")
@@ -74,9 +69,7 @@ class LLMClientFactory:
                 "Governed response observation supports only non-streaming calls"
             )
 
-        # Create cache key based on provider and critical config.
-        # The streaming dimension is appended last so streaming and non-streaming
-        # clients for the same (provider, config) are cached separately.
+        # Include streaming and governed policy in the cache key.
         max_tok = config.get("max_tokens")
         temperature = config.get("temperature", 0.7)
         # ``api_key`` may be present-but-None (keys are often optionally loaded);
@@ -99,15 +92,7 @@ class LLMClientFactory:
         else:
             client = self._create_langchain_client(provider, config, streaming)
 
-        # Cache the client.
-        # Accepted benign race: concurrent fan-out coroutines can arrive here
-        # simultaneously for the same cache_key, each creating an equivalent
-        # client and storing it.  The last write wins and both clients are
-        # identical (same provider, model, temperature, API key prefix, and
-        # streaming-ness), so the race produces no incorrect behaviour.
-        # An asyncio.Lock would eliminate the redundant work but adds complexity
-        # not justified by the low probability of simultaneous first-use of the
-        # exact same key.
+        # Concurrent first use may create equivalent clients; the last wins.
         self._clients[cache_key] = client
 
         return client
@@ -171,20 +156,7 @@ class LLMClientFactory:
         *,
         governed: bool = False,
     ) -> Any:
-        """
-        Create OpenAI LangChain client.
-
-        Args:
-            api_key: OpenAI API key
-            model: Model name
-            temperature: Temperature setting
-            max_tokens: Optional max response tokens
-            streaming: When True, adds stream_options={"include_usage": True}
-                so the LangChain wrapper forwards end-of-stream usage metadata.
-
-        Returns:
-            ChatOpenAI client instance
-        """
+        """Build OpenAI client, with streaming usage or governed observation."""
         try:
             # Try the new langchain-openai package first
             from langchain_openai import ChatOpenAI
@@ -228,20 +200,7 @@ class LLMClientFactory:
         *,
         governed: bool = False,
     ) -> Any:
-        """
-        Create Anthropic LangChain client.
-
-        Args:
-            api_key: Anthropic API key
-            model: Model name
-            temperature: Temperature setting
-            max_tokens: Optional max response tokens
-            streaming: When True, adds stream_usage=True so the LangChain
-                wrapper forwards end-of-stream usage metadata.
-
-        Returns:
-            ChatAnthropic client instance
-        """
+        """Build Anthropic client, with streaming usage or governed observation."""
         try:
             # Try langchain-anthropic first
             from langchain_anthropic import ChatAnthropic
@@ -251,7 +210,6 @@ class LLMClientFactory:
                     "Governed calls require the verified langchain-anthropic wrapper"
                 )
             try:
-                # Fall back to community package
                 from langchain_community.chat_models import ChatAnthropic
 
                 self._logger.warning(
@@ -259,7 +217,6 @@ class LLMClientFactory:
                 )
             except ImportError:
                 try:
-                    # Legacy fallback
                     from langchain.chat_models import ChatAnthropic
 
                     self._logger.warning(
@@ -293,21 +250,7 @@ class LLMClientFactory:
         *,
         governed: bool = False,
     ) -> Any:
-        """
-        Create Google LangChain client.
-
-        Args:
-            api_key: Google API key
-            model: Model name
-            temperature: Temperature setting
-            max_tokens: Optional max response tokens
-            streaming: Accepted for signature uniformity with other builders;
-                no Google streaming usage opt-in is set (Gemini streaming usage
-                is unverified and out of epic scope — engineering-context.md:100).
-
-        Returns:
-            ChatGoogleGenerativeAI client instance
-        """
+        """Build Google client; streaming has no verified usage opt-in."""
         try:
             # Try langchain-google-genai first
             from langchain_google_genai import ChatGoogleGenerativeAI

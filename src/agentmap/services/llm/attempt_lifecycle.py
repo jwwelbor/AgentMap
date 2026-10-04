@@ -8,7 +8,7 @@ provider failures. No host exception message is sent to telemetry.
 import asyncio
 from contextvars import ContextVar
 from dataclasses import replace
-from typing import Any, Awaitable, Callable, Optional, Tuple
+from typing import Any, Awaitable, Callable, NoReturn, Optional, Tuple
 
 from agentmap.exceptions import LLMTimeoutError
 from agentmap.models.llm_attempt import LLMAttemptDescription, LLMAttemptOutcome
@@ -103,6 +103,53 @@ async def settle_cancelled(
         raise cancellation
 
 
+async def settle_failed_attempt(
+    lifecycle: LLMAttemptLifecycleProtocol,
+    attempt_id: str,
+    outcome: LLMAttemptOutcome,
+    collector: ResponseCollector,
+    error: Exception,
+    provider: str,
+) -> NoReturn:
+    """Settle one failed dispatch before propagating a sanitized error."""
+    classification = (
+        "timeout" if isinstance(error, LLMTimeoutError) else outcome.classification
+    )
+    if collector.failed:
+        classification = "capture_error"
+    outcome = replace(
+        outcome,
+        classification=classification,
+        error_type=(
+            "ResponseCaptureFailure" if collector.failed else type(error).__name__
+        ),
+        response_evidence=collector.seal(),
+    )
+    await finish_attempt(lifecycle, attempt_id, outcome)
+    if collector.failed:
+        raise AttemptLifecycleRefusal(ResponseCaptureFailure()) from None
+    # Classify for retry while excluding transport and SDK representations.
+    typed_error = classify_llm_error(error, provider)
+    raise type(typed_error)("governed physical provider attempt failed") from None
+
+
+async def settle_successful_attempt(
+    lifecycle: LLMAttemptLifecycleProtocol,
+    attempt_id: str,
+    outcome: LLMAttemptOutcome,
+    collector: ResponseCollector,
+) -> None:
+    """Settle the observed response even when capture itself failed."""
+    outcome = replace(outcome, response_evidence=collector.evidence)
+    if collector.failed:
+        outcome = replace(
+            outcome, classification="capture_error", error_type="ResponseCaptureFailure"
+        )
+    await finish_attempt(lifecycle, attempt_id, outcome)
+    if collector.failed:
+        raise AttemptLifecycleRefusal(ResponseCaptureFailure()) from None
+
+
 async def invoke_governed_attempt(
     lifecycle: LLMAttemptLifecycleProtocol,
     description: LLMAttemptDescription,
@@ -110,12 +157,9 @@ async def invoke_governed_attempt(
     read_evidence: Callable[[Any], Tuple[LLMAttemptOutcome, Optional[Exception]]],
     build_response: Callable[[Any, float], LLMResponse],
 ) -> LLMResponse:
-    """Settle exactly once, including provider and receipt failures.
+    """Settle every admitted call once, including cancellation and failures.
 
-    The broad exception boundary is deliberate: retain billed evidence for
-    any provider/normalization failure, then re-raise it after settlement.
-    Completion errors are outside that boundary and cannot trigger a second
-    completion. Cancellation preserves its meaning even if cleanup fails.
+    Completion stays outside the provider exception boundary to prevent retries.
     """
     attempt_id = await begin_attempt(lifecycle, description)
     collector = ResponseCollector()
@@ -140,35 +184,16 @@ async def invoke_governed_attempt(
         await settle_cancelled(lifecycle, attempt_id, outcome, cancellation)
         raise
     except Exception as error:
-        classification = (
-            "timeout" if isinstance(error, LLMTimeoutError) else outcome.classification
-        )
-        if collector.failed:
-            classification = "capture_error"
-        outcome = replace(
+        await settle_failed_attempt(
+            lifecycle,
+            attempt_id,
             outcome,
-            classification=classification,
-            error_type=(
-                "ResponseCaptureFailure" if collector.failed else type(error).__name__
-            ),
-            response_evidence=collector.seal(),
+            collector,
+            error,
+            description.resolved_provider,
         )
-        await finish_attempt(lifecycle, attempt_id, outcome)
-        if collector.failed:
-            raise AttemptLifecycleRefusal(ResponseCaptureFailure()) from None
-        # Preserve retry classification while excluding body/header/URL and
-        # SDK exception representations from public errors and telemetry.
-        typed_error = classify_llm_error(error, description.resolved_provider)
-        raise type(typed_error)("governed physical provider attempt failed") from None
     finally:
         collector.seal()
         response_collector.reset(token)
-    outcome = replace(outcome, response_evidence=collector.evidence)
-    if collector.failed:
-        outcome = replace(
-            outcome, classification="capture_error", error_type="ResponseCaptureFailure"
-        )
-    await finish_attempt(lifecycle, attempt_id, outcome)
-    if collector.failed:
-        raise AttemptLifecycleRefusal(ResponseCaptureFailure()) from None
+    await settle_successful_attempt(lifecycle, attempt_id, outcome, collector)
     return result

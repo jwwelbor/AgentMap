@@ -1802,14 +1802,7 @@ class LLMService:
         attempt_kind: str = "primary",
         max_output_tokens: Optional[int] = None,
     ) -> LLMResponse:
-        """Retry loop: attempt the call, retry retryable failures with backoff.
-
-        Extracted from ``_invoke_with_resilience_async`` (NFR-F-006). Owns
-        only the per-attempt try/except and the final exhaustion exit;
-        success construction lives in ``_attempt_llm_call_async``, per-attempt
-        failure classification/backoff-or-raise in
-        ``_handle_retry_attempt_failure``.
-        """
+        """Retry each admitted call, delegating failure handling and backoff."""
         max_attempts, backoff_base, backoff_max, jitter, attempt_timeout = (
             self._resolve_retry_config()
         )

@@ -1,6 +1,7 @@
 """B102 supplement: real wrappers retain entity bytes before SDK parsing."""
 
 import json
+from contextlib import nullcontext
 from unittest.mock import Mock
 
 import httpx
@@ -209,6 +210,127 @@ async def test_error_body_is_not_exported_in_error_or_logs__b102(
     assert ledger.rows["1"].response_evidence.body == body
     assert "body-secret" not in str(caught.value)
     assert "body-secret" not in str(service._logger.mock_calls)
+
+
+def mark_sdk_error_repr(provider, monkeypatch, marker):
+    """Seed the real provider exception representation without replacing it."""
+    if provider == "openai":
+        import openai
+
+        error_type = openai.BadRequestError
+    elif provider == "anthropic":
+        import anthropic
+
+        error_type = anthropic.BadRequestError
+    else:
+        from google.genai import errors as google_errors
+
+        error_type = google_errors.ClientError
+    monkeypatch.setattr(error_type, "__repr__", lambda self: marker)
+    return error_type
+
+
+def marked_error_transport(monkeypatch, markers, body):
+    """Run supported wrappers against fake HTTP and refuse alternate network."""
+    import aiohttp
+
+    requests = []
+
+    class SDKVisibleResponse(httpx.Response):
+        def __repr__(self):
+            return "response-repr-marker-b102"
+
+    def send(transport, request):
+        request.url = request.url.copy_add_param("private", markers["query"])
+        requests.append(request)
+        return SDKVisibleResponse(
+            400,
+            content=body,
+            headers={
+                "content-type": "application/json",
+                "x-private": markers["header"],
+            },
+            request=request,
+        )
+
+    async def asend(transport, request):
+        return send(transport, request)
+
+    async def refuse_aiohttp(*args, **kwargs):
+        raise AssertionError("unstubbed aiohttp request")
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", send)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", asend)
+    monkeypatch.setattr(aiohttp.ClientSession, "_request", refuse_aiohttp)
+    monkeypatch.setattr(
+        httpx.AsyncClient, "__repr__", lambda self: markers["client_repr"]
+    )
+    return requests
+
+
+def assert_error_markers_confined(
+    markers, body, outcome, caught, service, span, caplog
+):
+    projections = (str(outcome), repr(outcome), str(caught), repr(caught))
+    projections += (str(service._logger.mock_calls), str(span.mock_calls), caplog.text)
+    for name, marker in {
+        **markers,
+        "response_repr": "response-repr-marker-b102",
+    }.items():
+        if name == "body":
+            assert marker in body.decode()
+        else:
+            assert marker not in body.decode()
+        assert all(marker not in projection for projection in projections), name
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider,model", PROVIDERS)
+async def test_provider_error_secrets_reach_only_response_evidence__b102(
+    provider, model, monkeypatch, caplog
+):
+    """A real SDK error must not project transport objects into public sinks."""
+    from agentmap.exceptions import LLMResolvedCallError
+    from agentmap.services.telemetry.otel_telemetry_service import OTELTelemetryService
+
+    markers = {
+        "body": "body-marker-b102",
+        "authorization": "auth-marker-b102",
+        "header": "header-marker-b102",
+        "query": "query-marker-b102",
+        "sdk_repr": "sdk-repr-marker-b102",
+        "client_repr": "client-repr-marker-b102",
+    }
+    body = json.dumps({"error": {"message": markers["body"], "code": 400}}).encode()
+    sdk_error_type = mark_sdk_error_repr(provider, monkeypatch, markers["sdk_repr"])
+    requests = marked_error_transport(monkeypatch, markers, body)
+
+    telemetry = OTELTelemetryService()
+    span = Mock()
+    telemetry._tracer = Mock(start_as_current_span=Mock(return_value=nullcontext(span)))
+    service = real_service(provider, model)
+    service._telemetry_service = telemetry
+    service._get_provider_config = Mock(
+        return_value={"api_key": markers["authorization"], "model": model}
+    )
+    ledger = Ledger()
+    with pytest.raises(LLMResolvedCallError) as caught:
+        await invoke(service, provider, model, ledger)
+
+    assert len(requests) == 1
+    assert ledger.events == [("begin", "1"), ("settle", "1")]
+    outcome = ledger.rows["1"]
+    assert outcome.response_evidence.body == body
+    assert outcome.response_evidence.status == "available"
+    error_chain = caught.value.__context__
+    while error_chain is not None and not isinstance(error_chain, sdk_error_type):
+        error_chain = error_chain.__context__
+    assert error_chain is not None
+    assert repr(error_chain) == markers["sdk_repr"]
+    assert_error_markers_confined(
+        markers, body, outcome, caught.value, service, span, caplog
+    )
+    assert span.record_exception.call_count == 1
 
 
 @pytest.mark.parametrize(
