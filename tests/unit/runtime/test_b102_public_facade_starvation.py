@@ -20,6 +20,7 @@ from agentmap.runtime.workflow_ops import (
 GUARD_SECONDS, TEST_TIMEOUT_SECONDS = 10, 1
 CANCELLATION_MESSAGE = "offline caller cancellation"
 TIMEOUT_MESSAGE = "public facades starved the runtime lifecycle"
+EARLY_ERRORS = AssertionError("assertion"), RuntimeError("error"), BaseException("base")
 
 
 class ActiveExecutor(ThreadPoolExecutor):
@@ -71,11 +72,12 @@ def runtime_container(tmp_path: Path):
     )
 
 
-def install_owner_gate(monkeypatch, *, ack=True):
-    acquired, release, skip_lifecycle = (asyncio.Event() for _ in range(3))
+def install_owner_gate(patch, *, ack=True):
+    entered, acquired, release, skip_lifecycle = (asyncio.Event() for _ in range(4))
     original = RuntimeManager._run_initialization_transaction
 
     async def gated(cls, startup, *, refresh: bool, config_file: str | None):
+        entered.set()
         if ack:
             acquired.set()
         await release.wait()
@@ -83,9 +85,8 @@ def install_owner_gate(monkeypatch, *, ack=True):
             return
         await original(startup, refresh=refresh, config_file=config_file)
 
-    transaction = classmethod(gated)
-    monkeypatch.setattr(RuntimeManager, "_run_initialization_transaction", transaction)
-    return acquired, release, skip_lifecycle
+    patch.setattr(RuntimeManager, "_run_initialization_transaction", classmethod(gated))
+    return entered, acquired, release, skip_lifecycle
 
 
 def configure_runtime(monkeypatch, initialize) -> None:
@@ -185,10 +186,7 @@ async def guard_completion(
         raise primary
 
 
-@pytest.mark.parametrize(
-    "primary",
-    [AssertionError("assertion"), RuntimeError("error"), BaseException("base")],
-)
+@pytest.mark.parametrize("primary", EARLY_ERRORS)
 @pytest.mark.asyncio
 async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(primary):
     release, lifecycle_started = (asyncio.Event() for _ in range(2))
@@ -274,10 +272,12 @@ async def test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102(route):
 @pytest.mark.parametrize("ack", [True, False], ids=["guard", "acquisition-timeout"])
 @pytest.mark.asyncio
 async def test_live_owner_timeout_cleanup__b102(monkeypatch, ack):
-    acquired, release, skip = install_owner_gate(monkeypatch, ack=ack)
+    entered, acquired, release, skip = install_owner_gate(monkeypatch, ack=ack)
     RuntimeManager.reset()
     owner = asyncio.create_task(ensure_initialized_async())
     try:
+        await asyncio.wait_for(entered.wait(), timeout=TEST_TIMEOUT_SECONDS)
+        assert RuntimeManager._transaction_owner is not None
         if ack:
             await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
             with pytest.raises(AssertionError, match=f"^{TIMEOUT_MESSAGE}$") as caught:
@@ -306,7 +306,7 @@ async def test_public_sync_facades_cannot_starve_async_transaction_owner__b102(
     loop = asyncio.get_running_loop()
     executor = ActiveExecutor(loop, max_workers=workers)
     loop.set_default_executor(executor)
-    acquired, release, skip_lifecycle = install_owner_gate(monkeypatch)
+    _, acquired, release, skip_lifecycle = install_owner_gate(monkeypatch)
     installed = runtime_container(tmp_path)
     lifecycle_started = asyncio.Event()
 
