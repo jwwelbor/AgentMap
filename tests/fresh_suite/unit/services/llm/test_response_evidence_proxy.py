@@ -63,8 +63,9 @@ async def test_real_wrapper_observes_one_body_through_environment_proxy_or_bypas
     collector = ResponseCollector()
     token = response_collector.set(collector)
     try:
-        client = LLMClientFactory(Mock()).get_or_create_client(
-            provider, {"api_key": "offline-test-key", "model": model}, governed=True
+        factory = LLMClientFactory(Mock())
+        client = await factory.get_or_create_governed_client(
+            provider, {"api_key": "offline-test-key", "model": model}
         )
         if asynchronous:
             await client.ainvoke("offline request")
@@ -75,6 +76,7 @@ async def test_real_wrapper_observes_one_body_through_environment_proxy_or_bypas
     assert len(routes) == 1
     assert ("Proxy" in routes[0]) is not bypass
     assert collector.seal().body == body
+    await factory.shutdown()
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
@@ -100,10 +102,10 @@ async def test_anthropic_explicit_proxy_keeps_observed_body__b102(
     collector = ResponseCollector()
     token = response_collector.set(collector)
     try:
-        client = LLMClientFactory(Mock()).get_or_create_client(
+        factory = LLMClientFactory(Mock())
+        client = await factory.get_or_create_governed_client(
             "anthropic",
             {"api_key": "offline-test-key", "model": "claude-sonnet-4-5"},
-            governed=True,
         )
         if asynchronous:
             await client.ainvoke("offline request")
@@ -114,3 +116,4 @@ async def test_anthropic_explicit_proxy_keeps_observed_body__b102(
     assert len(routes) == 1
     assert "Proxy" in routes[0]
     assert collector.seal().body == body
+    await factory.shutdown()

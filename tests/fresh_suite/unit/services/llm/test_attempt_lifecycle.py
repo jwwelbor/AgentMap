@@ -71,6 +71,7 @@ def service_with_client(client, **kwargs):
         Mock(),
     )
     svc._client_factory.get_or_create_client = Mock(return_value=client)
+    svc._client_factory.get_or_create_governed_client = AsyncMock(return_value=client)
     return svc
 
 

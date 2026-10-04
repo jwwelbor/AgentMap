@@ -18,19 +18,27 @@ from agentmap.services.llm_client_factory import LLMClientFactory
     ],
 )
 @pytest.mark.parametrize("governed_first", [True, False])
-def test_governed_retry_policy_has_its_own_cached_client__b102(
+@pytest.mark.asyncio
+async def test_governed_retry_policy_has_its_own_cached_client__b102(
     provider, model, attempts, governed_first
 ):
     factory = LLMClientFactory(Mock())
     config = {"api_key": "offline-test-key", "model": model}
-    first = factory.get_or_create_client(provider, config, governed=governed_first)
-    second = factory.get_or_create_client(provider, config, governed=not governed_first)
+
+    async def build(governed):
+        if governed:
+            return await factory.get_or_create_governed_client(provider, config)
+        return factory.get_or_create_client(provider, config)
+
+    first = await build(governed_first)
+    second = await build(not governed_first)
     governed, plain = (first, second) if governed_first else (second, first)
     assert governed is not plain
     assert governed.max_retries == attempts
     assert plain.max_retries != attempts
-    assert factory.get_or_create_client(provider, config, governed=True) is governed
+    assert await factory.get_or_create_governed_client(provider, config) is governed
     assert factory.get_or_create_client(provider, config) is plain
+    await factory.shutdown()
 
 
 @pytest.mark.parametrize(
@@ -43,7 +51,8 @@ def test_governed_retry_policy_has_its_own_cached_client__b102(
 )
 @pytest.mark.parametrize("governed", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
-def test_same_prefix_credentials_get_distinct_cached_clients__b102(
+@pytest.mark.asyncio
+async def test_same_prefix_credentials_get_distinct_cached_clients__b102(
     provider, model, governed, reverse
 ):
     factory = LLMClientFactory(Mock())
@@ -51,18 +60,20 @@ def test_same_prefix_credentials_get_distinct_cached_clients__b102(
     if reverse:
         keys.reverse()
     configs = [{"api_key": key, "model": model} for key in keys]
-    first, second = [
-        factory.get_or_create_client(provider, config, governed=governed)
-        for config in configs
-    ]
+
+    async def build(provider_config):
+        if governed:
+            return await factory.get_or_create_governed_client(
+                provider, provider_config
+            )
+        return factory.get_or_create_client(provider, provider_config)
+
+    first, second = [await build(provider_config) for provider_config in configs]
     assert first is not second
-    assert (
-        factory.get_or_create_client(provider, configs[0], governed=governed) is first
-    )
-    assert (
-        factory.get_or_create_client(provider, configs[1], governed=governed) is second
-    )
+    assert await build(configs[0]) is first
+    assert await build(configs[1]) is second
     assert all(key not in repr(tuple(factory._clients)) for key in keys)
+    await factory.shutdown()
 
 
 @pytest.mark.asyncio
@@ -101,22 +112,23 @@ async def test_real_governed_wrapper_sends_one_http_request_on_retryable_error__
     # Choose the SDK's httpx transport so the fake intercepts every request.
     monkeypatch.setattr("google.genai._api_client.has_aiohttp", False)
     factory = LLMClientFactory(Mock())
-    client = factory.get_or_create_client(
-        provider, {"api_key": "offline-test-key", "model": model}, governed=True
+    client = await factory.get_or_create_governed_client(
+        provider, {"api_key": "offline-test-key", "model": model}
     )
     with pytest.raises(Exception):
         await client.ainvoke("synthetic request")
     assert len(calls) == 1
+    await factory.shutdown()
 
 
-def test_governed_google_rejects_wrapper_with_unverified_retry_semantics__b102(
+@pytest.mark.asyncio
+async def test_governed_google_rejects_wrapper_with_unverified_retry_semantics__b102(
     monkeypatch,
 ):
     monkeypatch.setattr("importlib.metadata.version", lambda name: "3.2.0")
     factory = LLMClientFactory(Mock())
     with pytest.raises(LLMDependencyError, match="single-dispatch"):
-        factory.get_or_create_client(
+        await factory.get_or_create_governed_client(
             "google",
             {"api_key": "offline-test-key", "model": "gemini-2.5-flash"},
-            governed=True,
         )

@@ -238,15 +238,16 @@ async def test_cancel_after_full_body_keeps_available_evidence__b102():
 
 
 @pytest.mark.parametrize("provider,model", PROVIDERS)
-def test_unqualified_sdk_is_rejected_before_dispatch__b102(
+@pytest.mark.asyncio
+async def test_unqualified_sdk_is_rejected_before_dispatch__b102(
     provider, model, monkeypatch
 ):
     monkeypatch.setattr(
         "agentmap.services.llm.observed_clients.version", lambda name: "999.0"
     )
     with pytest.raises(LLMDependencyError, match="qualified"):
-        LLMClientFactory(Mock()).get_or_create_client(
-            provider, {"model": model, "api_key": "offline"}, governed=True
+        await LLMClientFactory(Mock()).get_or_create_governed_client(
+            provider, {"model": model, "api_key": "offline"}
         )
 
 

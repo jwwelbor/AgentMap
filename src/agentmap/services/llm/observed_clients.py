@@ -1,5 +1,6 @@
 """Version-qualified SDK construction for pre-parse governed body observation."""
 
+import asyncio
 from functools import cached_property
 from importlib.metadata import version
 from threading import Lock
@@ -23,6 +24,7 @@ class ObservedResources:
         self.async_: list[Any] = []
         self._lock = Lock()
         self._closed = False
+        self._close_task: asyncio.Task[None] | None = None
 
     def create_sync(self, build: Callable[[], Any]) -> Any:
         with self._lock:
@@ -50,11 +52,30 @@ class ObservedResources:
             return client
 
     async def aclose(self) -> None:
+        """Finish cleanup before propagating cancellation to the caller."""
         with self._lock:
-            self._closed = True
-            sync, async_ = self.sync, self.async_
-            self.sync, self.async_ = [], []
+            if self._closed and self._close_task is not None:
+                task = self._close_task
+                if task.done():
+                    return
+            else:
+                self._closed = True
+                task = asyncio.create_task(self._close_all())
+                self._close_task = task
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                pass
+            raise
+
+    async def _close_all(self) -> None:
+        with self._lock:
+            sync, async_ = list(self.sync), list(self.async_)
         failures = []
+        cancellation = None
         for resource in sync:
             try:
                 resource.close()
@@ -63,8 +84,15 @@ class ObservedResources:
         for resource in async_:
             try:
                 await resource.aclose()
+            except asyncio.CancelledError as error:
+                cancellation = cancellation or error
             except Exception as error:
                 failures.append(error)
+        with self._lock:
+            self.sync.clear()
+            self.async_.clear()
+        if cancellation is not None:
+            raise cancellation
         if failures:
             raise ExceptionGroup("governed HTTP resource shutdown failed", failures)
 

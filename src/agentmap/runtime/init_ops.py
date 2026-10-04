@@ -59,3 +59,8 @@ async def ensure_initialized_async(
 
 def get_container():
     return RuntimeManager.get_container()
+
+
+async def shutdown_runtime() -> None:
+    """Await resource cleanup and detach the process runtime container."""
+    await RuntimeManager.shutdown()

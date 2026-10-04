@@ -1386,10 +1386,10 @@ class LLMService:
             provider, current_model, typed_error
         ) from typed_error
 
-    def _get_async_client(self, provider: str, config: Dict[str, Any]) -> Any:
+    async def _get_async_client(self, provider: str, config: Dict[str, Any]) -> Any:
         if _attempt_lifecycle.get() is not None:
-            return self._client_factory.get_or_create_client(
-                provider, config, governed=True
+            return await self._client_factory.get_or_create_governed_client(
+                provider, config
             )
         return self._client_factory.get_or_create_client(provider, config)
 
@@ -1455,7 +1455,7 @@ class LLMService:
             max_tokens = kwargs.pop("max_tokens", None)
             config = self._resolve_config(provider, model, temperature, max_tokens)
             current_model = config.get("model", "unknown")
-            client = self._get_async_client(provider, config)
+            client = await self._get_async_client(provider, config)
             return await self._bind_and_invoke_direct(
                 client,
                 messages,

@@ -179,6 +179,10 @@ class LLMAttemptLifecycleProtocol(Protocol):
 class LLMServiceProtocol(Protocol):
     """Protocol for LLM service interface used by agents."""
 
+    async def shutdown(self) -> None:
+        """Release every governed provider client owned by this service."""
+        ...
+
     def call_llm(
         self,
         provider: str,

@@ -3,7 +3,7 @@
 import re
 from contextvars import ContextVar
 from threading import Lock
-from typing import AsyncIterator, Callable, Iterator, Optional
+from typing import AsyncIterator, Awaitable, Callable, Iterator, Optional
 
 import httpx
 
@@ -230,6 +230,28 @@ async def observe_async_response(response: httpx.Response) -> None:
     _record_complete(collector, response, body)
 
 
+def _send_observed_sync(
+    send: Callable[..., httpx.Response], request: httpx.Request
+) -> httpx.Response:
+    collector = response_collector.get()
+    if collector is not None and not collector.start_request():
+        raise ResponseCaptureFailure()
+    response = send(request, stream=True)
+    observe_response(response)
+    return response
+
+
+async def _send_observed_async(
+    send: Callable[..., Awaitable[httpx.Response]], request: httpx.Request
+) -> httpx.Response:
+    collector = response_collector.get()
+    if collector is not None and not collector.start_request():
+        raise ResponseCaptureFailure()
+    response = await send(request, stream=True)
+    await observe_async_response(response)
+    return response
+
+
 class ObservedTransport(httpx.BaseTransport, httpx.AsyncBaseTransport):
     """Stateless transport adapter usable by Google's shared client_args surface.
 
@@ -266,20 +288,10 @@ class ObservedTransport(httpx.BaseTransport, httpx.AsyncBaseTransport):
             return self._async_client
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        collector = response_collector.get()
-        if collector is not None and not collector.start_request():
-            raise ResponseCaptureFailure()
-        response = self._sync.send(request, stream=True)
-        observe_response(response)
-        return response
+        return _send_observed_sync(self._sync.send, request)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        collector = response_collector.get()
-        if collector is not None and not collector.start_request():
-            raise ResponseCaptureFailure()
-        response = await self._async.send(request, stream=True)
-        await observe_async_response(response)
-        return response
+        return await _send_observed_async(self._async.send, request)
 
     def close(self) -> None:
         with self._lock:
@@ -303,12 +315,7 @@ class ObservedSyncTransport(httpx.BaseTransport):
         self._sync = httpx.Client(proxy=proxy)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        collector = response_collector.get()
-        if collector is not None and not collector.start_request():
-            raise ResponseCaptureFailure()
-        response = self._sync.send(request, stream=True)
-        observe_response(response)
-        return response
+        return _send_observed_sync(self._sync.send, request)
 
     def close(self) -> None:
         self._sync.close()
@@ -321,12 +328,7 @@ class ObservedAsyncTransport(httpx.AsyncBaseTransport):
         self._async = httpx.AsyncClient(proxy=proxy)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        collector = response_collector.get()
-        if collector is not None and not collector.start_request():
-            raise ResponseCaptureFailure()
-        response = await self._async.send(request, stream=True)
-        await observe_async_response(response)
-        return response
+        return await _send_observed_async(self._async.send, request)
 
     async def aclose(self) -> None:
         await self._async.aclose()

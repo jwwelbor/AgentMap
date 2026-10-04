@@ -5,6 +5,7 @@ This module provides thread-safe runtime state management for AgentMap,
 implementing a singleton pattern for DI container lifecycle management.
 """
 
+import asyncio
 import threading
 from typing import Optional
 
@@ -45,6 +46,16 @@ class RuntimeManager:
         with cls._lock:
             if cls._is_initialized and not refresh:
                 return
+            if cls._is_initialized and refresh:
+                try:
+                    asyncio.get_running_loop()
+                except RuntimeError:
+                    asyncio.run(cls.shutdown())
+                else:
+                    raise AgentMapNotInitialized(
+                        "Runtime refresh from an event loop requires "
+                        "ensure_initialized_async()"
+                    )
 
             try:
                 cls._container = initialize_di(config_file)
@@ -53,6 +64,16 @@ class RuntimeManager:
                 cls._is_initialized = False
                 cls._container = None
                 raise AgentMapNotInitialized(f"Initialization failed: {e}") from e
+
+    @classmethod
+    async def shutdown(cls) -> None:
+        """Detach the runtime and await its LLM resource owner."""
+        with cls._lock:
+            container = cls._container
+            cls._is_initialized = False
+            cls._container = None
+        if container is not None:
+            await container.llm_service().shutdown()
 
     @classmethod
     def is_initialized(cls) -> bool:

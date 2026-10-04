@@ -13,6 +13,7 @@ from .runtime.init_ops import (
     ensure_initialized,
     ensure_initialized_async,
     get_container,
+    shutdown_runtime,
 )
 from .runtime.system_ops import (
     diagnose_system,
@@ -42,6 +43,7 @@ __all__ = [
     "ensure_initialized_async",
     "agentmap_initialize",  # Recommended external name
     "get_container",
+    "shutdown_runtime",
     "run_workflow",
     "run_workflow_async",
     "run_workflow_stream_async",

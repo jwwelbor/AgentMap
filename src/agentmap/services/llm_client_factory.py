@@ -5,11 +5,11 @@ Handles the creation of provider-specific LangChain clients (OpenAI, Anthropic, 
 with proper dependency management and client caching.
 """
 
-from hashlib import sha256
 from threading import RLock
 from typing import Any, Dict
 
 from agentmap.exceptions import LLMConfigurationError, LLMDependencyError
+from agentmap.services.llm.client_lifecycle import GovernedClientLifecycleMixin
 from agentmap.services.llm.observed_clients import (
     ObservedResources,
     governed_google_kwargs,
@@ -19,7 +19,7 @@ from agentmap.services.llm.observed_clients import (
 from agentmap.services.logging_service import LoggingService
 
 
-class LLMClientFactory:
+class LLMClientFactory(GovernedClientLifecycleMixin):
     """Factory for creating and caching LangChain LLM clients."""
 
     def __init__(self, logging_service: LoggingService):
@@ -30,9 +30,8 @@ class LLMClientFactory:
             logging_service: Service for logging
         """
         self._clients = {}  # Cache for LangChain clients
-        self._owners: list[ObservedResources] = []
-        self._constructing_resources: ObservedResources | None = None
         self._cache_lock = RLock()
+        self._initialize_governed_lifecycle()
         self._logger = logging_service.get_class_logger("agentmap.llm.factory")
 
     @staticmethod
@@ -75,33 +74,16 @@ class LLMClientFactory:
                 "Governed response observation supports only non-streaming calls"
             )
 
-        # Include streaming and governed policy in the cache key.
-        max_tok = config.get("max_tokens")
-        temperature = config.get("temperature", 0.7)
-        # Complete-credential identity prevents cross-account client reuse.
-        # Keep the credential itself out of cache-key representations.
-        api_key_identity = sha256((config.get("api_key") or "").encode()).hexdigest()
-        cache_key = (
-            f"{provider}_{config.get('model')}_{api_key_identity}_"
-            f"{max_tok}_{temperature!r}_{streaming}"
-            + ("_single_dispatch" if governed else "")
-        )
-
+        cache_key = self._cache_key(provider, config, streaming, governed)
         with self._cache_lock:
+            self._ensure_open()
             if cache_key in self._clients:
                 return self._clients[cache_key]
             if governed:
-                owner = ObservedResources()
-                self._owners.append(owner)
-                self._constructing_resources = owner
-                try:
-                    client = self._create_langchain_client(
-                        provider, config, streaming, governed=True
-                    )
-                finally:
-                    self._constructing_resources = None
-            else:
-                client = self._create_langchain_client(provider, config, streaming)
+                raise LLMConfigurationError(
+                    "Governed clients require awaited async construction"
+                )
+            client = self._create_langchain_client(provider, config, streaming)
             self._clients[cache_key] = client
             return client
 
@@ -112,6 +94,7 @@ class LLMClientFactory:
         streaming: bool = False,
         *,
         governed: bool = False,
+        owner: ObservedResources | None = None,
     ) -> Any:
         """Build the selected wrapper without mutating any cached client.
 
@@ -139,13 +122,16 @@ class LLMClientFactory:
                 builder = self._create_google_client
             else:
                 raise LLMConfigurationError(f"Unsupported provider: {provider}")
+            builder_kwargs: Dict[str, Any] = (
+                {"governed": True, "owner": owner} if governed else {}
+            )
             return builder(
                 api_key,
                 model,
                 temperature,
                 max_tokens,
                 streaming,
-                **({"governed": True} if governed else {}),
+                **builder_kwargs,
             )
 
         except ImportError as e:
@@ -163,6 +149,7 @@ class LLMClientFactory:
         streaming: bool = False,
         *,
         governed: bool = False,
+        owner: ObservedResources | None = None,
     ) -> Any:
         """Build OpenAI client, with streaming usage or governed observation."""
         try:
@@ -191,7 +178,7 @@ class LLMClientFactory:
             "openai_api_key": api_key,
         }
         if governed:
-            kwargs.update(governed_openai_kwargs(self._constructing_resources))
+            kwargs.update(governed_openai_kwargs(owner))
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         if streaming:
@@ -207,6 +194,7 @@ class LLMClientFactory:
         streaming: bool = False,
         *,
         governed: bool = False,
+        owner: ObservedResources | None = None,
     ) -> Any:
         """Build Anthropic client, with streaming usage or governed observation."""
         try:
@@ -245,7 +233,7 @@ class LLMClientFactory:
         if streaming:
             kwargs["stream_usage"] = True
         if governed:
-            return observed_anthropic_client(kwargs, self._constructing_resources)
+            return observed_anthropic_client(kwargs, owner)
         return ChatAnthropic(**kwargs)
 
     def _create_google_client(
@@ -257,6 +245,7 @@ class LLMClientFactory:
         streaming: bool = False,
         *,
         governed: bool = False,
+        owner: ObservedResources | None = None,
     ) -> Any:
         """Build Google client; streaming has no verified usage opt-in."""
         try:
@@ -285,7 +274,7 @@ class LLMClientFactory:
             "google_api_key": api_key,
         }
         if governed:
-            kwargs.update(governed_google_kwargs(self._constructing_resources))
+            kwargs.update(governed_google_kwargs(owner))
         if max_tokens is not None:
             kwargs["max_output_tokens"] = max_tokens
         return ChatGoogleGenerativeAI(**kwargs)
@@ -293,23 +282,10 @@ class LLMClientFactory:
     def clear_cache(self) -> None:
         """Clear the client cache."""
         with self._cache_lock:
+            self._ensure_open()
             if self._owners:
                 raise LLMConfigurationError(
                     "Governed clients require awaited shutdown before cache clearing"
                 )
             self._clients.clear()
         self._logger.debug("Client cache cleared")
-
-    async def shutdown(self) -> None:
-        """Detach cached clients and await release of every governed HTTP pool."""
-        with self._cache_lock:
-            owners, self._owners = self._owners, []
-            self._clients.clear()
-        failures = []
-        for owner in owners:
-            try:
-                await owner.aclose()
-            except Exception as error:
-                failures.append(error)
-        if failures:
-            raise ExceptionGroup("governed client shutdown failed", failures)

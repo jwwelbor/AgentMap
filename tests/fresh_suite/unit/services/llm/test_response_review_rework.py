@@ -106,7 +106,8 @@ async def test_forced_google_redirect_is_refused_before_second_dispatch__b102(
 
 
 @pytest.mark.parametrize("provider,model", PROVIDERS)
-def test_sync_wrapper_redirect_cannot_send_a_second_wire_request__b102(
+@pytest.mark.asyncio
+async def test_sync_wrapper_redirect_cannot_send_a_second_wire_request__b102(
     provider, model, monkeypatch
 ):
     requests = []
@@ -123,8 +124,9 @@ def test_sync_wrapper_redirect_cannot_send_a_second_wire_request__b102(
         )
 
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", send)
-    client = LLMClientFactory(Mock()).get_or_create_client(
-        provider, {"api_key": "offline", "model": model}, governed=True
+    factory = LLMClientFactory(Mock())
+    client = await factory.get_or_create_governed_client(
+        provider, {"api_key": "offline", "model": model}
     )
     collector = ResponseCollector()
     token = response_collector.set(collector)
@@ -135,6 +137,7 @@ def test_sync_wrapper_redirect_cannot_send_a_second_wire_request__b102(
         response_collector.reset(token)
     assert len(requests) == 1
     assert collector.seal().body == b"redirect body"
+    await factory.shutdown()
 
 
 @pytest.mark.asyncio

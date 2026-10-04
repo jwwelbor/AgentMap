@@ -56,16 +56,16 @@ async def test_factory_shutdown_closes_each_observed_pool_once__b102(
 
     monkeypatch.setattr(httpx.HTTPTransport, "close", close_sync)
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "aclose", close_async)
-    client = factory.get_or_create_client(provider, config(model), governed=True)
+    client = await factory.get_or_create_governed_client(provider, config(model))
     assert (
-        factory.get_or_create_client(provider, config(model), governed=True) is client
+        await factory.get_or_create_governed_client(provider, config(model)) is client
     )
     assert client.invoke("offline").content
     assert (await client.ainvoke("offline")).content
     with pytest.raises(LLMConfigurationError, match="shutdown"):
         factory.clear_cache()
     assert (
-        factory.get_or_create_client(provider, config(model), governed=True) is client
+        await factory.get_or_create_governed_client(provider, config(model)) is client
     )
     await factory.shutdown()
     assert len(sync_closed) == len(async_closed) == 1
@@ -98,8 +98,8 @@ def test_concurrent_first_construction_has_no_losing_client__b102(monkeypatch):
 async def test_google_shared_adapter_creates_only_used_mode__b102(monkeypatch):
     setup_transport(monkeypatch, body_for("google"))
     factory = LLMClientFactory(Mock())
-    client = factory.get_or_create_client(
-        "google", config("gemini-2.5-flash"), governed=True
+    client = await factory.get_or_create_governed_client(
+        "google", config("gemini-2.5-flash")
     )
     transport = factory._owners[0].sync[0]
     assert transport._sync_client is None and transport._async_client is None
@@ -112,7 +112,7 @@ async def test_google_shared_adapter_creates_only_used_mode__b102(monkeypatch):
 @pytest.mark.asyncio
 async def test_shutdown_reports_failure_and_closes_remaining_pool__b102(monkeypatch):
     factory = LLMClientFactory(Mock())
-    factory.get_or_create_client("openai", config("gpt-4o-mini"), governed=True)
+    await factory.get_or_create_governed_client("openai", config("gpt-4o-mini"))
     owner = factory._owners[0]
     closed = []
 
@@ -136,7 +136,7 @@ async def test_service_shutdown_awaits_factory_owner__b102(monkeypatch):
     setup_transport(monkeypatch, body_for("openai"))
     service = real_service("openai", "gpt-4o-mini")
     factory = service._client_factory
-    factory.get_or_create_client("openai", config("gpt-4o-mini"), governed=True)
+    await factory.get_or_create_governed_client("openai", config("gpt-4o-mini"))
     await service.shutdown()
     assert factory._clients == {}
     assert factory._owners == []
@@ -147,8 +147,8 @@ async def test_service_shutdown_awaits_factory_owner__b102(monkeypatch):
 async def test_lazy_anthropic_client_cannot_escape_closed_owner__b102(monkeypatch):
     calls = setup_transport(monkeypatch, body_for("anthropic"))
     factory = LLMClientFactory(Mock())
-    client = factory.get_or_create_client(
-        "anthropic", config("claude-sonnet-4-5"), governed=True
+    client = await factory.get_or_create_governed_client(
+        "anthropic", config("claude-sonnet-4-5")
     )
     await factory.shutdown()
     with pytest.raises(LLMConfigurationError, match="shut down"):

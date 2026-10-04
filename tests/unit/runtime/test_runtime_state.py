@@ -9,7 +9,7 @@ use RuntimeManager.reset() for test isolation.
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
 from agentmap.runtime.runtime_manager import RuntimeManager
@@ -98,6 +98,7 @@ class TestRuntimeManager(unittest.TestCase):
         """Test initialization with refresh=True forces reinitialization."""
         mock_container1 = MagicMock(name="container1")
         mock_container2 = MagicMock(name="container2")
+        mock_container1.llm_service.return_value.shutdown = AsyncMock()
         mock_initialize_di.side_effect = [mock_container1, mock_container2]
 
         # First initialization
@@ -114,6 +115,7 @@ class TestRuntimeManager(unittest.TestCase):
 
         # initialize_di should be called twice
         self.assertEqual(mock_initialize_di.call_count, 2)
+        mock_container1.llm_service.return_value.shutdown.assert_awaited_once_with()
 
     @patch("agentmap.runtime.runtime_manager.initialize_di")
     def test_initialization_failure(self, mock_initialize_di):
@@ -137,6 +139,7 @@ class TestRuntimeManager(unittest.TestCase):
     def test_initialization_failure_with_refresh(self, mock_initialize_di):
         """Test error handling when refresh initialization fails."""
         mock_container = MagicMock()
+        mock_container.llm_service.return_value.shutdown = AsyncMock()
         mock_initialize_di.side_effect = [mock_container, Exception("Refresh failed")]
 
         # First successful initialization
@@ -149,6 +152,7 @@ class TestRuntimeManager(unittest.TestCase):
 
         self.assertIn("Initialization failed", str(context.exception))
         self.assertIn("Refresh failed", str(context.exception))
+        mock_container.llm_service.return_value.shutdown.assert_awaited_once_with()
 
         # State should be reset to uninitialized
         self.assertFalse(RuntimeManager.is_initialized())
@@ -394,6 +398,7 @@ class TestRuntimeManager(unittest.TestCase):
         ) as mock_initialize_di:
             mock_container1 = MagicMock(name="container1")
             mock_container2 = MagicMock(name="container2")
+            mock_container1.llm_service.return_value.shutdown = AsyncMock()
             mock_initialize_di.side_effect = [mock_container1, mock_container2]
 
             # Initialize with first config
@@ -410,6 +415,7 @@ class TestRuntimeManager(unittest.TestCase):
 
             # Verify second initialization
             self.assertEqual(mock_initialize_di.call_count, 2)
+            mock_container1.llm_service.return_value.shutdown.assert_awaited_once_with()
             mock_initialize_di.assert_called_with(config_file2)
             self.assertEqual(RuntimeManager.get_container(), mock_container2)
 

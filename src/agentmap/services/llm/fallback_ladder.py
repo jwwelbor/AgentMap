@@ -29,6 +29,7 @@ import cycle to dodge (verified with a direct import smoke test; see
 T-E05-F06-008 rework notes).
 """
 
+from inspect import isawaitable
 from typing import Any, List, NoReturn, Optional, Tuple
 
 from agentmap.exceptions.service_exceptions import LLMResolvedCallError
@@ -80,6 +81,8 @@ class LLMFallbackAsyncLadderMixin:
             config = dict(config)  # defensive copy — avoid mutating shared config
             config["model"] = fallback_model
             client = get_or_create_client_fn(fallback_provider, config)
+            if isawaitable(client):
+                client = await client
             client_resolved = True
             limits = (
                 {"max_output_tokens": config.get("max_tokens")}
