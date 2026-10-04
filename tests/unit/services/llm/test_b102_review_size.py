@@ -6,13 +6,21 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[4]
-TEST_DIRS = (ROOT / "tests/unit",)
+TEST_DIRS = (ROOT / "tests/unit", ROOT / "tests/fresh_suite/unit")
 B102_TEST_MODULES = sorted(
-    path.relative_to(ROOT)
-    for test_dir in TEST_DIRS
-    for path in test_dir.rglob("test_*.py")
-    if "__b102" in path.read_text() or path.name == "test_cost_calculator.py"
+    {
+        path.relative_to(ROOT)
+        for test_dir in TEST_DIRS
+        for path in test_dir.rglob("test_*.py")
+        if "__b102" in path.read_text() or path.name == "test_cost_calculator.py"
+    }
 )
+
+
+def test_b102_structural_inventory_retains_both_test_roots():
+    roots = {path.parts[:2] for path in B102_TEST_MODULES}
+    assert ("tests", "unit") in roots
+    assert ("tests", "fresh_suite") in roots
 
 
 @pytest.mark.parametrize(

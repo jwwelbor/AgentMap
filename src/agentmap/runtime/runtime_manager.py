@@ -24,7 +24,9 @@ class RuntimeManager:
     """
 
     _lock = threading.RLock()
-    _transaction_lock = threading.Lock()
+    _transaction_condition = threading.Condition()
+    _transaction_owner: object | None = None
+    _transaction_async_waiters: set[tuple[Any, Any]] = set()
     _is_initialized = False
     _container = None
 
@@ -45,7 +47,8 @@ class RuntimeManager:
         Raises:
             AgentMapNotInitialized: If initialization fails for any reason.
         """
-        with cls._transaction_lock:
+        token = cls._acquire_sync_transaction()
+        try:
             current = cls._current_container()
             if current is not None and not refresh:
                 return
@@ -54,6 +57,8 @@ class RuntimeManager:
                 detached = cls._detach_if_current(current)
                 asyncio.run(cls._shutdown_container(detached))
             cls._install(config_file)
+        finally:
+            cls._release_transaction(token)
 
     @classmethod
     async def initialize_async(
@@ -64,13 +69,13 @@ class RuntimeManager:
         config_file: Optional[str] = None,
     ) -> None:
         """Own one serialized initialize, validate, and rollback transaction."""
-        await cls._acquire_transaction()
+        token = await cls._acquire_async_transaction()
         try:
             await cls._run_initialization_transaction(
                 startup, refresh=refresh, config_file=config_file
             )
         finally:
-            cls._transaction_lock.release()
+            cls._release_transaction(token)
 
     @classmethod
     async def _run_initialization_transaction(
@@ -84,34 +89,36 @@ class RuntimeManager:
         if previous is not None and refresh:
             detached = cls._detach_if_current(previous)
             shutdown = await cls._await_shutdown(detached)
-            cls._raise_initialization_outcome(shutdown, None)
-        worker_refresh = refresh and previous is None
+            cls._raise_initialization_outcome(shutdown, TerminalTaskOutcome())
+        install_refresh = refresh and previous is None
         task = asyncio.create_task(
             asyncio.to_thread(
                 cls._install_and_startup,
                 startup,
-                worker_refresh,
+                install_refresh,
+                refresh,
                 config_file,
             )
         )
         outcome = await await_terminal_task(task)
         if outcome.task_error is None and outcome.caller_cancellation is None:
             return
-        cleanup_error = await cls._rollback_candidate(previous, refresh)
-        cls._raise_initialization_outcome(outcome, cleanup_error)
+        cleanup = await cls._rollback_candidate(previous, refresh)
+        cls._raise_initialization_outcome(outcome, cleanup)
 
     @classmethod
     def _install_and_startup(
         cls,
         startup: Callable[[Any, bool], None],
-        worker_refresh: bool,
+        install_refresh: bool,
+        cache_refresh: bool,
         config_file: Optional[str],
     ) -> None:
         try:
             cls._initialize_in_transaction(
-                refresh=worker_refresh, config_file=config_file
+                refresh=install_refresh, config_file=config_file
             )
-            startup(cls.get_container(), worker_refresh)
+            startup(cls.get_container(), cache_refresh)
         except AgentMapNotInitialized:
             raise
         except Exception as error:
@@ -141,23 +148,72 @@ class RuntimeManager:
     @classmethod
     async def shutdown(cls) -> None:
         """Detach the runtime and await its LLM resource owner."""
-        await cls._acquire_transaction()
+        token = await cls._acquire_async_transaction()
         try:
             container = cls._detach_if_current(cls._current_container())
             await cls._shutdown_container(container)
         finally:
-            cls._transaction_lock.release()
+            cls._release_transaction(token)
 
     @classmethod
-    async def _acquire_transaction(cls) -> None:
-        task = asyncio.create_task(asyncio.to_thread(cls._transaction_lock.acquire))
-        outcome = await await_terminal_task(task)
-        acquired = outcome.task_error is None and bool(outcome.value)
-        if outcome.caller_cancellation is not None:
-            if acquired:
-                cls._transaction_lock.release()
-            outcome.result()
-        outcome.result()
+    async def _acquire_async_transaction(cls) -> object:
+        loop = asyncio.get_running_loop()
+        while True:
+            with cls._transaction_condition:
+                if cls._transaction_owner is None:
+                    token = object()
+                    cls._transaction_owner = token
+                    return token
+                future = loop.create_future()
+                waiter = (loop, future)
+                cls._transaction_async_waiters.add(waiter)
+            try:
+                await future
+            finally:
+                with cls._transaction_condition:
+                    cls._transaction_async_waiters.discard(waiter)
+
+    @classmethod
+    def _acquire_sync_transaction(cls) -> object:
+        in_event_loop = cls._in_event_loop()
+        with cls._transaction_condition:
+            if in_event_loop and cls._transaction_owner is not None:
+                raise AgentMapNotInitialized(
+                    "Synchronous runtime initialization cannot wait for an active "
+                    "async transaction; await ensure_initialized_async()"
+                )
+            while cls._transaction_owner is not None:
+                cls._transaction_condition.wait()
+            token = object()
+            cls._transaction_owner = token
+            return token
+
+    @classmethod
+    def _release_transaction(cls, token: object) -> None:
+        with cls._transaction_condition:
+            if cls._transaction_owner is not token:
+                raise RuntimeError("Runtime transaction owner mismatch")
+            cls._transaction_owner = None
+            cls._transaction_condition.notify_all()
+            waiters = tuple(cls._transaction_async_waiters)
+        for loop, future in waiters:
+            try:
+                loop.call_soon_threadsafe(cls._wake_transaction_waiter, future)
+            except RuntimeError:
+                continue
+
+    @staticmethod
+    def _wake_transaction_waiter(future: Any) -> None:
+        if not future.done():
+            future.set_result(None)
+
+    @staticmethod
+    def _in_event_loop() -> bool:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return False
+        return True
 
     @classmethod
     async def _shutdown_container(cls, container: Any | None) -> None:
@@ -174,37 +230,36 @@ class RuntimeManager:
     @classmethod
     async def _rollback_candidate(
         cls, previous: Any | None, refresh: bool
-    ) -> BaseException | None:
+    ) -> TerminalTaskOutcome:
         if previous is not None and not refresh:
-            return None
+            return TerminalTaskOutcome()
         candidate = cls._current_container()
         if candidate is None or candidate is previous:
-            return None
+            return TerminalTaskOutcome()
         detached = cls._detach_if_current(candidate)
-        outcome = await cls._await_shutdown(detached)
-        return cls._outcome_error(outcome)
-
-    @staticmethod
-    def _outcome_error(outcome: TerminalTaskOutcome) -> BaseException | None:
-        if outcome.caller_cancellation is not None and outcome.task_error is not None:
-            return BaseExceptionGroup(
-                "runtime rollback failed",
-                [outcome.caller_cancellation, outcome.task_error],
-            )
-        return outcome.caller_cancellation or outcome.task_error
+        return await cls._await_shutdown(detached)
 
     @staticmethod
     def _raise_initialization_outcome(
-        outcome: TerminalTaskOutcome, cleanup_error: BaseException | None
+        outcome: TerminalTaskOutcome, cleanup: TerminalTaskOutcome
     ) -> None:
-        original = outcome.caller_cancellation or outcome.task_error
+        original = (
+            outcome.caller_cancellation
+            or cleanup.caller_cancellation
+            or outcome.task_error
+            or cleanup.task_error
+        )
         if original is None:
             return
-        secondary: list[BaseException] = []
-        if outcome.caller_cancellation is not None and outcome.task_error is not None:
-            secondary.append(outcome.task_error)
-        if cleanup_error is not None:
-            secondary.append(cleanup_error)
+        terminal = (
+            outcome.caller_cancellation,
+            outcome.task_error,
+            cleanup.caller_cancellation,
+            cleanup.task_error,
+        )
+        secondary = [
+            error for error in terminal if error is not None and error is not original
+        ]
         if len(secondary) == 1:
             raise original from secondary[0]
         if secondary:
@@ -276,7 +331,10 @@ class RuntimeManager:
         This method clears the initialization state and container reference,
         allowing for clean reinitialization. Thread-safe using RLock.
         """
-        with cls._transaction_lock:
+        token = cls._acquire_sync_transaction()
+        try:
             with cls._lock:
                 cls._is_initialized = False
                 cls._container = None
+        finally:
+            cls._release_transaction(token)

@@ -61,6 +61,7 @@ async def test_async_refresh_closes_loop_bound_owner_on_caller_loop__b102(monkey
     monkeypatch.setattr(
         "agentmap.runtime.init_ops._is_cache_initialized", Mock(return_value=True)
     )
+    monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", Mock())
     try:
         await ensure_initialized_async(refresh=True)
         assert closed == [True]
@@ -210,7 +211,7 @@ async def test_concurrent_failed_start_cannot_detach_peer_success__b102(monkeypa
     failed = asyncio.create_task(ensure_initialized_async())
     assert await asyncio.to_thread(entered.wait, 5)
     succeeded = asyncio.create_task(ensure_initialized_async())
-    assert RuntimeManager._transaction_lock.locked()
+    assert RuntimeManager._transaction_owner is not None
     release.set()
     first_result, second_result = await asyncio.gather(
         failed, succeeded, return_exceptions=True
@@ -318,10 +319,11 @@ async def test_concurrent_refresh_transactions_close_each_replaced_owner__b102(
     monkeypatch.setattr(
         "agentmap.runtime.init_ops._is_cache_initialized", Mock(return_value=True)
     )
+    monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", Mock())
     first = asyncio.create_task(ensure_initialized_async(refresh=True))
     await shutdown_entered.wait()
     second = asyncio.create_task(ensure_initialized_async(refresh=True))
-    assert RuntimeManager._transaction_lock.locked()
+    assert RuntimeManager._transaction_owner is not None
     release_shutdown.set()
     await asyncio.gather(first, second)
     try:

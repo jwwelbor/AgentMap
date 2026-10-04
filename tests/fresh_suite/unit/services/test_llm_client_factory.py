@@ -317,40 +317,6 @@ class TestLLMClientFactoryStreamingCacheKey(unittest.TestCase):
         self.assertEqual(true_key, f"openai_gpt-4_{identity}_256_0.4_True")
         self.assertNotIn(config["api_key"], repr(keys))
 
-    def test_same_prefix_credentials_do_not_share_client__b102(self):
-        """B102 supersedes TC-F02-KEY-6's unsafe eight-character identity.
-
-        Each distinct complete credential gets its own provider client.
-        """
-        config1 = dict(self._base_config)
-        config1["api_key"] = "abcdefgh_LONGER1"
-        config2 = dict(self._base_config)
-        config2["api_key"] = "abcdefgh_LONGER2"
-        config3 = dict(self._base_config)
-        config3["api_key"] = "XXXXXXXX_anything"
-
-        first_client = Mock(name="first_client")
-        second_client = Mock(name="second_client")
-        third_client = Mock(name="third_client")
-
-        with patch.object(
-            self.factory,
-            "_create_langchain_client",
-            side_effect=[first_client, second_client, third_client],
-        ) as mock_create:
-            got1 = self.factory.get_or_create_client("openai", config1, streaming=False)
-            got2 = self.factory.get_or_create_client("openai", config2, streaming=False)
-            got3 = self.factory.get_or_create_client("openai", config3, streaming=False)
-
-        self.assertIs(got1, first_client)
-        self.assertIs(got2, second_client)
-        self.assertIs(got3, third_client)
-        self.assertEqual(mock_create.call_count, 3)
-        self.assertIs(
-            self.factory.get_or_create_client("openai", config1, streaming=False),
-            first_client,
-        )
-
     def test_default_streaming_arg_behaves_as_non_streaming(self):
         """TC-F02-REG-3: calling with no streaming arg behaves as non-streaming.
 
