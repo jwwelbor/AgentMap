@@ -5,15 +5,12 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[5]
-TEST_DIRS = (
-    ROOT / "tests/fresh_suite/unit/services/llm",
-    ROOT / "tests/unit/services/llm",
-)
+ROOT = Path(__file__).resolve().parents[4]
+TEST_DIRS = (ROOT / "tests/unit",)
 B102_TEST_MODULES = sorted(
     path.relative_to(ROOT)
     for test_dir in TEST_DIRS
-    for path in test_dir.glob("test_*.py")
+    for path in test_dir.rglob("test_*.py")
     if "__b102" in path.read_text() or path.name == "test_cost_calculator.py"
 )
 

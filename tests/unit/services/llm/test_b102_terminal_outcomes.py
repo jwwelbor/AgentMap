@@ -112,3 +112,38 @@ async def test_caller_cancellation_retains_cleanup_failure_as_cause__b102():
         await close
     assert isinstance(caught.value.__cause__, ExceptionGroup)
     assert failure in caught.value.__cause__.exceptions
+
+
+@pytest.mark.asyncio
+async def test_sync_terminal_failures_do_not_skip_later_resources__b102():
+    owner = ObservedResources()
+    cancellation = asyncio.CancelledError("sync cancellation")
+    grouped = BaseExceptionGroup("sync group", [RuntimeError("sync failure")])
+    closed: list[str] = []
+
+    class Failed:
+        def __init__(self, error):
+            self.error = error
+
+        def close(self):
+            raise self.error
+
+    class LaterSync:
+        def close(self):
+            closed.append("sync")
+
+    class LaterAsync:
+        async def aclose(self):
+            closed.append("async")
+
+    owner.create_sync(lambda: Failed(cancellation))
+    owner.create_sync(lambda: Failed(grouped))
+    owner.create_sync(LaterSync)
+    owner.create_async(LaterAsync)
+    with pytest.raises(BaseExceptionGroup) as caught:
+        await owner.aclose()
+    assert cancellation in caught.value.exceptions
+    assert grouped in caught.value.exceptions
+    assert closed == ["sync", "async"]
+    await owner.aclose()
+    assert closed == ["sync", "async"]

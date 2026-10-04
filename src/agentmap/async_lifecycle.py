@@ -5,6 +5,11 @@ from dataclasses import dataclass
 from typing import Any
 
 
+def _cancellation_count(task: asyncio.Task[Any] | None) -> int:
+    """Return the caller's current cancellation-request count."""
+    return task.cancelling() if task is not None else 0
+
+
 @dataclass(frozen=True)
 class TerminalTaskOutcome:
     """Separate a task result from cancellation requested by its caller."""
@@ -28,15 +33,18 @@ async def await_terminal_task(task: asyncio.Task[Any]) -> TerminalTaskOutcome:
     """Wait through repeated caller cancellation without cancelling ``task``."""
     cancellation = None
     current = asyncio.current_task()
+    cancellation_count = _cancellation_count(current)
     while not task.done():
         try:
             await asyncio.shield(task)
         except asyncio.CancelledError as error:
-            if current is not None and current.cancelling():
+            current_count = _cancellation_count(current)
+            if current_count > cancellation_count:
                 cancellation = cancellation or error
+                cancellation_count = current_count
             if task.done():
                 break
-        except (asyncio.CancelledError, BaseExceptionGroup, Exception):
+        except (BaseExceptionGroup, Exception):
             break
     try:
         value = task.result()

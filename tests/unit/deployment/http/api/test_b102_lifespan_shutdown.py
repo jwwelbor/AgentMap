@@ -3,10 +3,13 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 from fastapi import FastAPI
 
-from agentmap.deployment.http.api.server import create_lifespan
+from agentmap.deployment.http.api.server import FastAPIServer, create_lifespan
+from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
+from agentmap.runtime.init_ops import ensure_initialized_async
 from agentmap.runtime.runtime_manager import RuntimeManager
 from agentmap.services.llm_client_factory import LLMClientFactory
 
@@ -74,3 +77,36 @@ async def test_lifespan_uses_transactional_async_startup__b102(monkeypatch):
     assert caught.value is failure
     initialize.assert_awaited_once_with(config_file=None)
     shutdown.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_startup_and_rollback_failure_remains_http_503__b102(monkeypatch):
+    cleanup_error = RuntimeError("offline rollback failure")
+    service = SimpleNamespace(shutdown=AsyncMock(side_effect=cleanup_error))
+    container = SimpleNamespace(llm_service=Mock(return_value=service))
+    RuntimeManager.reset()
+    monkeypatch.setattr(
+        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=container)
+    )
+    monkeypatch.setattr(
+        "agentmap.runtime.init_ops._refresh_cache",
+        Mock(side_effect=ValueError("offline cache failure")),
+    )
+    app = FastAPI()
+    FastAPIServer._add_exception_handlers(object(), app)
+
+    @app.get("/startup")
+    async def startup():
+        await ensure_initialized_async()
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            response = await client.get("/startup")
+        assert response.status_code == 503
+        assert response.json()["type"] == AgentMapNotInitialized.__name__
+        service.shutdown.assert_awaited_once_with()
+    finally:
+        RuntimeManager.reset()

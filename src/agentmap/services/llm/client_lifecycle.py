@@ -5,12 +5,9 @@ from hashlib import sha256
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Dict
 
+from agentmap.async_lifecycle import await_terminal_task, raise_cleanup_failures
 from agentmap.exceptions import LLMConfigurationError
 from agentmap.services.llm.observed_clients import ObservedResources
-from agentmap.services.llm.terminal_task import (
-    await_terminal_task,
-    raise_cleanup_failures,
-)
 
 
 class GovernedClientLifecycleMixin:

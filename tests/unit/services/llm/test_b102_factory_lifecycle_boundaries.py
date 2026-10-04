@@ -118,6 +118,7 @@ async def test_shutdown_wins_against_inflight_and_later_construction__b102(
 ):
     factory = LLMClientFactory(Mock())
     entered, release = Event(), Event()
+    shutdown_entered = asyncio.Event()
     resource = AsyncResource()
 
     def build(*args, owner, **kwargs):
@@ -127,12 +128,19 @@ async def test_shutdown_wins_against_inflight_and_later_construction__b102(
         return object()
 
     monkeypatch.setattr(factory, "_create_langchain_client", build)
+    original_finish = factory._finish_shutdown
+
+    async def marked_finish():
+        shutdown_entered.set()
+        await original_finish()
+
+    monkeypatch.setattr(factory, "_finish_shutdown", marked_finish)
     acquisition = asyncio.create_task(
         factory.get_or_create_governed_client("openai", config("m"))
     )
     assert await asyncio.to_thread(entered.wait, 5)
     shutdown = asyncio.create_task(factory.shutdown())
-    await asyncio.sleep(0)
+    await shutdown_entered.wait()
     release.set()
     with pytest.raises(LLMConfigurationError, match="shut down"):
         await acquisition

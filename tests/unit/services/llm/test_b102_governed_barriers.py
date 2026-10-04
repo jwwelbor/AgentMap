@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from agentmap import async_lifecycle
 from agentmap.exceptions import LLMConfigurationError
 from agentmap.services.llm_client_factory import LLMClientFactory
 
@@ -26,7 +27,17 @@ class AsyncResource:
 async def test_repeated_cancellation_cannot_hide_build_from_shutdown__b102(monkeypatch):
     factory = LLMClientFactory(Mock())
     allocated, release = Event(), Event()
+    first_seen, second_seen = Event(), Event()
     resource = AsyncResource()
+    real_count = async_lifecycle._cancellation_count
+
+    def observed_count(task):
+        count = real_count(task)
+        if count == 1:
+            first_seen.set()
+        elif count == 2:
+            second_seen.set()
+        return count
 
     def build(*args, owner, **kwargs):
         owner.create_async(lambda: resource)
@@ -35,13 +46,15 @@ async def test_repeated_cancellation_cannot_hide_build_from_shutdown__b102(monke
         return object()
 
     monkeypatch.setattr(factory, "_create_langchain_client", build)
+    monkeypatch.setattr(async_lifecycle, "_cancellation_count", observed_count)
     acquisition = asyncio.create_task(
         factory.get_or_create_governed_client("openai", config("m"))
     )
     assert await asyncio.to_thread(allocated.wait, 5)
     acquisition.cancel()
-    asyncio.get_running_loop().call_soon(acquisition.cancel)
-    await asyncio.sleep(0)
+    assert await asyncio.to_thread(first_seen.wait, 5)
+    acquisition.cancel()
+    assert await asyncio.to_thread(second_seen.wait, 5)
     shutdown = asyncio.create_task(factory.shutdown())
     release.set()
     with pytest.raises(asyncio.CancelledError):

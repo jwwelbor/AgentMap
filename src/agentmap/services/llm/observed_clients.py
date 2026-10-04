@@ -8,15 +8,12 @@ from typing import Any, Callable
 
 import httpx
 
+from agentmap.async_lifecycle import await_terminal_task, raise_cleanup_failures
 from agentmap.exceptions import LLMConfigurationError, LLMDependencyError
 from agentmap.services.llm.response_observer import (
     ObservedAsyncTransport,
     ObservedSyncTransport,
     ObservedTransport,
-)
-from agentmap.services.llm.terminal_task import (
-    await_terminal_task,
-    raise_cleanup_failures,
 )
 
 
@@ -76,6 +73,8 @@ class ObservedResources:
         for resource in sync:
             try:
                 resource.close()
+            except (asyncio.CancelledError, BaseExceptionGroup) as error:
+                failures.append(error)
             except Exception as error:
                 failures.append(error)
         for resource in async_:
