@@ -102,6 +102,64 @@ async def test_fallback_refusal_does_not_try_another_tier__b102():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("missing_bucket", ["input_tokens", "output_tokens"])
+async def test_partial_usage_keeps_spend_unknown_and_refuses_next_wire_call__b102(
+    missing_bucket,
+):
+    response = raw_response()
+    response.usage_metadata[missing_bucket] = None
+    client = Mock(ainvoke=AsyncMock(return_value=response))
+    svc = service_with_client(client)
+    ledger = Ledger()
+    await call(svc, ledger)
+    outcome = ledger.rows["1"]
+    assert getattr(outcome.usage, missing_bucket) is None
+    assert outcome.cost_usd is None
+    with pytest.raises(AccountingRefusal, match="unresolved charge"):
+        await call(svc, ledger)
+    assert client.ainvoke.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_fallback_dispatch_uses_its_complete_credential_identity__b102(reverse):
+    from agentmap.services.llm_client_factory import LLMClientFactory
+
+    keys = ["same-pre-first-account", "same-pre-other-account"]
+    if reverse:
+        keys.reverse()
+    clients = {
+        keys[0]: Mock(ainvoke=AsyncMock(return_value=raw_response("wrong"))),
+        keys[1]: Mock(ainvoke=AsyncMock(return_value=raw_response("right"))),
+        "primary-key": Mock(ainvoke=AsyncMock(return_value=raw_response("primary"))),
+    }
+    factory = LLMClientFactory(Mock())
+    factory._create_langchain_client = Mock(
+        side_effect=lambda provider, config, streaming, **kwargs: clients[
+            config["api_key"]
+        ]
+    )
+    fallback_config = {"api_key": keys[0], "model": "other-model"}
+    factory.get_or_create_client("anthropic", fallback_config, governed=True)
+    svc = fallback_service(clients["primary-key"])
+    svc._client_factory = factory
+    svc._provider_utils.get_provider_config = Mock(
+        side_effect=lambda provider: {
+            "api_key": keys[1] if provider == "anthropic" else "primary-key",
+            "model": "other-model" if provider == "anthropic" else "test-model",
+            "max_tokens": 23,
+        }
+    )
+    with patch(
+        "agentmap.services.llm_service.normalize_response_content",
+        side_effect=[RuntimeError("connection timeout"), ("right", "text")],
+    ):
+        assert (await call(svc, Ledger("1"))).text == "right"
+    assert clients[keys[0]].ainvoke.await_count == 0
+    assert clients[keys[1]].ainvoke.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_tool_bound_failure_keeps_fallback_suppressed__b102():
     client = Mock(ainvoke=AsyncMock(return_value=raw_response()))
     client.bind_tools.return_value = client

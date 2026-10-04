@@ -5,6 +5,7 @@ Handles the creation of provider-specific LangChain clients (OpenAI, Anthropic, 
 with proper dependency management and client caching.
 """
 
+from hashlib import sha256
 from typing import Any, Dict
 
 from agentmap.exceptions import LLMConfigurationError, LLMDependencyError
@@ -72,11 +73,11 @@ class LLMClientFactory:
         # Include streaming and governed policy in the cache key.
         max_tok = config.get("max_tokens")
         temperature = config.get("temperature", 0.7)
-        # ``api_key`` may be present-but-None (keys are often optionally loaded);
-        # ``or ""`` guards against ``None[:8]`` raising TypeError.
-        api_key_prefix = (config.get("api_key") or "")[:8]
+        # Complete-credential identity prevents cross-account client reuse.
+        # Keep the credential itself out of cache-key representations.
+        api_key_identity = sha256((config.get("api_key") or "").encode()).hexdigest()
         cache_key = (
-            f"{provider}_{config.get('model')}_{api_key_prefix}_"
+            f"{provider}_{config.get('model')}_{api_key_identity}_"
             f"{max_tok}_{temperature!r}_{streaming}"
             + ("_single_dispatch" if governed else "")
         )

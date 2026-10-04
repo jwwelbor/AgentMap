@@ -26,10 +26,12 @@ def qualify_observation(provider: str) -> None:
             )
 
 
-def observed_http_clients() -> tuple[httpx.Client, httpx.AsyncClient]:
+def observed_http_clients(
+    proxy: str | None = None,
+) -> tuple[httpx.Client, httpx.AsyncClient]:
     return (
-        httpx.Client(transport=ObservedTransport()),
-        httpx.AsyncClient(transport=ObservedTransport()),
+        httpx.Client(transport=ObservedTransport(proxy=proxy)),
+        httpx.AsyncClient(transport=ObservedTransport(proxy=proxy)),
     )
 
 
@@ -73,14 +75,18 @@ def observed_anthropic_client(kwargs: dict[str, Any]) -> Any:
         def _client(self) -> anthropic.Client:
             return anthropic.Client(
                 **self._client_params,
-                http_client=httpx.Client(transport=ObservedTransport()),
+                http_client=httpx.Client(
+                    transport=ObservedTransport(proxy=self.anthropic_proxy)
+                ),
             )
 
         @cached_property
         def _async_client(self) -> anthropic.AsyncClient:
             return anthropic.AsyncClient(
                 **self._client_params,
-                http_client=httpx.AsyncClient(transport=ObservedTransport()),
+                http_client=httpx.AsyncClient(
+                    transport=ObservedTransport(proxy=self.anthropic_proxy)
+                ),
             )
 
     return ObservedChatAnthropic(**kwargs)

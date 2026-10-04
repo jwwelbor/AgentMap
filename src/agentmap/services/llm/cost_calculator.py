@@ -94,8 +94,10 @@ class LLMCostCalculator:
         Returns ``None`` in every REQ-F-002 case: ``usage is None``, no
         catalog entry for the resolved pair, or any token bucket present in
         ``usage`` with a value greater than zero has no configured rate. A
-        bucket whose value is ``None`` or ``0`` contributes nothing and does
-        not require a configured rate.
+        Missing input/output tokens are unknown when their configured rate
+        can be charged. Cache buckets are optional and absent means no cache
+        usage, as in the existing two-bucket receipt contract. A zero bucket
+        contributes nothing and does not require a rate.
         """
         if usage is None:
             return None
@@ -110,6 +112,11 @@ class LLMCostCalculator:
             (usage.cache_creation_input_tokens, rates.cache_write_per_1m),
             (usage.cache_read_input_tokens, rates.cache_read_per_1m),
         )
+        if any(
+            tokens is None and rate not in (None, Decimal(0))
+            for tokens, rate in buckets[:2]
+        ):
+            return None
         if any(tokens and rate is None for tokens, rate in buckets):
             return None
 

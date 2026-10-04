@@ -33,6 +33,38 @@ def test_governed_retry_policy_has_its_own_cached_client__b102(
     assert factory.get_or_create_client(provider, config) is plain
 
 
+@pytest.mark.parametrize(
+    "provider,model",
+    [
+        ("openai", "gpt-4o-mini"),
+        ("anthropic", "claude-sonnet-4-5"),
+        ("google", "gemini-2.5-flash"),
+    ],
+)
+@pytest.mark.parametrize("governed", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_same_prefix_credentials_get_distinct_cached_clients__b102(
+    provider, model, governed, reverse
+):
+    factory = LLMClientFactory(Mock())
+    keys = ["same-pre-first-account", "same-pre-other-account"]
+    if reverse:
+        keys.reverse()
+    configs = [{"api_key": key, "model": model} for key in keys]
+    first, second = [
+        factory.get_or_create_client(provider, config, governed=governed)
+        for config in configs
+    ]
+    assert first is not second
+    assert (
+        factory.get_or_create_client(provider, configs[0], governed=governed) is first
+    )
+    assert (
+        factory.get_or_create_client(provider, configs[1], governed=governed) is second
+    )
+    assert all(key not in repr(tuple(factory._clients)) for key in keys)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "provider,model",

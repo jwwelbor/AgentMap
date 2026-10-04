@@ -186,12 +186,13 @@ async def test_late_thread_body_cannot_mutate_timed_out_attempt__b102():
         return raw_response()
 
     service = service_with_client(Mock(ainvoke=None, invoke=dispatch))
-    service._resilience_config["retry"]["attempt_timeout"] = 0.02
+    service._resilience_config["retry"]["attempt_timeout"] = 0.5
     ledger = Ledger()
     try:
+        task = asyncio.create_task(call(service, ledger))
+        assert await asyncio.to_thread(started.wait, 2)
         with pytest.raises(AccountingRefusal, match="unresolved charge"):
-            await call(service, ledger)
-        assert started.is_set()
+            await task
         original = ledger.rows["1"].response_evidence
         assert original.status == "unavailable"
         release.set()
@@ -258,8 +259,15 @@ async def test_plain_invocation_does_not_inherit_response_collector__b102(monkey
 
 
 @pytest.mark.asyncio
-async def test_partial_thread_read_is_sealed_at_timeout__b102():
-    release, ended = Event(), Event()
+async def test_partial_thread_read_is_sealed_at_timeout__b102(monkeypatch):
+    release, ended, prefix_observed = Event(), Event(), Event()
+    original_progress = ResponseCollector.progress
+
+    def record_progress(collector, chunk):
+        original_progress(collector, chunk)
+        prefix_observed.set()
+
+    monkeypatch.setattr(ResponseCollector, "progress", record_progress)
 
     class SlowStream(httpx.SyncByteStream):
         def __iter__(self):
@@ -273,11 +281,13 @@ async def test_partial_thread_read_is_sealed_at_timeout__b102():
         return raw_response()
 
     service = service_with_client(Mock(ainvoke=None, invoke=dispatch))
-    service._resilience_config["retry"]["attempt_timeout"] = 0.02
+    service._resilience_config["retry"]["attempt_timeout"] = 0.5
     ledger = Ledger()
     try:
+        task = asyncio.create_task(call(service, ledger))
+        assert await asyncio.to_thread(prefix_observed.wait, 2)
         with pytest.raises(AccountingRefusal):
-            await call(service, ledger)
+            await task
         evidence = ledger.rows["1"].response_evidence
         assert evidence.status == "partial"
         assert evidence.body == b"observed prefix"

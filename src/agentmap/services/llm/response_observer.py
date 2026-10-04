@@ -220,15 +220,17 @@ class ObservedTransport(httpx.BaseTransport, httpx.AsyncBaseTransport):
     explicit transport selects HTTPX over Google's alternate aiohttp backend.
     """
 
-    def __init__(self) -> None:
-        self._sync = httpx.HTTPTransport()
-        self._async = httpx.AsyncHTTPTransport()
+    def __init__(self, proxy: Optional[str] = None) -> None:
+        # HTTPX owns environment proxy and NO_PROXY routing on these clients.
+        # A bare HTTPTransport would silently bypass both.
+        self._sync = httpx.Client(proxy=proxy)
+        self._async = httpx.AsyncClient(proxy=proxy)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         collector = response_collector.get()
         if collector is not None and not collector.start_request():
             raise ResponseCaptureFailure()
-        response = self._sync.handle_request(request)
+        response = self._sync.send(request, stream=True)
         observe_response(response)
         return response
 
@@ -236,7 +238,7 @@ class ObservedTransport(httpx.BaseTransport, httpx.AsyncBaseTransport):
         collector = response_collector.get()
         if collector is not None and not collector.start_request():
             raise ResponseCaptureFailure()
-        response = await self._async.handle_async_request(request)
+        response = await self._async.send(request, stream=True)
         await observe_async_response(response)
         return response
 
