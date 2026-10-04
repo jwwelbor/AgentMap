@@ -143,10 +143,14 @@ async def invoke_governed_attempt(
         classification = (
             "timeout" if isinstance(error, LLMTimeoutError) else outcome.classification
         )
+        if collector.failed:
+            classification = "capture_error"
         outcome = replace(
             outcome,
             classification=classification,
-            error_type=type(error).__name__,
+            error_type=(
+                "ResponseCaptureFailure" if collector.failed else type(error).__name__
+            ),
             response_evidence=collector.seal(),
         )
         await finish_attempt(lifecycle, attempt_id, outcome)

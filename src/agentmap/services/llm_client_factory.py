@@ -9,11 +9,10 @@ from typing import Any, Dict
 
 from agentmap.exceptions import LLMConfigurationError, LLMDependencyError
 from agentmap.services.llm.observed_clients import (
+    governed_google_kwargs,
+    governed_openai_kwargs,
     observed_anthropic_client,
-    observed_http_clients,
-    qualify_observation,
 )
-from agentmap.services.llm.response_observer import ObservedTransport
 from agentmap.services.logging_service import LoggingService
 
 
@@ -212,9 +211,7 @@ class LLMClientFactory:
             "openai_api_key": api_key,
         }
         if governed:
-            kwargs["max_retries"] = 0
-            qualify_observation("openai")
-            kwargs["http_client"], kwargs["http_async_client"] = observed_http_clients()
+            kwargs.update(governed_openai_kwargs())
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         if streaming:
@@ -278,14 +275,11 @@ class LLMClientFactory:
             "temperature": temperature,
             "anthropic_api_key": api_key,
         }
-        if governed:
-            kwargs["max_retries"] = 0
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         if streaming:
             kwargs["stream_usage"] = True
         if governed:
-            qualify_observation("anthropic")
             return observed_anthropic_client(kwargs)
         return ChatAnthropic(**kwargs)
 
@@ -314,16 +308,6 @@ class LLMClientFactory:
         Returns:
             ChatGoogleGenerativeAI client instance
         """
-        if governed:
-            from importlib.metadata import version
-
-            # v4 uses google-genai HttpRetryOptions: max_retries is total
-            # attempts, while older wrappers use different retry machinery.
-            if version("langchain-google-genai").split(".")[0] != "4":
-                raise LLMDependencyError(
-                    "Governed Google single-dispatch calls require "
-                    "langchain-google-genai 4.x; qualify other implementations first"
-                )
         try:
             # Try langchain-google-genai first
             from langchain_google_genai import ChatGoogleGenerativeAI
@@ -350,9 +334,7 @@ class LLMClientFactory:
             "google_api_key": api_key,
         }
         if governed:
-            kwargs["max_retries"] = 1
-            qualify_observation("google")
-            kwargs["client_args"] = {"transport": ObservedTransport()}
+            kwargs.update(governed_google_kwargs())
         if max_tokens is not None:
             kwargs["max_output_tokens"] = max_tokens
         return ChatGoogleGenerativeAI(**kwargs)

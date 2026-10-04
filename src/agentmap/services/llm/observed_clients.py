@@ -33,9 +33,38 @@ def observed_http_clients() -> tuple[httpx.Client, httpx.AsyncClient]:
     )
 
 
+def governed_openai_kwargs() -> dict[str, Any]:
+    qualify_observation("openai")
+    sync_client, async_client = observed_http_clients()
+    return {
+        "max_retries": 0,
+        "http_client": sync_client,
+        "http_async_client": async_client,
+    }
+
+
+def governed_google_kwargs() -> dict[str, Any]:
+    from importlib.metadata import version as wrapper_version
+
+    # v4 uses google-genai HttpRetryOptions: max_retries counts total attempts.
+    if wrapper_version("langchain-google-genai").split(".")[0] != "4":
+        raise LLMDependencyError(
+            "Governed Google single-dispatch calls require "
+            "langchain-google-genai 4.x; qualify other implementations first"
+        )
+    qualify_observation("google")
+    return {
+        "max_retries": 1,
+        "client_args": {"transport": ObservedTransport(), "follow_redirects": False},
+    }
+
+
 def observed_anthropic_client(kwargs: dict[str, Any]) -> Any:
     import anthropic
     from langchain_anthropic import ChatAnthropic
+
+    qualify_observation("anthropic")
+    kwargs["max_retries"] = 0
 
     class ObservedChatAnthropic(ChatAnthropic):
         # The qualified wrapper offers no public SDK HTTP-client field. These

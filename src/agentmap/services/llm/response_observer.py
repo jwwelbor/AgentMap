@@ -21,10 +21,22 @@ class ResponseCollector:
     def __init__(self) -> None:
         self._lock = Lock()
         self._sealed = False
+        self._requests = 0
         self._responses = 0
         self.evidence = LLMResponseEvidence()
         self.failed = False
         self._partial = bytearray()
+
+    def start_request(self) -> bool:
+        """Reject a second wire request before any transport can send it."""
+        with self._lock:
+            if self._sealed:
+                return False
+            self._requests += 1
+            if self._requests > 1:
+                self.failed = True
+                return False
+            return True
 
     def start(self) -> bool:
         with self._lock:
@@ -41,6 +53,8 @@ class ResponseCollector:
             if not self._sealed:
                 self.evidence = evidence
                 self.failed = self.failed or failed
+                if evidence.status == "available":
+                    self._partial.clear()
 
     def seal(self) -> LLMResponseEvidence:
         with self._lock:
@@ -61,6 +75,10 @@ class ResponseCollector:
         with self._lock:
             if not self._sealed:
                 self._partial.extend(chunk)
+
+    def partial_body(self) -> bytes:
+        with self._lock:
+            return bytes(self._partial)
 
 
 response_collector: ContextVar[Optional[ResponseCollector]] = ContextVar(
@@ -97,14 +115,12 @@ class _SyncRead(httpx.SyncByteStream):
     def __init__(
         self,
         stream: httpx.SyncByteStream,
-        chunks: list[bytes],
         progress: Callable[[bytes], None],
     ) -> None:
-        self.stream, self.chunks, self.progress = stream, chunks, progress
+        self.stream, self.progress = stream, progress
 
     def __iter__(self) -> Iterator[bytes]:
         for chunk in self.stream:
-            self.chunks.append(chunk)
             self.progress(chunk)
             yield chunk
 
@@ -116,14 +132,12 @@ class _AsyncRead(httpx.AsyncByteStream):
     def __init__(
         self,
         stream: httpx.AsyncByteStream,
-        chunks: list[bytes],
         progress: Callable[[bytes], None],
     ) -> None:
-        self.stream, self.chunks, self.progress = stream, chunks, progress
+        self.stream, self.progress = stream, progress
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
         async for chunk in self.stream:
-            self.chunks.append(chunk)
             self.progress(chunk)
             yield chunk
 
@@ -131,12 +145,14 @@ class _AsyncRead(httpx.AsyncByteStream):
         await self.stream.aclose()
 
 
-def _interrupted(response: httpx.Response, chunks: list[bytes]) -> LLMResponseEvidence:
+def _interrupted(
+    response: httpx.Response, collector: ResponseCollector
+) -> LLMResponseEvidence:
     # Interrupted compressed transfer chunks are not decoded entity bytes.
     body = (
         None
         if response.headers.get("content-encoding", "identity") != "identity"
-        else b"".join(chunks)
+        else collector.partial_body()
     )
     return _evidence(response, body, interrupted=True)
 
@@ -161,19 +177,18 @@ def observe_response(response: httpx.Response) -> None:
     collector = response_collector.get()
     if collector is None or not collector.start():
         return
-    chunks: list[bytes] = []
     progress = (
         collector.progress
         if response.headers.get("content-encoding", "identity") == "identity"
         else lambda chunk: None
     )
     assert isinstance(response.stream, httpx.SyncByteStream)
-    response.stream = _SyncRead(response.stream, chunks, progress)
+    response.stream = _SyncRead(response.stream, progress)
     try:
         body = response.read()  # Public HTTPX read caches bytes for the SDK.
     except BaseException:
         # Diagnose interrupted reads (including cancellation), retain, propagate.
-        collector.record(_interrupted(response, chunks), failed=True)
+        collector.record(_interrupted(response, collector), failed=True)
         raise
     _record_complete(collector, response, body)
 
@@ -182,18 +197,17 @@ async def observe_async_response(response: httpx.Response) -> None:
     collector = response_collector.get()
     if collector is None or not collector.start():
         return
-    chunks: list[bytes] = []
     progress = (
         collector.progress
         if response.headers.get("content-encoding", "identity") == "identity"
         else lambda chunk: None
     )
     assert isinstance(response.stream, httpx.AsyncByteStream)
-    response.stream = _AsyncRead(response.stream, chunks, progress)
+    response.stream = _AsyncRead(response.stream, progress)
     try:
         body = await response.aread()
     except BaseException:
-        collector.record(_interrupted(response, chunks), failed=True)
+        collector.record(_interrupted(response, collector), failed=True)
         raise
     _record_complete(collector, response, body)
 
@@ -211,11 +225,17 @@ class ObservedTransport(httpx.BaseTransport, httpx.AsyncBaseTransport):
         self._async = httpx.AsyncHTTPTransport()
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
+        collector = response_collector.get()
+        if collector is not None and not collector.start_request():
+            raise ResponseCaptureFailure()
         response = self._sync.handle_request(request)
         observe_response(response)
         return response
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        collector = response_collector.get()
+        if collector is not None and not collector.start_request():
+            raise ResponseCaptureFailure()
         response = await self._async.handle_async_request(request)
         await observe_async_response(response)
         return response
