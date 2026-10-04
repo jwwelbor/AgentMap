@@ -1,0 +1,623 @@
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/handoff.md b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/handoff.md
+new file mode 100644
+index 0000000..32ee984
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/handoff.md
+@@ -0,0 +1,41 @@
++# B102 AgentMap dependency review follow-up 10 handoff
++
++## Snapshot and outcome
++
++- Pinned clean starting head: `8b12f714f041d6162dfb40eb1b8851291a5dfe26`
++- Test implementation commit: `529393acb6facf2482184ef4b22e22bbadd9f995`
++- Scope: one AgentMap B102 runtime test plus this evidence; production source is unchanged
++- Result: B102-R9-01 and B102-R9-02 are fixed locally without changing runtime behavior
++
++## Finding disposition
++
++| Finding | Disposition and proof |
++|---|---|
++| B102-R9-01 | Fixed now. A caller-task `ContextVar` sentinel is observed by exact identity during DI installation, the startup cache probe, and cache refresh on the lifecycle executor. Replacing `copy_context()` with a fresh context fails, and bypassing `context.run` fails; both RED transcripts are retained. |
++| B102-R9-02 | Fixed now. Default-executor workers notify an `asyncio.Event` with `loop.call_soon_threadsafe`; the test explicitly orders async transaction ownership, occupancy of every one/two-worker executor slot by each list/inspect/validate facade, lifecycle release, and lifecycle execution. Millisecond polling and the one-second starvation inference are gone. One ten-second outer guard exists only to recover and report the deliberately deadlocked counterfactual. |
++
++All six public-facade combinations remain parameterized: list, inspect, and validate with one and two shared-executor workers. No finding was deferred.
++
++## Verification
++
++| Check | Result | Evidence |
++|---|---|---|
++| Fresh-context mutation | Expected RED: direct ContextVar test failed | `verification/context-copy-counterfactual-red.log` |
++| Bypassed-`context.run` mutation | Expected RED: direct ContextVar test failed | `verification/context-run-counterfactual-red.log` |
++| B102-tagged modules plus runtime init/state tests | 325 passed; 0 skipped; 0 warnings | `verification/focused.log`, `verification/focused-collect.log` |
++| Black | 1 file unchanged | `verification/black.log` |
++| isort | PASS | `verification/isort.log` |
++| Repository lint | PASS | `verification/lint.log` |
++| `make test` at the test implementation commit | 5,720 passed; 49 skipped; 1 deselected; 5 warnings; 228 subtests passed | `verification/make-test.log` |
++| Production-source diff from pinned head | Empty; only the B102 test changed before this evidence commit | `verification/production-source-diff.log` |
++| `git diff --check` | PASS | `verification/git-diff-check.log` |
++
++The first focused command used Bash-only `mapfile` under zsh, so it expanded to a broader run. That run exited successfully but did not retain a final count and is not used as evidence. The zsh-safe exact inventory was rerun and is the 325-pass result above.
++
++The 49 full-suite skips and one benchmark deselection remain visible in the full log. The five inherited unawaited-`AsyncMock` warnings occurred in three `test_suspend_agent_messaging.py` cases, `test_init_command.py::test_init_copies_config_files`, and `test_api_minimal.py::test_execution_endpoint_basic`. The focused run has no skips or warnings. Mypy comparison was not run because production source did not change and tests are excluded by the repository's mypy configuration.
++
++## Remaining gates
++
++Run a fresh exact-pin dependency review on the evidence commit. Package release, TD-140, WWGM host integration, restart reconciliation, terminal/process-death acceptance, and product acceptance remain open. No release or host-readiness claim is made by this test-only repair.
++
++**RECOMMENDED OUTCOME: blocked pending fresh review/release/TD-140/host/product gates.**
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/black.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/black.log
+new file mode 100644
+index 0000000..4d0bcb0
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/black.log
+@@ -0,0 +1,3 @@
++command: uv run black --check tests/unit/runtime/test_b102_public_facade_starvation.py
++All done! ✨ 🍰 ✨
++1 file would be left unchanged.
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-copy-counterfactual-red.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-copy-counterfactual-red.log
+new file mode 100644
+index 0000000..19fc7c9
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-copy-counterfactual-red.log
+@@ -0,0 +1,92 @@
++F                                                                        [100%]
++=================================== FAILURES ===================================
++_________ test_lifecycle_executor_preserves_calling_task_context__b102 _________
++
++config_file = None
++
++    def initialize_di(config_file):
++>       observed["initialize"] = lifecycle_context.get()
++                                 ^^^^^^^^^^^^^^^^^^^^^^^
++E       LookupError: <ContextVar name='b102_lifecycle_context' at 0x7931aceb9080>
++
++tests/unit/runtime/test_b102_public_facade_starvation.py:117: LookupError
++
++The above exception was the direct cause of the following exception:
++
++monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7931da47b5d0>
++tmp_path = PosixPath('/tmp/pytest-of-jwwel/pytest-1021/test_lifecycle_executor_preser0')
++
++    @pytest.mark.asyncio
++    async def test_lifecycle_executor_preserves_calling_task_context__b102(
++        monkeypatch, tmp_path: Path
++    ):
++        """DI installation and cache startup see the calling task's exact context."""
++        lifecycle_context = ContextVar("b102_lifecycle_context")
++        sentinel = object()
++        observed = {}
++        installed = runtime_container(tmp_path)
++    
++        def initialize_di(config_file):
++            observed["initialize"] = lifecycle_context.get()
++            return installed
++    
++        def is_cache_initialized(value):
++            observed.setdefault("startup", lifecycle_context.get())
++            return value.ready
++    
++        def refresh_cache(value):
++            observed["cache"] = lifecycle_context.get()
++            value.ready = True
++    
++        monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", initialize_di)
++        monkeypatch.setattr(
++            "agentmap.runtime.init_ops._is_cache_initialized", is_cache_initialized
++        )
++        monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", refresh_cache)
++    
++        RuntimeManager.reset()
++        token = lifecycle_context.set(sentinel)
++        try:
++>           await ensure_initialized_async()
++
++tests/unit/runtime/test_b102_public_facade_starvation.py:137: 
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
++src/agentmap/runtime/init_ops.py:48: in ensure_initialized_async
++    await RuntimeManager.initialize_async(
++src/agentmap/runtime/runtime_manager.py:79: in initialize_async
++    await cls._run_initialization_transaction(
++src/agentmap/runtime/runtime_manager.py:106: in _run_initialization_transaction
++    cls._raise_initialization_outcome(outcome, cleanup)
++src/agentmap/runtime/runtime_manager.py:289: in _raise_initialization_outcome
++    raise original
++src/agentmap/async_lifecycle.py:50: in await_terminal_task
++    value = task.result()
++            ^^^^^^^^^^^^^
++src/agentmap/runtime/runtime_manager.py:119: in _run_install_and_startup
++    await loop.run_in_executor(
++/home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/concurrent/futures/thread.py:58: in run
++    result = self.fn(*self.args, **self.kwargs)
++             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++src/agentmap/runtime/runtime_manager.py:138: in _install_and_startup
++    cls._initialize_in_transaction(
++src/agentmap/runtime/runtime_manager.py:153: in _initialize_in_transaction
++    cls._install(config_file)
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
++
++cls = <class 'agentmap.runtime.runtime_manager.RuntimeManager'>
++config_file = None
++
++    @classmethod
++    def _install(cls, config_file: Optional[str]) -> None:
++        try:
++            container = initialize_di(config_file)
++        except Exception as error:
++            with cls._lock:
++                cls._is_initialized = False
++                cls._container = None
++>           raise AgentMapNotInitialized(f"Initialization failed: {error}") from error
++E           agentmap.exceptions.runtime_exceptions.AgentMapNotInitialized: Initialization failed: <ContextVar name='b102_lifecycle_context' at 0x7931aceb9080>
++
++src/agentmap/runtime/runtime_manager.py:163: AgentMapNotInitialized
++=========================== short test summary info ============================
++FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_lifecycle_executor_preserves_calling_task_context__b102
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-run-counterfactual-red.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-run-counterfactual-red.log
+new file mode 100644
+index 0000000..c74be1d
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-run-counterfactual-red.log
+@@ -0,0 +1,92 @@
++F                                                                        [100%]
++=================================== FAILURES ===================================
++_________ test_lifecycle_executor_preserves_calling_task_context__b102 _________
++
++config_file = None
++
++    def initialize_di(config_file):
++>       observed["initialize"] = lifecycle_context.get()
++                                 ^^^^^^^^^^^^^^^^^^^^^^^
++E       LookupError: <ContextVar name='b102_lifecycle_context' at 0x7734c5b45030>
++
++tests/unit/runtime/test_b102_public_facade_starvation.py:117: LookupError
++
++The above exception was the direct cause of the following exception:
++
++monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7734f3ab49d0>
++tmp_path = PosixPath('/tmp/pytest-of-jwwel/pytest-1022/test_lifecycle_executor_preser0')
++
++    @pytest.mark.asyncio
++    async def test_lifecycle_executor_preserves_calling_task_context__b102(
++        monkeypatch, tmp_path: Path
++    ):
++        """DI installation and cache startup see the calling task's exact context."""
++        lifecycle_context = ContextVar("b102_lifecycle_context")
++        sentinel = object()
++        observed = {}
++        installed = runtime_container(tmp_path)
++    
++        def initialize_di(config_file):
++            observed["initialize"] = lifecycle_context.get()
++            return installed
++    
++        def is_cache_initialized(value):
++            observed.setdefault("startup", lifecycle_context.get())
++            return value.ready
++    
++        def refresh_cache(value):
++            observed["cache"] = lifecycle_context.get()
++            value.ready = True
++    
++        monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", initialize_di)
++        monkeypatch.setattr(
++            "agentmap.runtime.init_ops._is_cache_initialized", is_cache_initialized
++        )
++        monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", refresh_cache)
++    
++        RuntimeManager.reset()
++        token = lifecycle_context.set(sentinel)
++        try:
++>           await ensure_initialized_async()
++
++tests/unit/runtime/test_b102_public_facade_starvation.py:137: 
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
++src/agentmap/runtime/init_ops.py:48: in ensure_initialized_async
++    await RuntimeManager.initialize_async(
++src/agentmap/runtime/runtime_manager.py:79: in initialize_async
++    await cls._run_initialization_transaction(
++src/agentmap/runtime/runtime_manager.py:106: in _run_initialization_transaction
++    cls._raise_initialization_outcome(outcome, cleanup)
++src/agentmap/runtime/runtime_manager.py:288: in _raise_initialization_outcome
++    raise original
++src/agentmap/async_lifecycle.py:50: in await_terminal_task
++    value = task.result()
++            ^^^^^^^^^^^^^
++src/agentmap/runtime/runtime_manager.py:119: in _run_install_and_startup
++    await loop.run_in_executor(
++/home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/concurrent/futures/thread.py:58: in run
++    result = self.fn(*self.args, **self.kwargs)
++             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++src/agentmap/runtime/runtime_manager.py:137: in _install_and_startup
++    cls._initialize_in_transaction(
++src/agentmap/runtime/runtime_manager.py:152: in _initialize_in_transaction
++    cls._install(config_file)
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
++
++cls = <class 'agentmap.runtime.runtime_manager.RuntimeManager'>
++config_file = None
++
++    @classmethod
++    def _install(cls, config_file: Optional[str]) -> None:
++        try:
++            container = initialize_di(config_file)
++        except Exception as error:
++            with cls._lock:
++                cls._is_initialized = False
++                cls._container = None
++>           raise AgentMapNotInitialized(f"Initialization failed: {error}") from error
++E           agentmap.exceptions.runtime_exceptions.AgentMapNotInitialized: Initialization failed: <ContextVar name='b102_lifecycle_context' at 0x7734c5b45030>
++
++src/agentmap/runtime/runtime_manager.py:162: AgentMapNotInitialized
++=========================== short test summary info ============================
++FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_lifecycle_executor_preserves_calling_task_context__b102
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused-collect.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused-collect.log
+new file mode 100644
+index 0000000..1d21f76
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused-collect.log
+@@ -0,0 +1,28 @@
++command: rg -l __b102 tests | sort
++tests/fresh_suite/unit/services/llm/test_attempt_lifecycle.py
++tests/fresh_suite/unit/services/llm/test_attempt_lifecycle_boundaries.py
++tests/fresh_suite/unit/services/llm/test_b102_cleanup_lifecycle.py
++tests/fresh_suite/unit/services/llm/test_b102_client_ownership.py
++tests/fresh_suite/unit/services/llm/test_b102_cost_trust.py
++tests/fresh_suite/unit/services/llm/test_b102_credential_wire.py
++tests/fresh_suite/unit/services/llm/test_b102_response_cleanup.py
++tests/fresh_suite/unit/services/llm/test_governed_clients.py
++tests/fresh_suite/unit/services/llm/test_response_evidence.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_controls.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_proxy.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_routing.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_security.py
++tests/fresh_suite/unit/services/llm/test_response_review_rework.py
++tests/unit/deployment/http/api/test_b102_admin_async_initialization.py
++tests/unit/deployment/http/api/test_b102_lifespan_shutdown.py
++tests/unit/runtime/test_b102_async_lifecycle.py
++tests/unit/runtime/test_b102_public_facade_starvation.py
++tests/unit/runtime/test_b102_runtime_coordination.py
++tests/unit/runtime/test_b102_runtime_shutdown.py
++tests/unit/services/llm/test_b102_credential_cache_identity.py
++tests/unit/services/llm/test_b102_factory_lifecycle_boundaries.py
++tests/unit/services/llm/test_b102_governed_barriers.py
++tests/unit/services/llm/test_b102_review_size.py
++tests/unit/services/llm/test_b102_terminal_outcomes.py
++additional: tests/unit/runtime/test_init_ops.py
++additional: tests/unit/runtime/test_runtime_state.py
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused.log
+new file mode 100644
+index 0000000..f28d62a
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused.log
+@@ -0,0 +1,6 @@
++........................................................................ [ 22%]
++........................................................................ [ 44%]
++........................................................................ [ 66%]
++........................................................................ [ 88%]
++.....................................                                    [100%]
++325 passed in 4.06s
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/git-diff-check.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/git-diff-check.log
+new file mode 100644
+index 0000000..a6501b7
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/git-diff-check.log
+@@ -0,0 +1,2 @@
++command: git diff --check 8b12f714f041d6162dfb40eb1b8851291a5dfe26..529393acb6facf2482184ef4b22e22bbadd9f995
++PASS
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/isort.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/isort.log
+new file mode 100644
+index 0000000..9eee8f6
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/isort.log
+@@ -0,0 +1,2 @@
++command: uv run isort --check-only --sp pyproject.toml tests/unit/runtime/test_b102_public_facade_starvation.py
++PASS
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/lint.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/lint.log
+new file mode 100644
+index 0000000..c572b1a
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/lint.log
+@@ -0,0 +1,4 @@
++command: make lint
++Running flake8 linter...
++uv run flake8 src/ tests/
++✓ Linting complete
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/make-test.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/make-test.log
+new file mode 100644
+index 0000000..c3fad2f
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/make-test.log
+@@ -0,0 +1,116 @@
++Running pytest...
++uv run pytest tests/
++.............................s.......................................... [  1%]
++........................................................................ [  2%]
++............................................s...s.........s.s..ssssssss. [  3%]
++........................................................................................... [  5%]
++................................................................ [  6%]
++........................................................................ [  7%]
++........................................................................ [  8%]
++........................................................................ [ 10%]
++........................................................................ [ 11%]
++................................................................................................................................. [ 13%]
++............................................................................................................. [ 15%]
++....................................................... [ 16%]
++............................................................. [ 17%]
++.................................................................... [ 18%]
++........................................................................ [ 19%]
++........................................................................ [ 21%]
++........................................................................ [ 22%]
++........................................................................ [ 23%]
++..........................................................s............. [ 24%]
++.........s.............................................................. [ 26%]
++........................................................................ [ 27%]
++........................................................................ [ 28%]
++........................................................................ [ 29%]
++........................................................................ [ 31%]
++........................................................................ [ 32%]
++................................................................ [ 33%]
++........................................................................ [ 34%]
++........................................................................ [ 36%]
++............................s....s.....................s................ [ 37%]
++s....................................................................... [ 38%]
++........................................................................ [ 39%]
++....................s......s.....s..........s........................... [ 41%]
++..................................................................... [ 42%]
++........................................................................ [ 43%]
++........................................................................ [ 44%]
++........................................................................ [ 46%]
++........................................................................ [ 47%]
++............................................................... [ 48%]
++........................................................................ [ 49%]
++.......................................s.........ss......................................................................... [ 51%]
++.........................................................s.............. [ 52%]
++........................................................................ [ 54%]
++.........ss.....s.s........s............................................ [ 55%]
++.................................................ssss..sss........ [ 56%]
++........................................................................ [ 57%]
++........................................................................ [ 59%]
++........................................................................ [ 60%]
++........................................................................ [ 61%]
++....................................s....s.............................. [ 62%]
++........................................................................ [ 64%]
++........................................................................ [ 65%]
++........................................................................ [ 66%]
++.......................................................... [ 67%]
++........................................................................ [ 68%]
++........................................................................ [ 70%]
++........................................................................ [ 71%]
++...s....................................s............................... [ 72%]
++........................................................................ [ 73%]
++........................................................................ [ 75%]
++........................................................................ [ 76%]
++........................................................................ [ 77%]
++........................................................................ [ 78%]
++.................................................................... [ 80%]
++........................................................................ [ 81%]
++................................................... [ 82%]
++........................................................ss.............. [ 83%]
++........................................................................ [ 84%]
++........................................s............................... [ 85%]
++........................................................................ [ 87%]
++........................................................................ [ 88%]
++........................................................................ [ 89%]
++........................................................................ [ 90%]
++........................................................................ [ 92%]
++........................................................................ [ 93%]
++........................................................................ [ 94%]
++.........................ss............................................. [ 95%]
++........................................................................ [ 97%]
++........................................................................ [ 98%]
++................s....................................................... [ 99%]
++.....................                                                    [100%]
++=============================== warnings summary ===============================
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_graph_message_raises_when_service_not_configured
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/inspect.py:3157: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    arg_val = kwargs.pop(param_name)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_resume_message_includes_duration
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/src/agentmap/agents/builtins/suspend_agent.py:300: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    self.log_error(f"Failed to publish resume message: {e}")
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_returns_none_when_resume_value_is_none
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:2133: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    setattr(_type, entry, MagicProxy(entry, self))
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/cli/test_init_command.py::TestInitCommand::test_init_copies_config_files
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/click/core.py:2899: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    for decl in decls:
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/integration/api/test_api_minimal.py::TestAPIBasics::test_execution_endpoint_basic
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:892: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    get_schema = getattr(obj, '__get_pydantic_core_schema__', None)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++5720 passed, 49 skipped, 1 deselected, 5 warnings, 228 subtests passed in 61.59s (0:01:01)
++✓ Tests complete
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/production-source-diff.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/production-source-diff.log
+new file mode 100644
+index 0000000..fefbca7
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/production-source-diff.log
+@@ -0,0 +1,2 @@
++command: git diff -- src/agentmap 8b12f714f041d6162dfb40eb1b8851291a5dfe26..529393acb6facf2482184ef4b22e22bbadd9f995
++PASS: empty production-source diff
+diff --git a/tests/unit/runtime/test_b102_public_facade_starvation.py b/tests/unit/runtime/test_b102_public_facade_starvation.py
+index 9a6c3b6..27750c1 100644
+--- a/tests/unit/runtime/test_b102_public_facade_starvation.py
++++ b/tests/unit/runtime/test_b102_public_facade_starvation.py
+@@ -2,8 +2,9 @@
+ 
+ import asyncio
+ from concurrent.futures import ThreadPoolExecutor
++from contextvars import ContextVar
+ from pathlib import Path
+-from threading import Event, Lock
++from threading import Lock
+ from types import SimpleNamespace
+ from unittest.mock import AsyncMock, Mock
+ 
+@@ -21,19 +22,20 @@ from agentmap.runtime.workflow_ops import (
+ class ActiveExecutor(ThreadPoolExecutor):
+     """Expose when every bounded worker has entered a submitted facade."""
+ 
+-    def __init__(self, max_workers):
++    def __init__(self, loop, max_workers):
+         super().__init__(max_workers=max_workers)
++        self._loop = loop
+         self._max_workers_for_test = max_workers
+         self._active = 0
+         self._active_lock = Lock()
+-        self.all_workers_active = Event()
++        self.all_workers_active = asyncio.Event()
+ 
+     def submit(self, fn, /, *args, **kwargs):
+         def tracked():
+             with self._active_lock:
+                 self._active += 1
+                 if self._active == self._max_workers_for_test:
+-                    self.all_workers_active.set()
++                    self._loop.call_soon_threadsafe(self.all_workers_active.set)
+             try:
+                 return fn(*args, **kwargs)
+             finally:
+@@ -101,6 +103,49 @@ def configure_runtime(monkeypatch, installed) -> None:
+     )
+ 
+ 
++@pytest.mark.asyncio
++async def test_lifecycle_executor_preserves_calling_task_context__b102(
++    monkeypatch, tmp_path: Path
++):
++    """DI installation and cache startup see the calling task's exact context."""
++    lifecycle_context = ContextVar("b102_lifecycle_context")
++    sentinel = object()
++    observed = {}
++    installed = runtime_container(tmp_path)
++
++    def initialize_di(config_file):
++        observed["initialize"] = lifecycle_context.get()
++        return installed
++
++    def is_cache_initialized(value):
++        observed.setdefault("startup", lifecycle_context.get())
++        return value.ready
++
++    def refresh_cache(value):
++        observed["cache"] = lifecycle_context.get()
++        value.ready = True
++
++    monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", initialize_di)
++    monkeypatch.setattr(
++        "agentmap.runtime.init_ops._is_cache_initialized", is_cache_initialized
++    )
++    monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", refresh_cache)
++
++    RuntimeManager.reset()
++    token = lifecycle_context.set(sentinel)
++    try:
++        await ensure_initialized_async()
++        assert observed == {
++            "initialize": sentinel,
++            "startup": sentinel,
++            "cache": sentinel,
++        }
++    finally:
++        lifecycle_context.reset(token)
++        if RuntimeManager.is_initialized():
++            await RuntimeManager.shutdown()
++
++
+ def facade_call(name: str, graph_file: Path):
+     if name == "list":
+         return list_graphs_async()
+@@ -109,26 +154,17 @@ def facade_call(name: str, graph_file: Path):
+     return validate_workflow_async("workflow::graph")
+ 
+ 
+-async def wait_for_thread_event(event: Event) -> None:
+-    """Wait without consuming the bounded executor under test."""
+-    for _ in range(1000):
+-        if event.is_set():
+-            return
+-        await asyncio.sleep(0.001)
+-    raise AssertionError("bounded executor workers did not enter facade calls")
+-
+-
+-async def complete_tasks_or_break_counterfactual(tasks) -> bool:
+-    """Return starvation state after safely releasing a pre-fix deadlock."""
+-    _, pending = await asyncio.wait(tasks, timeout=1)
+-    starved = bool(pending)
+-    if starved:
++async def complete_before_deadlock_guard(completion, tasks) -> None:
++    """Use one generous outer timeout and unblock the pre-fix counterfactual."""
++    try:
++        await asyncio.wait_for(asyncio.shield(completion), timeout=10)
++    except TimeoutError:
+         with RuntimeManager._transaction_condition:
+             token = RuntimeManager._transaction_owner
+         if token is not None:
+             RuntimeManager._release_transaction(token)
+         await asyncio.gather(*tasks, return_exceptions=True)
+-    return starved
++        raise AssertionError("public facades starved the runtime lifecycle") from None
+ 
+ 
+ @pytest.mark.parametrize("workers", [1, 2])
+@@ -138,11 +174,21 @@ async def test_public_sync_facades_cannot_starve_async_transaction_owner__b102(
+     monkeypatch, tmp_path: Path, workers: int, facade_name: str
+ ):
+     """Every to_thread facade terminates while an async transaction owns startup."""
+-    executor = ActiveExecutor(max_workers=workers)
+-    asyncio.get_running_loop().set_default_executor(executor)
++    loop = asyncio.get_running_loop()
++    executor = ActiveExecutor(loop, max_workers=workers)
++    loop.set_default_executor(executor)
+     acquired, release = install_owner_gate(monkeypatch)
+     installed = runtime_container(tmp_path)
++    lifecycle_started = asyncio.Event()
+     configure_runtime(monkeypatch, installed)
++
++    def observed_initialize_di(config_file):
++        loop.call_soon_threadsafe(lifecycle_started.set)
++        return installed
++
++    monkeypatch.setattr(
++        "agentmap.runtime.runtime_manager.initialize_di", observed_initialize_di
++    )
+     graph_file = tmp_path / "workflow.csv"
+     graph_file.write_text("GraphName,Agent\ngraph,offline\n")
+ 
+@@ -153,12 +199,18 @@ async def test_public_sync_facades_cannot_starve_async_transaction_owner__b102(
+         asyncio.create_task(facade_call(facade_name, graph_file))
+         for _ in range(workers)
+     ]
+-    await wait_for_thread_event(executor.all_workers_active)
+-    release.set()
+-    starved = await complete_tasks_or_break_counterfactual([owner, *calls])
+ 
++    async def exercise_ordered_startup():
++        await executor.all_workers_active.wait()
++        assert acquired.is_set()
++        assert not lifecycle_started.is_set()
++        release.set()
++        await lifecycle_started.wait()
++        await asyncio.gather(owner, *calls)
++
++    completion = asyncio.create_task(exercise_ordered_startup())
+     try:
+-        assert not starved, f"{facade_name} starved owner with {workers} workers"
++        await complete_before_deadlock_guard(completion, [owner, *calls])
+         assert owner.result() is None
+         assert all(call.result()["success"] for call in calls)
+         assert RuntimeManager.is_initialized()

@@ -1,0 +1,28 @@
+{
+  "reviewed_files": [
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/handoff.md",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/black.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-copy-counterfactual-red.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-run-counterfactual-red.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused-collect.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/git-diff-check.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/isort.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/lint.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/make-test.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/production-source-diff.log",
+    "tests/unit/runtime/test_b102_public_facade_starvation.py"
+  ],
+  "findings": [
+    {
+      "file": "tests/unit/runtime/test_b102_public_facade_starvation.py",
+      "line": 203,
+      "severity": "blocker",
+      "rule": "IDIOM",
+      "summary": "The ordered-startup counterfactual can leak its gated owner and worker tasks when an assertion fails before release.",
+      "diagnosis": "exercise_ordered_startup performs the lifecycle_started ordering assertion before release.set(), while complete_before_deadlock_guard recovers blocked tasks only for TimeoutError. If the behavior under test regresses by starting the lifecycle early, line 206 raises immediately, wait_for propagates that AssertionError instead of entering the timeout recovery, and the owner remains blocked on the release event with the facade workers still occupied.",
+      "evidence": "tests/unit/runtime/test_b102_public_facade_starvation.py:203-209 places both assertions before release.set(); lines 157-167 catch only TimeoutError. The existing failure path in tests/unit/runtime/test_b102_runtime_coordination.py:175-182 explicitly releases the gate and gathers all tasks before reraising an assertion.",
+      "correction": "Make task cleanup unconditional for every exceptional exit: release the gate and gather or cancel owner/call tasks in a finally/BaseException path, while preserving the special timeout assertion message. Otherwise the exact ordering regression this test is meant to expose can hang executor or event-loop teardown instead of producing a bounded deterministic failure."
+    }
+  ]
+}

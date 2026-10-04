@@ -1,0 +1,28 @@
+{
+  "reviewed_files": [
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/handoff.md",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/black.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-copy-counterfactual-red.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-run-counterfactual-red.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused-collect.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/git-diff-check.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/isort.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/lint.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/make-test.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/production-source-diff.log",
+    "tests/unit/runtime/test_b102_public_facade_starvation.py"
+  ],
+  "findings": [
+    {
+      "file": "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/production-source-diff.log",
+      "line": 1,
+      "severity": "non-blocker",
+      "rule": "CORRECTNESS",
+      "summary": "The retained production-source proof does not compare the pinned commits because both revisions appear after `--`.",
+      "diagnosis": "Git treats every argument after `--` as a pathspec, so `git diff -- src/agentmap 8b12f714...529393ac` compares the worktree/index for three path names instead of comparing the base and implementation revisions. Its empty output therefore cannot support the recorded production-source-diff claim, even though an independent correctly ordered comparison confirms the claim is true for this candidate.",
+      "evidence": "Line 1 records `git diff -- src/agentmap 8b12f714f041d6162dfb40eb1b8851291a5dfe26..529393acb6facf2482184ef4b22e22bbadd9f995`; the revisions are positioned after the pathspec separator. Running `git diff 8b12f714f041d6162dfb40eb1b8851291a5dfe26..529393acb6facf2482184ef4b22e22bbadd9f995 -- src/agentmap` is the comparison that establishes the intended result.",
+      "correction": "Regenerate the retained log with `git diff 8b12f714f041d6162dfb40eb1b8851291a5dfe26..529393acb6facf2482184ef4b22e22bbadd9f995 -- src/agentmap` and retain its empty output with the corrected command line."
+    }
+  ]
+}
