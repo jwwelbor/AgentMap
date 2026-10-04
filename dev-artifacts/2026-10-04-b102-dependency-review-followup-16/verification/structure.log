@@ -1,0 +1,2 @@
+tests/unit/runtime/test_b102_public_facade_starvation.py: 350 lines; 11 top-level functions; maximum function span 48 lines
+PASS: file <= 350 lines and every top-level function <= 50 lines
