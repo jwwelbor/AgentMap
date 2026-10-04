@@ -1,0 +1,28 @@
+command: rg -l __b102 tests | sort
+tests/fresh_suite/unit/services/llm/test_attempt_lifecycle.py
+tests/fresh_suite/unit/services/llm/test_attempt_lifecycle_boundaries.py
+tests/fresh_suite/unit/services/llm/test_b102_cleanup_lifecycle.py
+tests/fresh_suite/unit/services/llm/test_b102_client_ownership.py
+tests/fresh_suite/unit/services/llm/test_b102_cost_trust.py
+tests/fresh_suite/unit/services/llm/test_b102_credential_wire.py
+tests/fresh_suite/unit/services/llm/test_b102_response_cleanup.py
+tests/fresh_suite/unit/services/llm/test_governed_clients.py
+tests/fresh_suite/unit/services/llm/test_response_evidence.py
+tests/fresh_suite/unit/services/llm/test_response_evidence_controls.py
+tests/fresh_suite/unit/services/llm/test_response_evidence_proxy.py
+tests/fresh_suite/unit/services/llm/test_response_evidence_routing.py
+tests/fresh_suite/unit/services/llm/test_response_evidence_security.py
+tests/fresh_suite/unit/services/llm/test_response_review_rework.py
+tests/unit/deployment/http/api/test_b102_admin_async_initialization.py
+tests/unit/deployment/http/api/test_b102_lifespan_shutdown.py
+tests/unit/runtime/test_b102_async_lifecycle.py
+tests/unit/runtime/test_b102_runtime_coordination.py
+tests/unit/runtime/test_b102_runtime_shutdown.py
+tests/unit/services/llm/test_b102_credential_cache_identity.py
+tests/unit/services/llm/test_b102_factory_lifecycle_boundaries.py
+tests/unit/services/llm/test_b102_governed_barriers.py
+tests/unit/services/llm/test_b102_review_size.py
+tests/unit/services/llm/test_b102_terminal_outcomes.py
+additional: tests/unit/runtime/test_init_ops.py
+additional: tests/unit/runtime/test_runtime_state.py
+collected result: 316 passed

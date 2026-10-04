@@ -1,0 +1,17 @@
+command: .venv/bin/mypy --cache-dir <isolated-cache> src/
+pinned baseline: f8a37400a2a56b51a305dad78e7a491027f1a5f5
+candidate source: 4a14ade4a80142f07dbc779919871e36359f6974
+baseline result: 1638 errors in 248 files; diagnostics: 1779
+candidate result: 1638 errors in 248 files; diagnostics: 1779
+normalized added: 0
+normalized removed: 0
+baseline clean-run sha256: 3c9e27cc499461d7460bbafbe4c34e02c1db850211ed2aaeb3b1f7288902c86e
+candidate clean-run sha256: 318e2f81822b0cf4a0e48ae17ab800cf33a2d35a0021d97a4061fc4f1d68573b
+baseline normalized sha256: 5a36d6a728c4f555e3125523139cd211b9c2d2960eed64a2cbeed25f9877b55f
+candidate normalized sha256: 5a36d6a728c4f555e3125523139cd211b9c2d2960eed64a2cbeed25f9877b55f
+make type-check result: non-green TD-052 state; exit 2; 1623 errors in 248 files
+make type-check ephemeral raw sha256: 4b8d27e9d2e83381c9d415c0396ea06b3d71758ff174d5b373354f2d07d1fca2
+canonical retained prior raw log: dev-artifacts/2026-10-04-b102-dependency-review-rework-6/verification/mypy.log
+canonical prior raw sha256: ceaf54afb4c67c3358e4508d412852eddeba776608b7ed7ef74f2047bce52f63
+note: later amendments changed tests only; the mypy input tree under src is the recorded candidate source.
+note: no new raw mypy transcript is committed.
