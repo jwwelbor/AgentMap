@@ -7,6 +7,10 @@ from typing import TYPE_CHECKING, Any, Dict
 
 from agentmap.exceptions import LLMConfigurationError
 from agentmap.services.llm.observed_clients import ObservedResources
+from agentmap.services.llm.terminal_task import (
+    await_terminal_task,
+    raise_cleanup_failures,
+)
 
 
 class GovernedClientLifecycleMixin:
@@ -40,28 +44,30 @@ class GovernedClientLifecycleMixin:
     ) -> Any:
         """Construct one governed owner per key with awaited rollback."""
         cache_key = self._cache_key(provider, config, False, True)
-        current = asyncio.current_task()
-        assert current is not None
         with self._cache_lock:
             self._ensure_open()
             key_lock = self._key_locks.setdefault(cache_key, Lock())
-            self._active_governed.add(current)
-        build = asyncio.create_task(
-            asyncio.to_thread(
+            lifecycle = asyncio.create_task(
+                self._run_governed_construction(key_lock, cache_key, provider, config)
+            )
+            self._active_governed.add(lifecycle)
+        outcome = await await_terminal_task(lifecycle)
+        return outcome.result()
+
+    async def _run_governed_construction(
+        self,
+        key_lock: Lock,
+        cache_key: str,
+        provider: str,
+        config: Dict[str, Any],
+    ) -> Any:
+        current = asyncio.current_task()
+        assert current is not None
+        try:
+            result = await asyncio.to_thread(
                 self._construct_governed, key_lock, cache_key, provider, config
             )
-        )
-        cancellation = None
-        try:
-            try:
-                result = await asyncio.shield(build)
-            except asyncio.CancelledError as error:
-                cancellation = error
-                result = await asyncio.shield(build)
-            client = await self._finish_governed_construction(result)
-            if cancellation is not None:
-                raise cancellation
-            return client
+            return await self._finish_governed_construction(result)
         finally:
             with self._cache_lock:
                 self._active_governed.discard(current)
@@ -103,9 +109,13 @@ class GovernedClientLifecycleMixin:
         if owner is not None:
             try:
                 await owner.aclose()
-            except Exception as cleanup_error:
+            except (
+                asyncio.CancelledError,
+                BaseExceptionGroup,
+                Exception,
+            ) as cleanup_error:
                 assert error is not None
-                raise ExceptionGroup(
+                raise BaseExceptionGroup(
                     "governed client construction and rollback failed",
                     [error, cleanup_error],
                 )
@@ -137,14 +147,8 @@ class GovernedClientLifecycleMixin:
             if self._shutdown_task is None:
                 self._shutdown_task = asyncio.create_task(self._finish_shutdown())
             task = self._shutdown_task
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            try:
-                await asyncio.shield(task)
-            except asyncio.CancelledError:
-                pass
-            raise
+        outcome = await await_terminal_task(task)
+        outcome.result()
 
     async def _finish_shutdown(self) -> None:
         with self._cache_lock:
@@ -154,18 +158,14 @@ class GovernedClientLifecycleMixin:
         with self._cache_lock:
             owners, self._owners = self._owners, []
             self._clients.clear()
-        failures = []
-        cancellation = None
+        failures: list[BaseException] = []
         for owner in owners:
             try:
                 await owner.aclose()
-            except asyncio.CancelledError as error:
-                cancellation = cancellation or error
+            except (asyncio.CancelledError, BaseExceptionGroup) as error:
+                failures.append(error)
             except Exception as error:
                 failures.append(error)
         with self._cache_lock:
             self._closed = True
-        if failures:
-            raise ExceptionGroup("governed client shutdown failed", failures)
-        if cancellation is not None:
-            raise cancellation
+        raise_cleanup_failures("governed client shutdown failed", failures)

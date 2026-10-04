@@ -6,10 +6,14 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[5]
-TEST_DIR = ROOT / "tests/fresh_suite/unit/services/llm"
+TEST_DIRS = (
+    ROOT / "tests/fresh_suite/unit/services/llm",
+    ROOT / "tests/unit/services/llm",
+)
 B102_TEST_MODULES = sorted(
     path.relative_to(ROOT)
-    for path in TEST_DIR.glob("test_*.py")
+    for test_dir in TEST_DIRS
+    for path in test_dir.glob("test_*.py")
     if "__b102" in path.read_text() or path.name == "test_cost_calculator.py"
 )
 
@@ -22,6 +26,7 @@ B102_TEST_MODULES = sorted(
         ("src/agentmap/services/llm/attempt_lifecycle.py", "settle_failed_attempt"),
         ("src/agentmap/services/llm/attempt_lifecycle.py", "settle_successful_attempt"),
         ("src/agentmap/services/llm_client_factory.py", "get_or_create_client"),
+        ("src/agentmap/services/llm_client_factory.py", "_create_langchain_client"),
         ("src/agentmap/services/llm_client_factory.py", "_create_openai_client"),
         ("src/agentmap/services/llm_client_factory.py", "_create_anthropic_client"),
         ("src/agentmap/services/llm_client_factory.py", "_create_google_client"),

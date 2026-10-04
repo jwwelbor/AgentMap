@@ -14,6 +14,10 @@ from agentmap.services.llm.response_observer import (
     ObservedSyncTransport,
     ObservedTransport,
 )
+from agentmap.services.llm.terminal_task import (
+    await_terminal_task,
+    raise_cleanup_failures,
+)
 
 
 class ObservedResources:
@@ -62,20 +66,13 @@ class ObservedResources:
                 self._closed = True
                 task = asyncio.create_task(self._close_all())
                 self._close_task = task
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            try:
-                await asyncio.shield(task)
-            except asyncio.CancelledError:
-                pass
-            raise
+        outcome = await await_terminal_task(task)
+        outcome.result()
 
     async def _close_all(self) -> None:
         with self._lock:
             sync, async_ = list(self.sync), list(self.async_)
-        failures = []
-        cancellation = None
+        failures: list[BaseException] = []
         for resource in sync:
             try:
                 resource.close()
@@ -84,17 +81,14 @@ class ObservedResources:
         for resource in async_:
             try:
                 await resource.aclose()
-            except asyncio.CancelledError as error:
-                cancellation = cancellation or error
+            except (asyncio.CancelledError, BaseExceptionGroup) as error:
+                failures.append(error)
             except Exception as error:
                 failures.append(error)
         with self._lock:
             self.sync.clear()
             self.async_.clear()
-        if cancellation is not None:
-            raise cancellation
-        if failures:
-            raise ExceptionGroup("governed HTTP resource shutdown failed", failures)
+        raise_cleanup_failures("governed HTTP resource shutdown failed", failures)
 
 
 # These exact generations were inspected and exercised with real wrappers.

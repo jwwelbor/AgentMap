@@ -1,7 +1,7 @@
 """B102 production HTTP lifespan owns the awaited LLM shutdown boundary."""
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import FastAPI
@@ -34,8 +34,9 @@ async def test_lifespan_awaits_llm_shutdown_once__b102(monkeypatch):
         auth_service=Mock(),
         llm_service=Mock(return_value=service),
     )
+    initialized = AsyncMock()
     monkeypatch.setattr(
-        "agentmap.deployment.http.api.server.ensure_initialized", Mock()
+        "agentmap.deployment.http.api.server.ensure_initialized_async", initialized
     )
     monkeypatch.setattr(
         "agentmap.deployment.http.api.server.get_container",
@@ -47,7 +48,29 @@ async def test_lifespan_awaits_llm_shutdown_once__b102(monkeypatch):
     try:
         async with create_lifespan()(app):
             assert app.state.container is container
+        initialized.assert_awaited_once_with(config_file=None)
         assert closed == ["closed"]
         assert not RuntimeManager.is_initialized()
     finally:
         RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_uses_transactional_async_startup__b102(monkeypatch):
+    failure = RuntimeError("startup transaction failed")
+    initialize = AsyncMock(side_effect=failure)
+    shutdown = AsyncMock()
+    monkeypatch.setattr(
+        "agentmap.deployment.http.api.server.ensure_initialized_async", initialize
+    )
+    monkeypatch.setattr(
+        "agentmap.deployment.http.api.server.shutdown_runtime", shutdown
+    )
+
+    with pytest.raises(RuntimeError) as caught:
+        async with create_lifespan()(FastAPI()):
+            pytest.fail("failed startup must not enter the application lifespan")
+
+    assert caught.value is failure
+    initialize.assert_awaited_once_with(config_file=None)
+    shutdown.assert_not_awaited()

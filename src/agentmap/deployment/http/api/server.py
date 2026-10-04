@@ -23,7 +23,11 @@ from agentmap.exceptions.runtime_exceptions import (
 )
 
 # ✅ FACADE PATTERN: Only import from runtime facade
-from agentmap.runtime_api import ensure_initialized, get_container, shutdown_runtime
+from agentmap.runtime_api import (
+    ensure_initialized_async,
+    get_container,
+    shutdown_runtime,
+)
 
 
 # Legacy Response Models (for backward compatibility)
@@ -44,14 +48,14 @@ def create_lifespan(config_file: Optional[str] = None):
         """
         FastAPI lifespan hook following SPEC-RUN-002.
 
-        Calls ensure_initialized() once at startup and stores the container
+        Awaits runtime initialization once at startup and stores the container
         in app.state for use by dependencies.
         """
         runtime_started = False
         try:
             # ✅ FACADE PATTERN: Use only runtime facade for initialization
-            # ✅ FIX: Pass config_file to ensure_initialized
-            ensure_initialized(config_file=config_file)
+            # ✅ FIX: Pass config_file to the async initialization transaction
+            await ensure_initialized_async(config_file=config_file)
             runtime_started = True
 
             # ✅ CRITICAL FIX: Store container in app.state for dependencies.py

@@ -6,7 +6,7 @@ with proper dependency management and client caching.
 """
 
 from threading import RLock
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 from agentmap.exceptions import LLMConfigurationError, LLMDependencyError
 from agentmap.services.llm.client_lifecycle import GovernedClientLifecycleMixin
@@ -114,14 +114,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         max_tokens = config.get("max_tokens")
 
         try:
-            if provider == "openai":
-                builder = self._create_openai_client
-            elif provider == "anthropic":
-                builder = self._create_anthropic_client
-            elif provider == "google":
-                builder = self._create_google_client
-            else:
-                raise LLMConfigurationError(f"Unsupported provider: {provider}")
+            builder = self._client_builder(provider)
             builder_kwargs: Dict[str, Any] = (
                 {"governed": True, "owner": owner} if governed else {}
             )
@@ -139,6 +132,18 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 f"Missing dependencies for {provider}. "
                 f"Install with: pip install agentmap[{provider}]"
             ) from e
+
+    def _client_builder(self, provider: str) -> Callable[..., Any]:
+        """Select the supported provider constructor."""
+        builders = {
+            "openai": self._create_openai_client,
+            "anthropic": self._create_anthropic_client,
+            "google": self._create_google_client,
+        }
+        try:
+            return builders[provider]
+        except KeyError as error:
+            raise LLMConfigurationError(f"Unsupported provider: {provider}") from error
 
     def _create_openai_client(
         self,
@@ -283,7 +288,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         """Clear the client cache."""
         with self._cache_lock:
             self._ensure_open()
-            if self._owners:
+            if self._owners or self._active_governed:
                 raise LLMConfigurationError(
                     "Governed clients require awaited shutdown before cache clearing"
                 )
