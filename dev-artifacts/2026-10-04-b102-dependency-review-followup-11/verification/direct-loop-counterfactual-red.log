@@ -1,0 +1,55 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_lifecycle_executor_preserves_calling_task_context__b102 _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7447218c1190>
+tmp_path = PosixPath('/tmp/pytest-of-jwwel/pytest-1037/test_lifecycle_executor_preser0')
+
+    @pytest.mark.asyncio
+    async def test_lifecycle_executor_preserves_calling_task_context__b102(
+        monkeypatch, tmp_path: Path
+    ):
+        """DI installation and cache startup see the calling task's exact context."""
+        lifecycle_context = ContextVar("b102_lifecycle_context")
+        sentinel = object()
+        observed = {}
+        event_loop_thread = get_ident()
+        installed = runtime_container(tmp_path)
+
+        def initialize_di(config_file):
+            observed["initialize"] = (lifecycle_context.get(), get_ident())
+            return installed
+
+        def is_cache_initialized(value):
+            observed.setdefault("startup", (lifecycle_context.get(), get_ident()))
+            return value.ready
+
+        def refresh_cache(value):
+            observed["cache"] = (lifecycle_context.get(), get_ident())
+            value.ready = True
+
+        monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", initialize_di)
+        monkeypatch.setattr(
+            "agentmap.runtime.init_ops._is_cache_initialized", is_cache_initialized
+        )
+        monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", refresh_cache)
+
+        RuntimeManager.reset()
+        token = lifecycle_context.set(sentinel)
+        try:
+            await ensure_initialized_async()
+            assert {name: value for name, (value, _) in observed.items()} == {
+                "initialize": sentinel,
+                "startup": sentinel,
+                "cache": sentinel,
+            }
+>           assert all(
+                callback_thread != event_loop_thread
+                for _, callback_thread in observed.values()
+            )
+E           assert False
+E            +  where False = all(<generator object test_lifecycle_executor_preserves_calling_task_context__b102.<locals>.<genexpr> at 0x74472188f920>)
+
+tests/unit/runtime/test_b102_public_facade_starvation.py:151: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_lifecycle_executor_preserves_calling_task_context__b102

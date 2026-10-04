@@ -1,0 +1,2 @@
+command: uv run isort --check-only --sp pyproject.toml tests/unit/runtime/test_b102_public_facade_starvation.py
+result: PASS

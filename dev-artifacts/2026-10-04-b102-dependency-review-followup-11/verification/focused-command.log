@@ -1,0 +1,2 @@
+command: rg -l __b102 tests | sort, plus tests/unit/runtime/test_init_ops.py and tests/unit/runtime/test_runtime_state.py
+result: 25 B102-tagged modules plus 2 runtime modules; see focused-collect.log
