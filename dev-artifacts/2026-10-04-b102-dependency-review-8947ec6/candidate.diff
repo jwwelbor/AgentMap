@@ -1,0 +1,594 @@
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/handoff.md b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/handoff.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..488b535eb6ea01276a21c7b7632d32ddca8287dc
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/handoff.md
+@@ -0,0 +1,39 @@
++# B102 AgentMap dependency review follow-up 15 handoff
++
++## Snapshot and outcome
++
++- Pinned clean starting head: `e6dad8f1e08ee35e828809efc702e5baf59f1c36`
++- Test implementation commit: `301bd4ffc6ea43f62054736a4053892fe80883bd`
++- Scope: one B102 runtime test and this evidence; production source is unchanged
++- Result: B102-R14-01 is fixed locally
++
++## Finding disposition
++
++| Finding | Disposition and proof |
++|---|---|
++| B102-R14-01 | Fixed now. `install_owner_gate(..., ack=False)` provides a controlled no-acknowledgement seam. The acquisition-timeout case expects the repository's bounded one-second `TimeoutError`, then unconditional cleanup opens the skip and release gates, safely cancels and terminally reaps the live owner, and verifies under the transaction lock that the owner task is terminal and `RuntimeManager._transaction_owner` is `None`. Before the timeout expectation was added, the same controlled case failed RED with an unhandled bounded `TimeoutError`. |
++
++No finding was deferred, and no production source changed.
++
++## Verification
++
++| Check | Result | Evidence |
++|---|---|---|
++| No-acknowledgement case against the prior expectation | Expected RED; bounded acquisition `TimeoutError` was unhandled, exit code 1 | `verification/acquisition-timeout-red.log` |
++| Changed B102 runtime module | 14 passed; 0 skipped; 0 warnings | `verification/changed-module.log` |
++| B102-tagged modules plus runtime init/state tests | 332 passed; 0 skipped; 0 warnings | `verification/focused.log`, `verification/focused-collect.log` |
++| Black | PASS; one file unchanged | `verification/black.log` |
++| isort | PASS; exit code 0 | `verification/isort.log` |
++| Repository lint | PASS | `verification/lint.log` |
++| Structural limits | PASS; 350 file lines, every top-level function at most 48 lines | `verification/structure.log` |
++| Full `make test` at the test implementation commit | 5,727 passed; 49 skipped; 1 deselected; 6 warnings; 228 subtests passed | `verification/make-test.log` |
++| Production-source diff from pinned starting head | Empty using `git diff BASE..TEST -- src/agentmap` | `verification/production-source-diff.log` |
++| `git diff --check` from pinned starting head | PASS | `verification/git-diff-check.log` |
++
++The full-suite skips and benchmark deselection remain visible in the retained log. The six warnings are inherited from unchanged suspend-agent messaging, minimal API, and auth-root tests; all are unawaited-`AsyncMock` warnings outside the changed test. The focused and changed-module runs have no skips or warnings. Mypy was not run because production source did not change and tests are excluded by the repository's mypy configuration.
++
++## Remaining gates
++
++Run a fresh exact-pin dependency review on the evidence commit. Package release, TD-140, WWGM host integration, restart reconciliation, terminal/process-death acceptance, and product acceptance remain open. No release or host-readiness claim is made by this test-only repair.
++
++**RECOMMENDED OUTCOME: blocked pending final review/release/TD-140/host/product gates.**
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/acquisition-timeout-red.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/acquisition-timeout-red.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..61ad15c2fa42e50a52d62811acd9720b73a81d5e
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/acquisition-timeout-red.log
+@@ -0,0 +1,198 @@
++counterfactual: controlled owner gate with acknowledgement disabled against the prior single-path regression
++command: uv run pytest -q tests/unit/runtime/test_b102_public_facade_starvation.py::test_timeout_lets_live_owner_release_its_transaction__b102[acquisition-timeout]
++F                                                                        [100%]
++=================================== FAILURES ===================================
++_ test_timeout_lets_live_owner_release_its_transaction__b102[acquisition-timeout] _
++
++fut = <Task cancelled name='Task-3' coro=<Event.wait() done, defined at /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/locks.py:200>>
++timeout = 1
++
++    async def wait_for(fut, timeout):
++        """Wait for the single Future or coroutine to complete, with timeout.
++
++        Coroutine will be wrapped in Task.
++
++        Returns result of the Future or coroutine.  When a timeout occurs,
++        it cancels the task and raises TimeoutError.  To avoid the task
++        cancellation, wrap it in shield().
++
++        If the wait is cancelled, the task is also cancelled.
++
++        This function is a coroutine.
++        """
++        loop = events.get_running_loop()
++
++        if timeout is None:
++            return await fut
++
++        if timeout <= 0:
++            fut = ensure_future(fut, loop=loop)
++
++            if fut.done():
++                return fut.result()
++
++            await _cancel_and_wait(fut, loop=loop)
++            try:
++                return fut.result()
++            except exceptions.CancelledError as exc:
++                raise exceptions.TimeoutError() from exc
++
++        waiter = loop.create_future()
++        timeout_handle = loop.call_later(timeout, _release_waiter, waiter)
++        cb = functools.partial(_release_waiter, waiter)
++
++        fut = ensure_future(fut, loop=loop)
++        fut.add_done_callback(cb)
++
++        try:
++            # wait until the future completes or the timeout
++            try:
++                await waiter
++            except exceptions.CancelledError:
++                if fut.done():
++                    return fut.result()
++                else:
++                    fut.remove_done_callback(cb)
++                    # We must ensure that the task is not running
++                    # after wait_for() returns.
++                    # See https://bugs.python.org/issue32751
++                    await _cancel_and_wait(fut, loop=loop)
++                    raise
++
++            if fut.done():
++                return fut.result()
++            else:
++                fut.remove_done_callback(cb)
++                # We must ensure that the task is not running
++                # after wait_for() returns.
++                # See https://bugs.python.org/issue32751
++                await _cancel_and_wait(fut, loop=loop)
++                # In case task cancellation failed with some
++                # exception, we should re-raise it
++                # See https://bugs.python.org/issue40607
++                try:
++>                   return fut.result()
++                           ^^^^^^^^^^^^
++
++/home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/tasks.py:500:
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
++
++self = <asyncio.locks.Event object at 0x798feede0c90 [unset]>
++
++    async def wait(self):
++        """Block until the internal flag is true.
++
++        If the internal flag is true on entry, return True
++        immediately.  Otherwise, block until another coroutine calls
++        set() to set the flag to true, then return True.
++        """
++        if self._value:
++            return True
++
++        fut = self._get_loop().create_future()
++        self._waiters.append(fut)
++        try:
++>           await fut
++E           asyncio.exceptions.CancelledError
++
++/home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/locks.py:213: CancelledError
++
++The above exception was the direct cause of the following exception:
++
++monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x798feede01d0>
++acknowledge = False
++
++    @pytest.mark.parametrize(
++        "acknowledge", [True, False], ids=["owner-acquired", "acquisition-timeout"]
++    )
++    @pytest.mark.asyncio
++    async def test_timeout_lets_live_owner_release_its_transaction__b102(
++        monkeypatch, acknowledge
++    ):
++        acquired, release, skip_lifecycle = install_owner_gate(
++            monkeypatch, acknowledge=acknowledge
++        )
++        RuntimeManager.reset()
++        owner = asyncio.create_task(ensure_initialized_async())
++        try:
++>           await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
++
++tests/unit/runtime/test_b102_public_facade_starvation.py:291:
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
++
++fut = <Task cancelled name='Task-3' coro=<Event.wait() done, defined at /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/locks.py:200>>
++timeout = 1
++
++    async def wait_for(fut, timeout):
++        """Wait for the single Future or coroutine to complete, with timeout.
++
++        Coroutine will be wrapped in Task.
++
++        Returns result of the Future or coroutine.  When a timeout occurs,
++        it cancels the task and raises TimeoutError.  To avoid the task
++        cancellation, wrap it in shield().
++
++        If the wait is cancelled, the task is also cancelled.
++
++        This function is a coroutine.
++        """
++        loop = events.get_running_loop()
++
++        if timeout is None:
++            return await fut
++
++        if timeout <= 0:
++            fut = ensure_future(fut, loop=loop)
++
++            if fut.done():
++                return fut.result()
++
++            await _cancel_and_wait(fut, loop=loop)
++            try:
++                return fut.result()
++            except exceptions.CancelledError as exc:
++                raise exceptions.TimeoutError() from exc
++
++        waiter = loop.create_future()
++        timeout_handle = loop.call_later(timeout, _release_waiter, waiter)
++        cb = functools.partial(_release_waiter, waiter)
++
++        fut = ensure_future(fut, loop=loop)
++        fut.add_done_callback(cb)
++
++        try:
++            # wait until the future completes or the timeout
++            try:
++                await waiter
++            except exceptions.CancelledError:
++                if fut.done():
++                    return fut.result()
++                else:
++                    fut.remove_done_callback(cb)
++                    # We must ensure that the task is not running
++                    # after wait_for() returns.
++                    # See https://bugs.python.org/issue32751
++                    await _cancel_and_wait(fut, loop=loop)
++                    raise
++
++            if fut.done():
++                return fut.result()
++            else:
++                fut.remove_done_callback(cb)
++                # We must ensure that the task is not running
++                # after wait_for() returns.
++                # See https://bugs.python.org/issue32751
++                await _cancel_and_wait(fut, loop=loop)
++                # In case task cancellation failed with some
++                # exception, we should re-raise it
++                # See https://bugs.python.org/issue40607
++                try:
++                    return fut.result()
++                except exceptions.CancelledError as exc:
++>                   raise exceptions.TimeoutError() from exc
++E                   TimeoutError
++
++/home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/tasks.py:502: TimeoutError
++=========================== short test summary info ============================
++FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_timeout_lets_live_owner_release_its_transaction__b102[acquisition-timeout]
++exit-code: 1 (expected nonzero before acquisition-timeout expectation)
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/black.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/black.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d0bcb09e5b401646acea3d74d21cd5679f12b7a
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/black.log
+@@ -0,0 +1,3 @@
++command: uv run black --check tests/unit/runtime/test_b102_public_facade_starvation.py
++All done! ✨ 🍰 ✨
++1 file would be left unchanged.
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/changed-module.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/changed-module.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..0665cf36a758a366c3ed0d7177e070bbcc277a94
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/changed-module.log
+@@ -0,0 +1,3 @@
++command: uv run pytest tests/unit/runtime/test_b102_public_facade_starvation.py
++..............                                                           [100%]
++14 passed in 1.54s
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/focused-collect.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/focused-collect.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e74cb51fd8d0af04817e43fcb4ea551b2b8e11d
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/focused-collect.log
+@@ -0,0 +1,29 @@
++command: rg -l __b102 tests | sort, plus tests/unit/runtime/test_init_ops.py and tests/unit/runtime/test_runtime_state.py
++result: 25 B102-tagged modules plus 2 runtime modules
++tests/fresh_suite/unit/services/llm/test_attempt_lifecycle.py
++tests/fresh_suite/unit/services/llm/test_attempt_lifecycle_boundaries.py
++tests/fresh_suite/unit/services/llm/test_b102_cleanup_lifecycle.py
++tests/fresh_suite/unit/services/llm/test_b102_client_ownership.py
++tests/fresh_suite/unit/services/llm/test_b102_cost_trust.py
++tests/fresh_suite/unit/services/llm/test_b102_credential_wire.py
++tests/fresh_suite/unit/services/llm/test_b102_response_cleanup.py
++tests/fresh_suite/unit/services/llm/test_governed_clients.py
++tests/fresh_suite/unit/services/llm/test_response_evidence.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_controls.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_proxy.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_routing.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_security.py
++tests/fresh_suite/unit/services/llm/test_response_review_rework.py
++tests/unit/deployment/http/api/test_b102_admin_async_initialization.py
++tests/unit/deployment/http/api/test_b102_lifespan_shutdown.py
++tests/unit/runtime/test_b102_async_lifecycle.py
++tests/unit/runtime/test_b102_public_facade_starvation.py
++tests/unit/runtime/test_b102_runtime_coordination.py
++tests/unit/runtime/test_b102_runtime_shutdown.py
++tests/unit/services/llm/test_b102_credential_cache_identity.py
++tests/unit/services/llm/test_b102_factory_lifecycle_boundaries.py
++tests/unit/services/llm/test_b102_governed_barriers.py
++tests/unit/services/llm/test_b102_review_size.py
++tests/unit/services/llm/test_b102_terminal_outcomes.py
++tests/unit/runtime/test_init_ops.py
++tests/unit/runtime/test_runtime_state.py
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/focused.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/focused.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ff593470ee835ba23967281afee0d0411f0db72
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/focused.log
+@@ -0,0 +1,7 @@
++command: uv run pytest $(rg -l __b102 tests | sort) tests/unit/runtime/test_init_ops.py tests/unit/runtime/test_runtime_state.py
++........................................................................ [ 21%]
++........................................................................ [ 43%]
++........................................................................ [ 65%]
++........................................................................ [ 86%]
++............................................                             [100%]
++332 passed in 5.11s
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/git-diff-check.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/git-diff-check.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..c35436e0445e33ca7d915151a36cfe42965b8311
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/git-diff-check.log
+@@ -0,0 +1,2 @@
++command: git diff --check e6dad8f1e08ee35e828809efc702e5baf59f1c36..301bd4ffc6ea43f62054736a4053892fe80883bd
++result: PASS
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/isort.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/isort.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..e0d585edd79e871a5190b48b5fc9a2c066e824c9
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/isort.log
+@@ -0,0 +1,3 @@
++command: uv run isort --check-only --sp pyproject.toml tests/unit/runtime/test_b102_public_facade_starvation.py
++result: PASS
++exit-code: 0
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/lint.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/lint.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..c572b1abac9c413f3300d9693453a12ff3b07f34
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/lint.log
+@@ -0,0 +1,4 @@
++command: make lint
++Running flake8 linter...
++uv run flake8 src/ tests/
++✓ Linting complete
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/make-test.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/make-test.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f4c5927bb9cc545ae47d762e761b2ff0e53fb81
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/make-test.log
+@@ -0,0 +1,123 @@
++command: make test
++Running pytest...
++uv run pytest tests/
++.............................s.......................................... [  1%]
++........................................................................ [  2%]
++............................................s...s.........s.s..ssssssss. [  3%]
++........................................................................................... [  5%]
++................................................................ [  6%]
++........................................................................ [  7%]
++........................................................................ [  8%]
++........................................................................ [ 10%]
++........................................................................ [ 11%]
++................................................................................................................................. [ 13%]
++............................................................................................................. [ 15%]
++....................................................... [ 16%]
++............................................................. [ 17%]
++.................................................................... [ 18%]
++........................................................................ [ 19%]
++........................................................................ [ 21%]
++........................................................................ [ 22%]
++........................................................................ [ 23%]
++..........................................................s............. [ 24%]
++.........s.............................................................. [ 26%]
++........................................................................ [ 27%]
++........................................................................ [ 28%]
++........................................................................ [ 29%]
++........................................................................ [ 31%]
++........................................................................ [ 32%]
++................................................................ [ 33%]
++........................................................................ [ 34%]
++........................................................................ [ 36%]
++............................s....s.....................s................ [ 37%]
++s....................................................................... [ 38%]
++........................................................................ [ 39%]
++....................s......s.....s..........s........................... [ 41%]
++..................................................................... [ 42%]
++........................................................................ [ 43%]
++........................................................................ [ 44%]
++........................................................................ [ 45%]
++........................................................................ [ 47%]
++............................................................... [ 48%]
++........................................................................ [ 49%]
++.......................................s.........ss......................................................................... [ 51%]
++.........................................................s.............. [ 52%]
++........................................................................ [ 54%]
++.........ss.....s.s........s............................................ [ 55%]
++.................................................ssss..sss........ [ 56%]
++........................................................................ [ 57%]
++........................................................................ [ 59%]
++........................................................................ [ 60%]
++........................................................................ [ 61%]
++....................................s....s.............................. [ 62%]
++........................................................................ [ 64%]
++........................................................................ [ 65%]
++........................................................................ [ 66%]
++.......................................................... [ 67%]
++........................................................................ [ 68%]
++........................................................................ [ 70%]
++........................................................................ [ 71%]
++...s....................................s............................... [ 72%]
++........................................................................ [ 73%]
++........................................................................ [ 75%]
++........................................................................ [ 76%]
++........................................................................ [ 77%]
++........................................................................ [ 78%]
++.................................................................... [ 79%]
++........................................................................ [ 81%]
++................................................... [ 82%]
++...............................................................ss....... [ 83%]
++........................................................................ [ 84%]
++...............................................s........................ [ 85%]
++........................................................................ [ 87%]
++........................................................................ [ 88%]
++........................................................................ [ 89%]
++........................................................................ [ 90%]
++........................................................................ [ 92%]
++........................................................................ [ 93%]
++........................................................................ [ 94%]
++................................ss...................................... [ 95%]
++........................................................................ [ 97%]
++........................................................................ [ 98%]
++.......................s................................................ [ 99%]
++............................                                             [100%]
++=============================== warnings summary ===============================
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_graph_message_raises_when_service_not_configured
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:475: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    _safe_super(NonCallableMock, self).__init__(
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_resume_message_includes_duration
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/src/agentmap/agents/builtins/suspend_agent.py:300: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    self.log_error(f"Failed to publish resume message: {e}")
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_resume_message_uses_custom_topic_and_template
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:1124: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    return self._mock_call(*args, **kwargs)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_suspend_message_raises_when_service_not_configured
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/inspect.py:3062: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    arguments = {}
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/integration/api/test_api_minimal.py::TestAPIBasics::test_execution_endpoint_basic
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:354: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    self._config_wrapper_stack = ConfigWrapperStack(config_wrapper)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/integration/api/test_auth_endpoints.py::BaseAPIIntegrationTest::test_root_endpoint
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/yaml/constructor.py:178: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    return super().construct_scalar(node)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++5727 passed, 49 skipped, 1 deselected, 6 warnings, 228 subtests passed in 62.61s (0:01:02)
++✓ Tests complete
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/pinned-commits.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/pinned-commits.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..46b27a1ed8cf0b8354842bf8091947c1508a7bd4
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/pinned-commits.log
+@@ -0,0 +1,2 @@
++starting-head: e6dad8f1e08ee35e828809efc702e5baf59f1c36
++test-commit: 301bd4ffc6ea43f62054736a4053892fe80883bd
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/production-source-diff.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/production-source-diff.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..5ecb37781940ce78974fbe983078039d25b80e45
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/production-source-diff.log
+@@ -0,0 +1,2 @@
++command: git diff e6dad8f1e08ee35e828809efc702e5baf59f1c36..301bd4ffc6ea43f62054736a4053892fe80883bd -- src/agentmap
++result: empty (production source unchanged)
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/structure.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/structure.log
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ee58219053b1c8ca0b21746a90d5162c868ec23
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-15/verification/structure.log
+@@ -0,0 +1,14 @@
++command: wc -l tests/unit/runtime/test_b102_public_facade_starvation.py; AST top-level function spans
++350 tests/unit/runtime/test_b102_public_facade_starvation.py lines
++runtime_container: 23 lines
++install_owner_gate: 15 lines
++configure_runtime: 5 lines
++test_lifecycle_executor_preserves_calling_task_context__b102: 37 lines
++facade_call: 6 lines
++reap_tasks: 6 lines
++guard_completion: 32 lines
++test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102: 28 lines
++test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102: 47 lines
++test_live_owner_timeout_cleanup__b102: 22 lines
++test_public_sync_facades_cannot_starve_async_transaction_owner__b102: 48 lines
++result: PASS (file <=350 lines; all top-level functions <=50 lines)
+diff --git a/tests/unit/runtime/test_b102_public_facade_starvation.py b/tests/unit/runtime/test_b102_public_facade_starvation.py
+index b9016b336e110b5bd9bd2b41763997eccba20b3a..b5e36cbdaf9055891c340aa3adb44fe729d476f2 100644
+--- a/tests/unit/runtime/test_b102_public_facade_starvation.py
++++ b/tests/unit/runtime/test_b102_public_facade_starvation.py
+@@ -71,20 +71,20 @@ def runtime_container(tmp_path: Path):
+     )
+ 
+ 
+-def install_owner_gate(monkeypatch):
++def install_owner_gate(monkeypatch, *, ack=True):
+     acquired, release, skip_lifecycle = (asyncio.Event() for _ in range(3))
+     original = RuntimeManager._run_initialization_transaction
+ 
+     async def gated(cls, startup, *, refresh: bool, config_file: str | None):
+-        acquired.set()
++        if ack:
++            acquired.set()
+         await release.wait()
+         if skip_lifecycle.is_set():
+             return
+         await original(startup, refresh=refresh, config_file=config_file)
+ 
+-    monkeypatch.setattr(
+-        RuntimeManager, "_run_initialization_transaction", classmethod(gated)
+-    )
++    transaction = classmethod(gated)
++    monkeypatch.setattr(RuntimeManager, "_run_initialization_transaction", transaction)
+     return acquired, release, skip_lifecycle
+ 
+ 
+@@ -174,11 +174,8 @@ async def guard_completion(
+         outcomes, cancellation = await reap_tasks([task, *tasks])
+         if primary is None:
+             primary = cancellation
+-    failures = [
+-        outcome
+-        for outcome in outcomes
+-        if isinstance(outcome, BaseException) and outcome is not primary
+-    ]
++    failures = [x for x in outcomes if isinstance(x, BaseException)]
++    failures = [x for x in failures if x is not primary]
+     if failures:
+         secondary = BaseExceptionGroup("deadlock guard cleanup failed", failures)
+         if primary is not None:
+@@ -274,26 +271,30 @@ async def test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102(route):
+     assert timeout_cleanup.is_set() is (route == "timeout")
+ 
+ 
++@pytest.mark.parametrize("ack", [True, False], ids=["guard", "acquisition-timeout"])
+ @pytest.mark.asyncio
+-async def test_timeout_lets_live_owner_release_its_transaction__b102(monkeypatch):
+-    acquired, release, skip_lifecycle = install_owner_gate(monkeypatch)
++async def test_live_owner_timeout_cleanup__b102(monkeypatch, ack):
++    acquired, release, skip = install_owner_gate(monkeypatch, ack=ack)
+     RuntimeManager.reset()
+     owner = asyncio.create_task(ensure_initialized_async())
+     try:
+-        await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
+-        with pytest.raises(AssertionError, match=f"^{TIMEOUT_MESSAGE}$") as caught:
+-            await guard_completion(
+-                owner, release, [], timeout=0.01, on_timeout=skip_lifecycle.set
+-            )
+-        assert caught.value.__cause__ is None
+-        assert owner.done() and owner.result() is None
+-        with RuntimeManager._transaction_condition:
+-            assert RuntimeManager._transaction_owner is None
++        if ack:
++            await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
++            with pytest.raises(AssertionError, match=f"^{TIMEOUT_MESSAGE}$") as caught:
++                await guard_completion(
++                    owner, release, [], timeout=0.01, on_timeout=skip.set
++                )
++            assert caught.value.__cause__ is None and owner.result() is None
++        else:
++            with pytest.raises(TimeoutError):
++                await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
+     finally:
+-        skip_lifecycle.set()
++        skip.set()
+         release.set()
+         owner.cancel()
+         await reap_tasks([owner])
++    with RuntimeManager._transaction_condition:
++        assert owner.done() and RuntimeManager._transaction_owner is None
+ 
+ 
+ @pytest.mark.parametrize("workers", [1, 2])
