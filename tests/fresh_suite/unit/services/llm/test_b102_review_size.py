@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[5]
     "path,name",
     [
         ("src/agentmap/services/llm/attempt_lifecycle.py", "invoke_governed_attempt"),
+        ("src/agentmap/services/llm/cost_calculator.py", "calculate"),
         ("src/agentmap/services/llm/attempt_lifecycle.py", "settle_failed_attempt"),
         ("src/agentmap/services/llm/attempt_lifecycle.py", "settle_successful_attempt"),
         ("src/agentmap/services/llm_client_factory.py", "get_or_create_client"),
@@ -57,10 +58,22 @@ def test_b102_newly_oversized_functions_stay_within_repository_limit(path, name)
 @pytest.mark.parametrize(
     "path",
     [
+        "tests/fresh_suite/unit/services/llm/test_attempt_lifecycle.py",
+        "tests/fresh_suite/unit/services/llm/test_attempt_lifecycle_boundaries.py",
+        "tests/fresh_suite/unit/services/llm/test_b102_cost_trust.py",
+        "tests/fresh_suite/unit/services/llm/test_b102_credential_wire.py",
+        "tests/fresh_suite/unit/services/llm/test_b102_response_cleanup.py",
+        "tests/fresh_suite/unit/services/llm/test_b102_review_size.py",
+        "tests/fresh_suite/unit/services/llm/test_cost_calculator.py",
+        "tests/fresh_suite/unit/services/llm/test_cost_calculator_unconfigured.py",
+        "tests/fresh_suite/unit/services/llm/test_governed_clients.py",
         "tests/fresh_suite/unit/services/llm/test_response_evidence.py",
+        "tests/fresh_suite/unit/services/llm/test_response_evidence_controls.py",
+        "tests/fresh_suite/unit/services/llm/test_response_evidence_proxy.py",
+        "tests/fresh_suite/unit/services/llm/test_response_evidence_routing.py",
         "tests/fresh_suite/unit/services/llm/test_response_evidence_security.py",
     ],
 )
-def test_b102_response_evidence_modules_stay_within_file_limit(path):
+def test_b102_owned_modules_stay_within_file_limit(path):
     lines = (ROOT / path).read_text().splitlines()
     assert len(lines) <= 350, f"{path} has {len(lines)} lines; limit is 350"

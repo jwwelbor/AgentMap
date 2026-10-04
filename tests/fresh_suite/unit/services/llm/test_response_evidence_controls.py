@@ -2,6 +2,7 @@
 
 import asyncio
 import gzip
+from contextlib import suppress
 from decimal import Decimal
 from threading import Event
 from unittest.mock import AsyncMock, Mock, patch
@@ -9,7 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 import pytest
 
-from agentmap.exceptions import LLMDependencyError
+from agentmap.exceptions import LLMDependencyError, LLMTimeoutError
 from agentmap.models.llm_attempt import LLMResponseEvidence
 from agentmap.services.llm.response_observer import (
     ResponseCaptureFailure,
@@ -33,6 +34,22 @@ from tests.fresh_suite.unit.services.llm.test_response_evidence import (
     real_service,
     setup_transport,
 )
+
+
+def inject_timeout_after_worker_state(service, ready):
+    """Exercise settlement after the worker reached a proved observation state."""
+
+    async def timed_provider(client, messages, provider, model, attempt_timeout):
+        running = asyncio.create_task(service._invoke_provider_async(client, messages))
+        try:
+            assert await asyncio.to_thread(ready.wait, 5)
+        finally:
+            running.cancel()
+            with suppress(asyncio.CancelledError):
+                await running
+        raise LLMTimeoutError("injected after worker progress")
+
+    service._invoke_timed_provider = timed_provider
 
 
 @pytest.mark.asyncio
@@ -186,13 +203,13 @@ async def test_late_thread_body_cannot_mutate_timed_out_attempt__b102():
         return raw_response()
 
     service = service_with_client(Mock(ainvoke=None, invoke=dispatch))
-    service._resilience_config["retry"]["attempt_timeout"] = 0.5
+    inject_timeout_after_worker_state(service, started)
     ledger = Ledger()
     try:
         task = asyncio.create_task(call(service, ledger))
-        assert await asyncio.to_thread(started.wait, 2)
         with pytest.raises(AccountingRefusal, match="unresolved charge"):
             await task
+        assert started.is_set()
         original = ledger.rows["1"].response_evidence
         assert original.status == "unavailable"
         release.set()
@@ -265,7 +282,8 @@ async def test_partial_thread_read_is_sealed_at_timeout__b102(monkeypatch):
 
     def record_progress(collector, chunk):
         original_progress(collector, chunk)
-        prefix_observed.set()
+        if collector.partial_body() == b"observed prefix":
+            prefix_observed.set()
 
     monkeypatch.setattr(ResponseCollector, "progress", record_progress)
 
@@ -281,13 +299,13 @@ async def test_partial_thread_read_is_sealed_at_timeout__b102(monkeypatch):
         return raw_response()
 
     service = service_with_client(Mock(ainvoke=None, invoke=dispatch))
-    service._resilience_config["retry"]["attempt_timeout"] = 0.5
+    inject_timeout_after_worker_state(service, prefix_observed)
     ledger = Ledger()
     try:
         task = asyncio.create_task(call(service, ledger))
-        assert await asyncio.to_thread(prefix_observed.wait, 2)
         with pytest.raises(AccountingRefusal):
             await task
+        assert prefix_observed.is_set()
         evidence = ledger.rows["1"].response_evidence
         assert evidence.status == "partial"
         assert evidence.body == b"observed prefix"

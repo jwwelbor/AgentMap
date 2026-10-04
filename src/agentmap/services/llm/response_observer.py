@@ -186,9 +186,13 @@ def observe_response(response: httpx.Response) -> None:
     response.stream = _SyncRead(response.stream, progress)
     try:
         body = response.read()  # Public HTTPX read caches bytes for the SDK.
-    except BaseException:
+    except BaseException as read_error:
         # Diagnose interrupted reads (including cancellation), retain, propagate.
         collector.record(_interrupted(response, collector), failed=True)
+        try:
+            response.close()
+        except BaseException as cleanup_error:
+            raise read_error from cleanup_error
         raise
     _record_complete(collector, response, body)
 
@@ -206,8 +210,12 @@ async def observe_async_response(response: httpx.Response) -> None:
     response.stream = _AsyncRead(response.stream, progress)
     try:
         body = await response.aread()
-    except BaseException:
+    except BaseException as read_error:
         collector.record(_interrupted(response, collector), failed=True)
+        try:
+            await response.aclose()
+        except BaseException as cleanup_error:
+            raise read_error from cleanup_error
         raise
     _record_complete(collector, response, body)
 
