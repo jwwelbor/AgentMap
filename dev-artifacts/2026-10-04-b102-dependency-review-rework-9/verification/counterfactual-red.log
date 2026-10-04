@@ -1,0 +1,39 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_ test_public_sync_facades_cannot_starve_async_transaction_owner__b102[list-1] _
+tests/unit/runtime/test_b102_runtime_coordination.py:348: in test_public_sync_facades_cannot_starve_async_transaction_owner__b102
+    assert not starved, (
+E   AssertionError: list occupied all 1 default-executor workers while async owner startup waited behind them
+E   assert not True
+_ test_public_sync_facades_cannot_starve_async_transaction_owner__b102[list-2] _
+tests/unit/runtime/test_b102_runtime_coordination.py:348: in test_public_sync_facades_cannot_starve_async_transaction_owner__b102
+    assert not starved, (
+E   AssertionError: list occupied all 2 default-executor workers while async owner startup waited behind them
+E   assert not True
+_ test_public_sync_facades_cannot_starve_async_transaction_owner__b102[inspect-1] _
+tests/unit/runtime/test_b102_runtime_coordination.py:348: in test_public_sync_facades_cannot_starve_async_transaction_owner__b102
+    assert not starved, (
+E   AssertionError: inspect occupied all 1 default-executor workers while async owner startup waited behind them
+E   assert not True
+_ test_public_sync_facades_cannot_starve_async_transaction_owner__b102[inspect-2] _
+tests/unit/runtime/test_b102_runtime_coordination.py:348: in test_public_sync_facades_cannot_starve_async_transaction_owner__b102
+    assert not starved, (
+E   AssertionError: inspect occupied all 2 default-executor workers while async owner startup waited behind them
+E   assert not True
+_ test_public_sync_facades_cannot_starve_async_transaction_owner__b102[validate-1] _
+tests/unit/runtime/test_b102_runtime_coordination.py:348: in test_public_sync_facades_cannot_starve_async_transaction_owner__b102
+    assert not starved, (
+E   AssertionError: validate occupied all 1 default-executor workers while async owner startup waited behind them
+E   assert not True
+_ test_public_sync_facades_cannot_starve_async_transaction_owner__b102[validate-2] _
+tests/unit/runtime/test_b102_runtime_coordination.py:348: in test_public_sync_facades_cannot_starve_async_transaction_owner__b102
+    assert not starved, (
+E   AssertionError: validate occupied all 2 default-executor workers while async owner startup waited behind them
+E   assert not True
+=========================== short test summary info ============================
+FAILED tests/unit/runtime/test_b102_runtime_coordination.py::test_public_sync_facades_cannot_starve_async_transaction_owner__b102[list-1]
+FAILED tests/unit/runtime/test_b102_runtime_coordination.py::test_public_sync_facades_cannot_starve_async_transaction_owner__b102[list-2]
+FAILED tests/unit/runtime/test_b102_runtime_coordination.py::test_public_sync_facades_cannot_starve_async_transaction_owner__b102[inspect-1]
+FAILED tests/unit/runtime/test_b102_runtime_coordination.py::test_public_sync_facades_cannot_starve_async_transaction_owner__b102[inspect-2]
+FAILED tests/unit/runtime/test_b102_runtime_coordination.py::test_public_sync_facades_cannot_starve_async_transaction_owner__b102[validate-1]
+FAILED tests/unit/runtime/test_b102_runtime_coordination.py::test_public_sync_facades_cannot_starve_async_transaction_owner__b102[validate-2]
