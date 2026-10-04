@@ -19,6 +19,7 @@ from typing import (
     runtime_checkable,
 )
 
+from agentmap.models.llm_attempt import LLMAttemptDescription, LLMAttemptOutcome
 from agentmap.models.llm_batch import (
     BatchPollResult,
     LLMBatchHandle,
@@ -160,6 +161,21 @@ class StreamSeamProtocol(Protocol):
 
 
 @runtime_checkable
+class LLMAttemptLifecycleProtocol(Protocol):
+    """Durable host admission and settlement around each physical attempt.
+
+    Either callback may refuse by raising; failures are mandatory control
+    flow and propagate unchanged at call_llm_async's public boundary.
+    """
+
+    async def before_attempt(self, description: LLMAttemptDescription) -> str: ...
+
+    async def after_attempt(
+        self, attempt_id: str, outcome: LLMAttemptOutcome
+    ) -> None: ...
+
+
+@runtime_checkable
 class LLMServiceProtocol(Protocol):
     """Protocol for LLM service interface used by agents."""
 
@@ -224,6 +240,8 @@ class LLMServiceProtocol(Protocol):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
+        *,
+        attempt_lifecycle: Optional[LLMAttemptLifecycleProtocol] = None,
         **kwargs,
     ) -> LLMResponse:
         """
