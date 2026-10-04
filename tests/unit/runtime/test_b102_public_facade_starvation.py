@@ -19,7 +19,7 @@ from agentmap.runtime.workflow_ops import (
     validate_workflow_async,
 )
 
-DEADLOCK_GUARD_SECONDS = 10
+GUARD_SECONDS = 10
 
 
 class LifecycleProbeAbort(BaseException):
@@ -66,12 +66,10 @@ def runtime_container(tmp_path: Path):
     )
     app_config = SimpleNamespace(get_csv_repository_path=Mock(return_value=tmp_path))
     logging_service = SimpleNamespace(get_logger=Mock(return_value=Mock()))
-    graph_bundle = SimpleNamespace(
-        get_or_create_bundle=Mock(return_value=(bundle, True))
-    )
+    graphs = SimpleNamespace(get_or_create_bundle=Mock(return_value=(bundle, True)))
     return SimpleNamespace(
         app_config_service=Mock(return_value=app_config),
-        graph_bundle_service=Mock(return_value=graph_bundle),
+        graph_bundle_service=Mock(return_value=graphs),
         llm_service=Mock(return_value=SimpleNamespace(shutdown=AsyncMock())),
         logging_service=Mock(return_value=logging_service),
         ready=False,
@@ -83,30 +81,31 @@ def runtime_container(tmp_path: Path):
 
 def install_owner_gate(monkeypatch):
     """Pause after transaction ownership but before lifecycle dispatch."""
-    acquired, release = asyncio.Event(), asyncio.Event()
+    acquired = asyncio.Event()
+    release = asyncio.Event()
+    skip_lifecycle = asyncio.Event()
     original = RuntimeManager._run_initialization_transaction
 
     async def gated(cls, startup, *, refresh: bool, config_file: str | None):
         acquired.set()
         await release.wait()
+        if skip_lifecycle.is_set():
+            return
         await original(startup, refresh=refresh, config_file=config_file)
 
     monkeypatch.setattr(
         RuntimeManager, "_run_initialization_transaction", classmethod(gated)
     )
-    return acquired, release
+    return acquired, release, skip_lifecycle
 
 
-def configure_runtime(monkeypatch, installed) -> None:
+def configure_runtime(monkeypatch, installed, initialize=None) -> None:
+    initialize = initialize or Mock(return_value=installed)
+    monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", initialize)
+    module = "agentmap.runtime.init_ops"
+    monkeypatch.setattr(f"{module}._is_cache_initialized", lambda value: value.ready)
     monkeypatch.setattr(
-        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=installed)
-    )
-    monkeypatch.setattr(
-        "agentmap.runtime.init_ops._is_cache_initialized", lambda value: value.ready
-    )
-    monkeypatch.setattr(
-        "agentmap.runtime.init_ops._refresh_cache",
-        lambda value: setattr(value, "ready", True),
+        f"{module}._refresh_cache", lambda value: setattr(value, "ready", True)
     )
 
 
@@ -143,11 +142,8 @@ async def test_lifecycle_executor_preserves_calling_task_context__b102(
     token = lifecycle_context.set(sentinel)
     try:
         await ensure_initialized_async()
-        assert {name: value for name, (value, _) in observed.items()} == {
-            "initialize": sentinel,
-            "startup": sentinel,
-            "cache": sentinel,
-        }
+        assert set(observed) == {"initialize", "startup", "cache"}
+        assert all(value is sentinel for value, _ in observed.values())
         assert all(
             callback_thread != event_loop_thread
             for _, callback_thread in observed.values()
@@ -166,50 +162,56 @@ def facade_call(name: str, graph_file: Path):
     return validate_workflow_async("workflow::graph")
 
 
-async def reap_tasks_through_cancellation(tasks):
-    """Return the first caller cancellation after every task reaches terminal state."""
-
+async def reap_tasks(tasks):
     async def reap():
-        await asyncio.gather(*tasks, return_exceptions=True)
+        return await asyncio.gather(*tasks, return_exceptions=True)
 
     outcome = await await_terminal_task(asyncio.create_task(reap()))
-    return outcome.caller_cancellation
+    assert outcome.task_error is None
+    return outcome.value, outcome.caller_cancellation
 
 
-async def complete_before_deadlock_guard(completion, release, tasks) -> None:
+async def guard_completion(
+    task, release, tasks, *, timeout=GUARD_SECONDS, entered=None, on_timeout=None
+) -> None:
     """Bound completion, then release and reap every deliberately gated task."""
     primary = None
     timed_out = False
     try:
-        done, _ = await asyncio.wait([completion], timeout=DEADLOCK_GUARD_SECONDS)
+        if entered is not None:
+            entered.set()
+        done, _ = await asyncio.wait([task], timeout=timeout)
         if not done:
             primary = AssertionError("public facades starved the runtime lifecycle")
             timed_out = True
         else:
-            completion.result()
+            task.result()
     except BaseException as error:
         primary = error
     finally:
+        if timed_out and on_timeout is not None:
+            on_timeout()
         release.set()
-        if timed_out:
-            with RuntimeManager._transaction_condition:
-                token = RuntimeManager._transaction_owner
-            if token is not None:
-                RuntimeManager._release_transaction(token)
-        cancellation = await reap_tasks_through_cancellation([completion, *tasks])
+        outcomes, cancellation = await reap_tasks([task, *tasks])
         if primary is None:
             primary = cancellation
+    failures = [
+        outcome
+        for outcome in outcomes
+        if isinstance(outcome, BaseException) and outcome is not primary
+    ]
+    if failures:
+        secondary = BaseExceptionGroup("deadlock guard cleanup failed", failures)
+        if primary is not None:
+            raise primary from secondary
+        raise secondary
     if primary is not None:
         raise primary
 
 
 @pytest.mark.parametrize(
     "primary",
-    [
-        AssertionError("lifecycle started before transaction release"),
-        RuntimeError("offline completion failure"),
-        LifecycleProbeAbort("offline base failure"),
-    ],
+    [AssertionError("assertion"), RuntimeError("error"), LifecycleProbeAbort("base")],
 )
 @pytest.mark.asyncio
 async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(primary):
@@ -233,12 +235,11 @@ async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(prim
     try:
         await lifecycle_started.wait()
         with pytest.raises(type(primary)) as caught:
-            await complete_before_deadlock_guard(completion, release, [owner, *facades])
+            await guard_completion(completion, release, [owner, *facades])
         assert caught.value is primary
+        assert caught.value.__cause__ is None
         assert release.is_set()
-        assert completion.done()
-        assert owner.done()
-        assert all(facade.done() for facade in facades)
+        assert all(task.done() for task in [completion, owner, *facades])
         assert completed == ["owner", "facade-0", "facade-1"]
     finally:
         release.set()
@@ -247,44 +248,52 @@ async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(prim
 
 @pytest.mark.parametrize("route", ["cancellation", "timeout"])
 @pytest.mark.asyncio
-async def test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102(
-    monkeypatch, route
-):
+async def test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102(route):
     """Cancellation and timeout stay primary after every gated task terminates."""
-    release = asyncio.Event()
+    release, timeout_cleanup, entered = (asyncio.Event() for _ in range(3))
     completed = []
 
     async def gated(label):
         await release.wait()
+        assert route != "timeout" or timeout_cleanup.is_set()
         completed.append(label)
 
-    owner = asyncio.create_task(gated("owner"))
-    facade = asyncio.create_task(gated("facade"))
-    completion = asyncio.create_task(gated("completion"))
-    if route == "timeout":
-        monkeypatch.setitem(
-            complete_before_deadlock_guard.__globals__,
-            "DEADLOCK_GUARD_SECONDS",
-            0.01,
-        )
+    owner, facade, completion = [
+        asyncio.create_task(gated(label)) for label in ("owner", "facade", "completion")
+    ]
     guard = asyncio.create_task(
-        complete_before_deadlock_guard(completion, release, [owner, facade])
+        guard_completion(
+            completion,
+            release,
+            [owner, facade],
+            timeout=0.01 if route == "timeout" else GUARD_SECONDS,
+            entered=entered,
+            on_timeout=timeout_cleanup.set,
+        )
     )
-    if route == "cancellation":
-        await asyncio.sleep(0)
-        guard.cancel("offline caller cancellation")
+    expected = asyncio.CancelledError if route == "cancellation" else AssertionError
+    try:
+        await entered.wait()
+        if route == "cancellation":
+            guard.cancel("offline caller cancellation")
         done, _ = await asyncio.wait([guard], timeout=1)
         assert done == {guard}
-        with pytest.raises(asyncio.CancelledError, match="offline caller cancellation"):
+        with pytest.raises(expected) as caught:
             guard.result()
-    else:
-        done, _ = await asyncio.wait([guard], timeout=1)
-        assert done == {guard}
-        with pytest.raises(AssertionError, match="starved the runtime lifecycle"):
-            guard.result()
-    assert release.is_set()
-    assert all(task.done() for task in [owner, facade, completion, guard])
-    assert completed == ["owner", "facade", "completion"]
+        assert caught.value.__cause__ is None
+        assert release.is_set()
+        assert all(task.done() for task in [owner, facade, completion, guard])
+        assert completed == ["owner", "facade", "completion"]
+    finally:
+        release.set()
+        if not guard.done():
+            guard.cancel()
+        cleanup_outcomes, cleanup_cancellation = await reap_tasks(
+            [owner, facade, completion, guard]
+        )
+    assert cleanup_cancellation is None
+    assert cleanup_outcomes[:3] == [None, None, None]
+    assert isinstance(cleanup_outcomes[3], expected)
 
 
 @pytest.mark.parametrize("workers", [1, 2])
@@ -297,18 +306,15 @@ async def test_public_sync_facades_cannot_starve_async_transaction_owner__b102(
     loop = asyncio.get_running_loop()
     executor = ActiveExecutor(loop, max_workers=workers)
     loop.set_default_executor(executor)
-    acquired, release = install_owner_gate(monkeypatch)
+    acquired, release, skip_lifecycle = install_owner_gate(monkeypatch)
     installed = runtime_container(tmp_path)
     lifecycle_started = asyncio.Event()
-    configure_runtime(monkeypatch, installed)
 
     def observed_initialize_di(config_file):
         loop.call_soon_threadsafe(lifecycle_started.set)
         return installed
 
-    monkeypatch.setattr(
-        "agentmap.runtime.runtime_manager.initialize_di", observed_initialize_di
-    )
+    configure_runtime(monkeypatch, installed, observed_initialize_di)
     graph_file = tmp_path / "workflow.csv"
     graph_file.write_text("GraphName,Agent\ngraph,offline\n")
 
@@ -330,7 +336,12 @@ async def test_public_sync_facades_cannot_starve_async_transaction_owner__b102(
 
     completion = asyncio.create_task(exercise_ordered_startup())
     try:
-        await complete_before_deadlock_guard(completion, release, [owner, *calls])
+        await guard_completion(
+            completion,
+            release,
+            [owner, *calls],
+            on_timeout=skip_lifecycle.set,
+        )
         assert owner.result() is None
         assert all(call.result()["success"] for call in calls)
         assert RuntimeManager.is_initialized()
