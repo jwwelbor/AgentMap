@@ -28,11 +28,12 @@ No finding was deferred, and no production source changed.
 | Structural limits | PASS; 350 file lines, 11 top-level functions, longest function 48 lines | `verification/structure.log` |
 | Production-source diff from pinned starting head | Empty | `verification/production-source-diff.log` |
 | `git diff --check` from pinned starting head | PASS | `verification/git-diff-check.log` |
+| Fresh exact-pin dependency review | PASS; all 12 changed files covered by six dispatched angles, 0 defects | `review/REVIEW.md` |
 
 The full-suite skips, benchmark deselection, and six warnings remain visible in the retained log. Mypy was not run because production source did not change and tests are excluded by the repository's mypy configuration.
 
 ## Remaining gates
 
-Run a fresh exact-pin dependency review on the test implementation and evidence commit. Package release, TD-140, WWGM host integration, restart reconciliation, terminal/process-death acceptance, and product acceptance remain open. No release or host-readiness claim is made by this test-only repair.
+Package release, TD-140, WWGM host integration, restart reconciliation, terminal/process-death acceptance, and product acceptance remain open. No release or host-readiness claim is made by this test-only repair.
 
 **RECOMMENDED OUTCOME: blocked pending final review/release/TD-140/host/product gates.**
