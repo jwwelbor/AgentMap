@@ -1,0 +1,2 @@
+command: git diff -- src/agentmap 8b12f714f041d6162dfb40eb1b8851291a5dfe26..529393acb6facf2482184ef4b22e22bbadd9f995
+PASS: empty production-source diff

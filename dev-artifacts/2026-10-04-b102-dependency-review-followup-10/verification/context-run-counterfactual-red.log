@@ -1,0 +1,92 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_lifecycle_executor_preserves_calling_task_context__b102 _________
+
+config_file = None
+
+    def initialize_di(config_file):
+>       observed["initialize"] = lifecycle_context.get()
+                                 ^^^^^^^^^^^^^^^^^^^^^^^
+E       LookupError: <ContextVar name='b102_lifecycle_context' at 0x7734c5b45030>
+
+tests/unit/runtime/test_b102_public_facade_starvation.py:117: LookupError
+
+The above exception was the direct cause of the following exception:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7734f3ab49d0>
+tmp_path = PosixPath('/tmp/pytest-of-jwwel/pytest-1022/test_lifecycle_executor_preser0')
+
+    @pytest.mark.asyncio
+    async def test_lifecycle_executor_preserves_calling_task_context__b102(
+        monkeypatch, tmp_path: Path
+    ):
+        """DI installation and cache startup see the calling task's exact context."""
+        lifecycle_context = ContextVar("b102_lifecycle_context")
+        sentinel = object()
+        observed = {}
+        installed = runtime_container(tmp_path)
+    
+        def initialize_di(config_file):
+            observed["initialize"] = lifecycle_context.get()
+            return installed
+    
+        def is_cache_initialized(value):
+            observed.setdefault("startup", lifecycle_context.get())
+            return value.ready
+    
+        def refresh_cache(value):
+            observed["cache"] = lifecycle_context.get()
+            value.ready = True
+    
+        monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", initialize_di)
+        monkeypatch.setattr(
+            "agentmap.runtime.init_ops._is_cache_initialized", is_cache_initialized
+        )
+        monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", refresh_cache)
+    
+        RuntimeManager.reset()
+        token = lifecycle_context.set(sentinel)
+        try:
+>           await ensure_initialized_async()
+
+tests/unit/runtime/test_b102_public_facade_starvation.py:137: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/agentmap/runtime/init_ops.py:48: in ensure_initialized_async
+    await RuntimeManager.initialize_async(
+src/agentmap/runtime/runtime_manager.py:79: in initialize_async
+    await cls._run_initialization_transaction(
+src/agentmap/runtime/runtime_manager.py:106: in _run_initialization_transaction
+    cls._raise_initialization_outcome(outcome, cleanup)
+src/agentmap/runtime/runtime_manager.py:288: in _raise_initialization_outcome
+    raise original
+src/agentmap/async_lifecycle.py:50: in await_terminal_task
+    value = task.result()
+            ^^^^^^^^^^^^^
+src/agentmap/runtime/runtime_manager.py:119: in _run_install_and_startup
+    await loop.run_in_executor(
+/home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/agentmap/runtime/runtime_manager.py:137: in _install_and_startup
+    cls._initialize_in_transaction(
+src/agentmap/runtime/runtime_manager.py:152: in _initialize_in_transaction
+    cls._install(config_file)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'agentmap.runtime.runtime_manager.RuntimeManager'>
+config_file = None
+
+    @classmethod
+    def _install(cls, config_file: Optional[str]) -> None:
+        try:
+            container = initialize_di(config_file)
+        except Exception as error:
+            with cls._lock:
+                cls._is_initialized = False
+                cls._container = None
+>           raise AgentMapNotInitialized(f"Initialization failed: {error}") from error
+E           agentmap.exceptions.runtime_exceptions.AgentMapNotInitialized: Initialization failed: <ContextVar name='b102_lifecycle_context' at 0x7734c5b45030>
+
+src/agentmap/runtime/runtime_manager.py:162: AgentMapNotInitialized
+=========================== short test summary info ============================
+FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_lifecycle_executor_preserves_calling_task_context__b102
