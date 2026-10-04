@@ -1,0 +1,2 @@
+command: git diff --check 802676098d1a573c188a452b918ed684fe07ccde..de9ed08268d72c001d7bf401b9a9c5b81853906a
+result: PASS

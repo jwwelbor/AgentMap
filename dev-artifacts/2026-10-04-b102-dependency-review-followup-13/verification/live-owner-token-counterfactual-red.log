@@ -1,0 +1,28 @@
+mutation: timeout cleanup releases RuntimeManager._transaction_owner before the live owner reaches its own finally
+command: uv run pytest -q tests/unit/runtime/test_b102_public_facade_starvation.py::test_timeout_lets_live_owner_release_its_transaction__b102
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_timeout_lets_live_owner_release_its_transaction__b102 __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7996141daa50>
+
+    @pytest.mark.asyncio
+    async def test_timeout_lets_live_owner_release_its_transaction__b102(monkeypatch):
+        acquired, release, skip_lifecycle = install_owner_gate(monkeypatch)
+        RuntimeManager.reset()
+        owner = asyncio.create_task(ensure_initialized_async())
+        await acquired.wait()
+        try:
+            with pytest.raises(AssertionError, match=f"^{TIMEOUT_MESSAGE}$") as caught:
+                await guard_completion(
+                    owner, release, [], timeout=0.01, on_timeout=skip_lifecycle.set
+                )
+>           assert caught.value.__cause__ is None
+E           AssertionError: assert ExceptionGroup('deadlock guard cleanup failed', [RuntimeError('Runtime transaction owner mismatch')]) is None
+E            +  where ExceptionGroup('deadlock guard cleanup failed', [RuntimeError('Runtime transaction owner mismatch')]) = AssertionError('public facades starved the runtime lifecycle').__cause__
+E            +    where AssertionError('public facades starved the runtime lifecycle') = <ExceptionInfo AssertionError('public facades starved the runtime lifecycle') tblen=2>.value
+
+tests/unit/runtime/test_b102_public_facade_starvation.py:295: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_timeout_lets_live_owner_release_its_transaction__b102
+exit-code: 1 (expected nonzero)
