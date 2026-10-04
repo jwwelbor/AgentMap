@@ -1,0 +1,33 @@
+{
+  "reviewed_files": [
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/handoff.md",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/black.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/counterfactual-red-summary.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused-collect.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/isort.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/lint.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/make-test.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/mypy-normalized-comparison.log",
+    "src/agentmap/deployment/http/api/routes/admin.py",
+    "src/agentmap/runtime/runtime_manager.py",
+    "tests/fresh_suite/unit/services/test_llm_client_factory.py",
+    "tests/unit/deployment/http/api/test_b102_admin_async_initialization.py",
+    "tests/unit/runtime/test_b102_runtime_coordination.py",
+    "tests/unit/runtime/test_b102_runtime_shutdown.py",
+    "tests/unit/services/llm/test_b102_credential_cache_identity.py",
+    "tests/unit/services/llm/test_b102_review_size.py"
+  ],
+  "findings": [
+    {
+      "file": "src/agentmap/runtime/runtime_manager.py",
+      "line": 185,
+      "severity": "blocker",
+      "rule": "CONTRACT",
+      "summary": "Synchronous default-executor callers can still occupy every worker while waiting for an async transaction whose startup is queued behind them.",
+      "diagnosis": "The new loop-Future path removes executor use only for async transaction waiters. A synchronous caller still blocks at Condition.wait(), while RuntimeManager._run_initialization_transaction submits its owner work to that same loop default executor. This conflicts with the existing public list_graphs_async, inspect_graph_async, and validate_workflow_async wrappers, which run synchronous functions that call ensure_initialized() in asyncio.to_thread. If an async initializer wins transaction ownership while one of those sync wrappers occupies a bounded default executor, the wrapper waits for the owner and the owner waits for the executor worker, recreating the starvation deadlock across the sync/async caller boundary.",
+      "evidence": "runtime_manager.py:94-103 queues _install_and_startup through asyncio.to_thread; runtime_manager.py:177-186 lets a non-event-loop sync caller block on _transaction_condition; workflow_ops.py:1129-1139 documents that its async facade wrappers share the bounded default executor; workflow_ops.py:1182-1223 sends list_graphs/inspect_graph/validate_workflow through asyncio.to_thread, and their sync implementations call ensure_initialized at lines 218, 407, and 529. A deterministic one-worker probe held the worker in the sync facade shape after the async waiter acquired ownership and printed owner_done=False after 250 ms; the owner could not run its queued install.",
+      "correction": "Ensure transaction-owner startup cannot be queued behind synchronous transaction waiters, for example by using a lifecycle-dedicated executor, or make every sync acquisition fail typed instead of waiting whenever another transaction owns the runtime. Add a deterministic one- and two-worker counterfactual using the public to_thread-backed facade shape concurrently with ensure_initialized_async()."
+    }
+  ]
+}
