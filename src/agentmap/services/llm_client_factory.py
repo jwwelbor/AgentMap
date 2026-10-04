@@ -8,6 +8,12 @@ with proper dependency management and client caching.
 from typing import Any, Dict
 
 from agentmap.exceptions import LLMConfigurationError, LLMDependencyError
+from agentmap.services.llm.observed_clients import (
+    observed_anthropic_client,
+    observed_http_clients,
+    qualify_observation,
+)
+from agentmap.services.llm.response_observer import ObservedTransport
 from agentmap.services.logging_service import LoggingService
 
 
@@ -64,6 +70,10 @@ class LLMClientFactory:
         streaming = self._validate_streaming_flag(streaming)
         if not isinstance(governed, bool):
             raise TypeError("governed must be a bool")
+        if governed and streaming:
+            raise LLMConfigurationError(
+                "Governed response observation supports only non-streaming calls"
+            )
 
         # Create cache key based on provider and critical config.
         # The streaming dimension is appended last so streaming and non-streaming
@@ -203,6 +213,8 @@ class LLMClientFactory:
         }
         if governed:
             kwargs["max_retries"] = 0
+            qualify_observation("openai")
+            kwargs["http_client"], kwargs["http_async_client"] = observed_http_clients()
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         if streaming:
@@ -272,6 +284,9 @@ class LLMClientFactory:
             kwargs["max_tokens"] = max_tokens
         if streaming:
             kwargs["stream_usage"] = True
+        if governed:
+            qualify_observation("anthropic")
+            return observed_anthropic_client(kwargs)
         return ChatAnthropic(**kwargs)
 
     def _create_google_client(
@@ -336,6 +351,8 @@ class LLMClientFactory:
         }
         if governed:
             kwargs["max_retries"] = 1
+            qualify_observation("google")
+            kwargs["client_args"] = {"transport": ObservedTransport()}
         if max_tokens is not None:
             kwargs["max_output_tokens"] = max_tokens
         return ChatGoogleGenerativeAI(**kwargs)

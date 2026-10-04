@@ -13,6 +13,12 @@ from typing import Any, Awaitable, Callable, Optional, Tuple
 from agentmap.exceptions import LLMTimeoutError
 from agentmap.models.llm_attempt import LLMAttemptDescription, LLMAttemptOutcome
 from agentmap.models.llm_execution import LLMResponse
+from agentmap.services.llm.response_observer import (
+    ResponseCaptureFailure,
+    ResponseCollector,
+    response_collector,
+)
+from agentmap.services.llm_error_utils import classify_llm_error
 from agentmap.services.protocols.service_protocols import LLMAttemptLifecycleProtocol
 
 
@@ -112,6 +118,8 @@ async def invoke_governed_attempt(
     completion. Cancellation preserves its meaning even if cleanup fails.
     """
     attempt_id = await begin_attempt(lifecycle, description)
+    collector = ResponseCollector()
+    token = response_collector.set(collector)
     outcome = LLMAttemptOutcome(classification="provider_error")
     try:
         response, duration = await invoke()
@@ -124,7 +132,10 @@ async def invoke_governed_attempt(
         outcome = replace(outcome, classification=result.text_status)
     except asyncio.CancelledError as cancellation:
         outcome = replace(
-            outcome, classification="cancelled", error_type="CancelledError"
+            outcome,
+            classification="cancelled",
+            error_type="CancelledError",
+            response_evidence=collector.seal(),
         )
         await settle_cancelled(lifecycle, attempt_id, outcome, cancellation)
         raise
@@ -133,9 +144,27 @@ async def invoke_governed_attempt(
             "timeout" if isinstance(error, LLMTimeoutError) else outcome.classification
         )
         outcome = replace(
-            outcome, classification=classification, error_type=type(error).__name__
+            outcome,
+            classification=classification,
+            error_type=type(error).__name__,
+            response_evidence=collector.seal(),
         )
         await finish_attempt(lifecycle, attempt_id, outcome)
-        raise
+        if collector.failed:
+            raise AttemptLifecycleRefusal(ResponseCaptureFailure()) from None
+        # Preserve retry classification while excluding body/header/URL and
+        # SDK exception representations from public errors and telemetry.
+        typed_error = classify_llm_error(error, description.resolved_provider)
+        raise type(typed_error)("governed physical provider attempt failed") from None
+    finally:
+        collector.seal()
+        response_collector.reset(token)
+    outcome = replace(outcome, response_evidence=collector.evidence)
+    if collector.failed:
+        outcome = replace(
+            outcome, classification="capture_error", error_type="ResponseCaptureFailure"
+        )
     await finish_attempt(lifecycle, attempt_id, outcome)
+    if collector.failed:
+        raise AttemptLifecycleRefusal(ResponseCaptureFailure()) from None
     return result
