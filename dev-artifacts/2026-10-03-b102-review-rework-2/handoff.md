@@ -14,6 +14,9 @@ slice, not B102 host acceptance.
   the raw SDK exception reachable from the public error. Failure settlement now
   runs after leaving the raw provider exception handler. The test failed for
   OpenAI, Anthropic and Google before this change and passes afterward.
+- `6bd4a1e756cd43f381ed5c3fe732a7c41f4fc7b3` makes the offline transport
+  refuse a second request or an unexpected provider host. It also commits the
+  first version of this handoff.
 
 The public `call_llm_async` path still admits once and settles once. Existing
 focused tests cover billed non-text cap refusal, unknown charge, primary and
@@ -26,7 +29,8 @@ HTTP-response repr, client repr and observer-error markers. Only the exact
 body marker appears in `response_evidence.body`; outcome metadata, public
 exception and its cause/context graph, captured logs, and instrumented OTEL
 span exceptions/events have no marker. HTTPX and aiohttp unstubbed requests
-fail closed. No provider network or paid extraction was used.
+fail closed. A six-case coverage run emitted zero synthetic markers in its
+terminal report. No provider network or paid extraction was used.
 
 ## Defect-class sweep
 
@@ -63,6 +67,7 @@ Verification logs are retained locally in `verification/` under this folder.
 | `make lint` | passed | `make-lint-final.log` |
 | `uv run black --check src/ tests/` | passed, 776 files unchanged | `black-check-final.log` |
 | `uv run isort --check-only src/ tests/` | passed | `isort-check-final.log` |
+| Provider-error `pytest --cov=agentmap --cov-report=term` | six cases passed; zero secret markers in coverage output | `provider-error-coverage.log` |
 | `make type-check` | non-green inherited TD-052 baseline: 1,626 errors in 248 files | `make-type-check-final.log` |
 
 Normalized mypy error/note diagnostics match the earlier
