@@ -250,17 +250,24 @@ def mark_sdk_error_repr(provider, monkeypatch, marker):
     return seen
 
 
-def marked_error_transport(monkeypatch, markers, body):
+def marked_error_transport(monkeypatch, provider, markers, body):
     """Run supported wrappers against fake HTTP and refuse alternate network."""
     import aiohttp
 
     requests = []
+    hosts = {
+        "openai": "api.openai.com",
+        "anthropic": "api.anthropic.com",
+        "google": "generativelanguage.googleapis.com",
+    }
 
     class SDKVisibleResponse(httpx.Response):
         def __repr__(self):
             return "response-repr-marker-b102"
 
     def send(transport, request):
+        if requests or request.url.host != hosts[provider]:
+            raise AssertionError("unexpected fake-HTTP request")
         request.url = request.url.copy_add_param("private", markers["query"])
         requests.append(request)
         return SDKVisibleResponse(
@@ -328,7 +335,7 @@ async def test_provider_error_secrets_reach_only_response_evidence__b102(
     markers = provider_error_markers()
     body = json.dumps({"error": {"message": markers["body"], "code": 400}}).encode()
     seen_sdk_errors = mark_sdk_error_repr(provider, monkeypatch, markers["sdk_repr"])
-    requests = marked_error_transport(monkeypatch, markers, body)
+    requests = marked_error_transport(monkeypatch, provider, markers, body)
     if capture_failure:
         monkeypatch.setattr(
             response_observer,
