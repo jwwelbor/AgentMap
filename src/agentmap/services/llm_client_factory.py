@@ -6,10 +6,12 @@ with proper dependency management and client caching.
 """
 
 from hashlib import sha256
+from threading import RLock
 from typing import Any, Dict
 
 from agentmap.exceptions import LLMConfigurationError, LLMDependencyError
 from agentmap.services.llm.observed_clients import (
+    ObservedResources,
     governed_google_kwargs,
     governed_openai_kwargs,
     observed_anthropic_client,
@@ -28,6 +30,9 @@ class LLMClientFactory:
             logging_service: Service for logging
         """
         self._clients = {}  # Cache for LangChain clients
+        self._owners: list[ObservedResources] = []
+        self._constructing_resources: ObservedResources | None = None
+        self._cache_lock = RLock()
         self._logger = logging_service.get_class_logger("agentmap.llm.factory")
 
     @staticmethod
@@ -82,21 +87,23 @@ class LLMClientFactory:
             + ("_single_dispatch" if governed else "")
         )
 
-        if cache_key in self._clients:
-            return self._clients[cache_key]
-
-        # Create new client
-        if governed:
-            client = self._create_langchain_client(
-                provider, config, streaming, governed=True
-            )
-        else:
-            client = self._create_langchain_client(provider, config, streaming)
-
-        # Concurrent first use may create equivalent clients; the last wins.
-        self._clients[cache_key] = client
-
-        return client
+        with self._cache_lock:
+            if cache_key in self._clients:
+                return self._clients[cache_key]
+            if governed:
+                owner = ObservedResources()
+                self._owners.append(owner)
+                self._constructing_resources = owner
+                try:
+                    client = self._create_langchain_client(
+                        provider, config, streaming, governed=True
+                    )
+                finally:
+                    self._constructing_resources = None
+            else:
+                client = self._create_langchain_client(provider, config, streaming)
+            self._clients[cache_key] = client
+            return client
 
     def _create_langchain_client(
         self,
@@ -184,7 +191,7 @@ class LLMClientFactory:
             "openai_api_key": api_key,
         }
         if governed:
-            kwargs.update(governed_openai_kwargs())
+            kwargs.update(governed_openai_kwargs(self._constructing_resources))
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         if streaming:
@@ -238,7 +245,7 @@ class LLMClientFactory:
         if streaming:
             kwargs["stream_usage"] = True
         if governed:
-            return observed_anthropic_client(kwargs)
+            return observed_anthropic_client(kwargs, self._constructing_resources)
         return ChatAnthropic(**kwargs)
 
     def _create_google_client(
@@ -278,12 +285,31 @@ class LLMClientFactory:
             "google_api_key": api_key,
         }
         if governed:
-            kwargs.update(governed_google_kwargs())
+            kwargs.update(governed_google_kwargs(self._constructing_resources))
         if max_tokens is not None:
             kwargs["max_output_tokens"] = max_tokens
         return ChatGoogleGenerativeAI(**kwargs)
 
     def clear_cache(self) -> None:
         """Clear the client cache."""
-        self._clients.clear()
+        with self._cache_lock:
+            if self._owners:
+                raise LLMConfigurationError(
+                    "Governed clients require awaited shutdown before cache clearing"
+                )
+            self._clients.clear()
         self._logger.debug("Client cache cleared")
+
+    async def shutdown(self) -> None:
+        """Detach cached clients and await release of every governed HTTP pool."""
+        with self._cache_lock:
+            owners, self._owners = self._owners, []
+            self._clients.clear()
+        failures = []
+        for owner in owners:
+            try:
+                await owner.aclose()
+            except Exception as error:
+                failures.append(error)
+        if failures:
+            raise ExceptionGroup("governed client shutdown failed", failures)

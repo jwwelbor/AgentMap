@@ -120,6 +120,7 @@ async def settle_failed_attempt(
     outcome = replace(
         outcome,
         classification=classification,
+        cleanup_failed=collector.cleanup_failed,
         error_type=(
             "ResponseCaptureFailure" if collector.failed else type(error).__name__
         ),
@@ -127,7 +128,9 @@ async def settle_failed_attempt(
     )
     await finish_attempt(lifecycle, attempt_id, outcome)
     if collector.failed:
-        raise AttemptLifecycleRefusal(ResponseCaptureFailure()) from None
+        raise AttemptLifecycleRefusal(
+            ResponseCaptureFailure(cleanup_failed=collector.cleanup_failed)
+        ) from None
     # Classify for retry while excluding transport and SDK representations.
     typed_error = classify_llm_error(error, provider)
     raise type(typed_error)("governed physical provider attempt failed") from None
@@ -140,14 +143,20 @@ async def settle_successful_attempt(
     collector: ResponseCollector,
 ) -> None:
     """Settle the observed response even when capture itself failed."""
-    outcome = replace(outcome, response_evidence=collector.evidence)
+    outcome = replace(
+        outcome,
+        response_evidence=collector.evidence,
+        cleanup_failed=collector.cleanup_failed,
+    )
     if collector.failed:
         outcome = replace(
             outcome, classification="capture_error", error_type="ResponseCaptureFailure"
         )
     await finish_attempt(lifecycle, attempt_id, outcome)
     if collector.failed:
-        raise AttemptLifecycleRefusal(ResponseCaptureFailure()) from None
+        raise AttemptLifecycleRefusal(
+            ResponseCaptureFailure(cleanup_failed=collector.cleanup_failed)
+        ) from None
 
 
 async def invoke_governed_attempt(
@@ -180,6 +189,7 @@ async def invoke_governed_attempt(
             classification="cancelled",
             error_type="CancelledError",
             response_evidence=collector.seal(),
+            cleanup_failed=collector.cleanup_failed,
         )
     except Exception as error:
         failure = error

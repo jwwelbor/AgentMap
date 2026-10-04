@@ -6,6 +6,12 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[5]
+TEST_DIR = ROOT / "tests/fresh_suite/unit/services/llm"
+B102_TEST_MODULES = sorted(
+    path.relative_to(ROOT)
+    for path in TEST_DIR.glob("test_*.py")
+    if "__b102" in path.read_text() or path.name == "test_cost_calculator.py"
+)
 
 
 @pytest.mark.parametrize(
@@ -55,25 +61,16 @@ def test_b102_newly_oversized_functions_stay_within_repository_limit(path, name)
     assert size <= 50, f"{path}:{name} has {size} lines; limit is 50"
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "tests/fresh_suite/unit/services/llm/test_attempt_lifecycle.py",
-        "tests/fresh_suite/unit/services/llm/test_attempt_lifecycle_boundaries.py",
-        "tests/fresh_suite/unit/services/llm/test_b102_cost_trust.py",
-        "tests/fresh_suite/unit/services/llm/test_b102_credential_wire.py",
-        "tests/fresh_suite/unit/services/llm/test_b102_response_cleanup.py",
-        "tests/fresh_suite/unit/services/llm/test_b102_review_size.py",
-        "tests/fresh_suite/unit/services/llm/test_cost_calculator.py",
-        "tests/fresh_suite/unit/services/llm/test_cost_calculator_unconfigured.py",
-        "tests/fresh_suite/unit/services/llm/test_governed_clients.py",
-        "tests/fresh_suite/unit/services/llm/test_response_evidence.py",
-        "tests/fresh_suite/unit/services/llm/test_response_evidence_controls.py",
-        "tests/fresh_suite/unit/services/llm/test_response_evidence_proxy.py",
-        "tests/fresh_suite/unit/services/llm/test_response_evidence_routing.py",
-        "tests/fresh_suite/unit/services/llm/test_response_evidence_security.py",
-    ],
-)
+@pytest.mark.parametrize("path", B102_TEST_MODULES)
 def test_b102_owned_modules_stay_within_file_limit(path):
     lines = (ROOT / path).read_text().splitlines()
     assert len(lines) <= 350, f"{path} has {len(lines)} lines; limit is 350"
+
+
+@pytest.mark.parametrize("path", B102_TEST_MODULES)
+def test_every_b102_owned_test_function_stays_within_limit(path):
+    tree = ast.parse((ROOT / path).read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            size = node.end_lineno - node.lineno + 1
+            assert size <= 50, f"{path}:{node.name} has {size} lines; limit is 50"

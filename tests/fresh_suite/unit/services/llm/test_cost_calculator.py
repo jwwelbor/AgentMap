@@ -276,6 +276,7 @@ class TestCostCalculatorNoPricingConfigured(unittest.TestCase):
         result = calculator.calculate(usage, "openai", "gpt-4")
 
         self.assertIsNone(result)
+        self.assertIsNone(calculator.catalog_version)
 
     def test_tc_003_no_entry_for_resolved_pair_yields_none(self):
         """No pricing at all also means get_rates() itself returns None, not

@@ -139,6 +139,8 @@ class LLMCostCalculator:
     def _buckets_are_trustworthy(
         buckets: Tuple[Tuple[Optional[int], Optional[Decimal]], ...],
     ) -> bool:
+        if any(tokens is not None and tokens < 0 for tokens, _ in buckets):
+            return False
         if any(tokens is None and rate != Decimal(0) for tokens, rate in buckets[:2]):
             return False
         return not any(tokens and rate is None for tokens, rate in buckets)

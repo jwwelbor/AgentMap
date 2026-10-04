@@ -7,12 +7,14 @@ from typing import AsyncIterator, Callable, Iterator, Optional
 
 import httpx
 
+from agentmap.exceptions import LLMConfigurationError
 from agentmap.models.llm_attempt import LLMResponseEvidence
 
 
 class ResponseCaptureFailure(RuntimeError):
-    def __init__(self) -> None:
+    def __init__(self, *, cleanup_failed: bool = False) -> None:
         super().__init__("physical attempt response capture failed")
+        self.cleanup_failed = cleanup_failed
 
 
 class ResponseCollector:
@@ -25,6 +27,7 @@ class ResponseCollector:
         self._responses = 0
         self.evidence = LLMResponseEvidence()
         self.failed = False
+        self.cleanup_failed = False
         self._partial = bytearray()
 
     def start_request(self) -> bool:
@@ -79,6 +82,11 @@ class ResponseCollector:
     def partial_body(self) -> bytes:
         with self._lock:
             return bytes(self._partial)
+
+    def mark_cleanup_failed(self) -> None:
+        with self._lock:
+            if not self._sealed:
+                self.cleanup_failed = True
 
 
 response_collector: ContextVar[Optional[ResponseCollector]] = ContextVar(
@@ -192,6 +200,7 @@ def observe_response(response: httpx.Response) -> None:
         try:
             response.close()
         except BaseException as cleanup_error:
+            collector.mark_cleanup_failed()
             raise read_error from cleanup_error
         raise
     _record_complete(collector, response, body)
@@ -215,6 +224,7 @@ async def observe_async_response(response: httpx.Response) -> None:
         try:
             await response.aclose()
         except BaseException as cleanup_error:
+            collector.mark_cleanup_failed()
             raise read_error from cleanup_error
         raise
     _record_complete(collector, response, body)
@@ -229,10 +239,31 @@ class ObservedTransport(httpx.BaseTransport, httpx.AsyncBaseTransport):
     """
 
     def __init__(self, proxy: Optional[str] = None) -> None:
-        # HTTPX owns environment proxy and NO_PROXY routing on these clients.
-        # A bare HTTPTransport would silently bypass both.
-        self._sync = httpx.Client(proxy=proxy)
-        self._async = httpx.AsyncClient(proxy=proxy)
+        # Google shares this adapter across modes. Create only the mode used.
+        self._proxy = proxy
+        self._sync_client: Optional[httpx.Client] = None
+        self._async_client: Optional[httpx.AsyncClient] = None
+        self._lock = Lock()
+        self._sync_closed = False
+        self._async_closed = False
+
+    @property
+    def _sync(self) -> httpx.Client:
+        with self._lock:
+            if self._sync_closed:
+                raise LLMConfigurationError("Observed transport is shut down")
+            if self._sync_client is None:
+                self._sync_client = httpx.Client(proxy=self._proxy)
+            return self._sync_client
+
+    @property
+    def _async(self) -> httpx.AsyncClient:
+        with self._lock:
+            if self._async_closed:
+                raise LLMConfigurationError("Observed transport is shut down")
+            if self._async_client is None:
+                self._async_client = httpx.AsyncClient(proxy=self._proxy)
+            return self._async_client
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         collector = response_collector.get()
@@ -251,7 +282,51 @@ class ObservedTransport(httpx.BaseTransport, httpx.AsyncBaseTransport):
         return response
 
     def close(self) -> None:
+        with self._lock:
+            self._sync_closed = True
+            client, self._sync_client = self._sync_client, None
+        if client is not None:
+            client.close()
+
+    async def aclose(self) -> None:
+        with self._lock:
+            self._async_closed = True
+            client, self._async_client = self._async_client, None
+        if client is not None:
+            await client.aclose()
+
+
+class ObservedSyncTransport(httpx.BaseTransport):
+    """One synchronous observed HTTPX pool."""
+
+    def __init__(self, proxy: Optional[str] = None) -> None:
+        self._sync = httpx.Client(proxy=proxy)
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        collector = response_collector.get()
+        if collector is not None and not collector.start_request():
+            raise ResponseCaptureFailure()
+        response = self._sync.send(request, stream=True)
+        observe_response(response)
+        return response
+
+    def close(self) -> None:
         self._sync.close()
+
+
+class ObservedAsyncTransport(httpx.AsyncBaseTransport):
+    """One asynchronous observed HTTPX pool."""
+
+    def __init__(self, proxy: Optional[str] = None) -> None:
+        self._async = httpx.AsyncClient(proxy=proxy)
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        collector = response_collector.get()
+        if collector is not None and not collector.start_request():
+            raise ResponseCaptureFailure()
+        response = await self._async.send(request, stream=True)
+        await observe_async_response(response)
+        return response
 
     async def aclose(self) -> None:
         await self._async.aclose()

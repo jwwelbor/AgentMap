@@ -2327,6 +2327,10 @@ class LLMService:
         self._client_factory.clear_cache()
         self._logger.debug("[LLMService] Client cache cleared")
 
+    async def shutdown(self) -> None:
+        """Release governed client resources through the owning factory."""
+        await self._client_factory.shutdown()
+
     def get_routing_stats(self) -> Dict[str, Any]:
         """
         Get routing service statistics if available.

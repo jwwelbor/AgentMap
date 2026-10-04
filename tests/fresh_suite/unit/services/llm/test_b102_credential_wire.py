@@ -28,57 +28,25 @@ def wire_credential(provider, request):
     return request.headers.get("x-goog-api-key") or request.url.params.get("key")
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("provider,model", PROVIDERS)
-@pytest.mark.parametrize("reverse", [False, True])
-async def test_direct_calls_send_each_complete_credential__b102(
-    provider, model, reverse, monkeypatch
-):
-    keys = ["same-pre-first-account", "same-pre-other-account"]
-    if reverse:
-        keys.reverse()
-    calls = setup_transport(monkeypatch, body_for(provider))
-    service = real_service(provider, model)
-    outcomes = []
-    for key in keys:
-        service._provider_utils.get_provider_config = Mock(
-            return_value={"api_key": key, "model": model}
-        )
-        ledger = Ledger("1")
-        await invoke(service, provider, model, ledger)
-        outcomes.append(ledger.rows["1"])
-    assert len(calls) == 2
-    for request, key in zip(calls, keys):
-        expected = f"Bearer {key}" if provider == "openai" else key
-        assert wire_credential(provider, request) == expected
-    assert all(key not in repr(service._client_factory._clients) for key in keys)
-    assert all(key not in repr(outcome) for key in keys for outcome in outcomes)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("provider,model", PROVIDERS)
-@pytest.mark.parametrize("reverse", [False, True])
-async def test_real_fallback_sends_selected_complete_credential__b102(
-    provider, model, reverse, monkeypatch
-):
-    keys = ["same-pre-first-account", "same-pre-other-account"]
-    if reverse:
-        keys.reverse()
-    primary = "anthropic" if provider != "anthropic" else "openai"
-    primary_model = "claude-sonnet-4-5" if primary == "anthropic" else "gpt-4o-mini"
+def setup_fallback_transport(monkeypatch):
     calls = []
 
     async def send(transport, request):
         calls.append(request)
         destination = request.url.host
-        actual = (
-            "anthropic"
-            if "anthropic" in destination
-            else "google" if "google" in destination else "openai"
-        )
+        if "anthropic" in destination:
+            actual = "anthropic"
+        elif "google" in destination:
+            actual = "google"
+        else:
+            actual = "openai"
         return httpx.Response(200, content=body_for(actual))
 
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", send)
+    return calls
+
+
+def configured_fallback_service(provider, model, primary, primary_model):
     service = fallback_service(Mock())
     service._client_factory = LLMClientFactory(Mock())
     routing = service._fallback_handler.routing_config
@@ -96,6 +64,66 @@ async def test_real_fallback_sends_selected_complete_credential__b102(
         },
         Mock(),
     )
+    return service
+
+
+def track_async_pool_closure(monkeypatch):
+    closed = []
+    original = httpx.AsyncHTTPTransport.aclose
+
+    async def close(transport):
+        closed.append(transport)
+        await original(transport)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "aclose", close)
+    return closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider,model", PROVIDERS)
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_direct_calls_send_each_complete_credential__b102(
+    provider, model, reverse, monkeypatch
+):
+    keys = ["same-pre-first-account", "same-pre-other-account"]
+    if reverse:
+        keys.reverse()
+    calls = setup_transport(monkeypatch, body_for(provider))
+    closed = track_async_pool_closure(monkeypatch)
+    service = real_service(provider, model)
+    outcomes = []
+    for key in keys:
+        service._provider_utils.get_provider_config = Mock(
+            return_value={"api_key": key, "model": model}
+        )
+        ledger = Ledger("1")
+        await invoke(service, provider, model, ledger)
+        outcomes.append(ledger.rows["1"])
+    assert len(calls) == 2
+    for request, key in zip(calls, keys):
+        expected = f"Bearer {key}" if provider == "openai" else key
+        assert wire_credential(provider, request) == expected
+    assert all(key not in repr(service._client_factory._clients) for key in keys)
+    assert all(key not in repr(outcome) for key in keys for outcome in outcomes)
+    await service.shutdown()
+    await service.shutdown()
+    assert len(closed) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider,model", PROVIDERS)
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_real_fallback_sends_selected_complete_credential__b102(
+    provider, model, reverse, monkeypatch
+):
+    keys = ["same-pre-first-account", "same-pre-other-account"]
+    if reverse:
+        keys.reverse()
+    primary = "anthropic" if provider != "anthropic" else "openai"
+    primary_model = "claude-sonnet-4-5" if primary == "anthropic" else "gpt-4o-mini"
+    calls = setup_fallback_transport(monkeypatch)
+    closed = track_async_pool_closure(monkeypatch)
+    service = configured_fallback_service(provider, model, primary, primary_model)
     outcomes = []
     for key in keys:
         service._provider_utils.get_provider_config = Mock(
@@ -128,3 +156,6 @@ async def test_real_fallback_sends_selected_complete_credential__b102(
     )
     assert all(key not in repr(service._client_factory._clients) for key in keys)
     assert all(key not in repr(outcome) for key in keys for outcome in outcomes)
+    await service.shutdown()
+    await service.shutdown()
+    assert len(closed) == 3

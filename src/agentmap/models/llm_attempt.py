@@ -65,4 +65,5 @@ class LLMAttemptOutcome:
     cost_usd: Optional[Decimal] = None
     provider_request_id: Optional[str] = None
     error_type: Optional[str] = None
+    cleanup_failed: bool = False
     response_evidence: LLMResponseEvidence = field(default_factory=LLMResponseEvidence)
