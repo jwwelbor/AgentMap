@@ -1,0 +1,121 @@
+Running pytest...
+uv run pytest tests/
+warning: `VIRTUAL_ENV=/home/jwwel/projects/wwgm/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+.............................s.......................................... [  1%]
+........................................................................ [  2%]
+............................................s...s.........s.s..ssssssss. [  3%]
+........................................................................................... [  5%]
+................................................................ [  6%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+................................................................................................................................. [ 14%]
+............................................................................................................. [ 15%]
+....................................................... [ 16%]
+............................................................. [ 18%]
+.................................................................... [ 19%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+........................................................................ [ 24%]
+..........................................................s............. [ 25%]
+.........s.............................................................. [ 26%]
+........................................................................ [ 28%]
+........................................................................ [ 29%]
+........................................................................ [ 30%]
+........................................................................ [ 32%]
+................................................................ [ 33%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+......................................................s....s............ [ 37%]
+.........s................s............................................. [ 38%]
+........................................................................ [ 39%]
+..............................................s......s.....s..........s. [ 40%]
+..................................................................... [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 46%]
+........................................................................ [ 47%]
+............................................................... [ 48%]
+........................................................................ [ 49%]
+.................................................................s.........ss............................................... [ 51%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+....................................ss.....s.s........s................. [ 55%]
+.................................................................. [ 56%]
+..........ssss..sss..................................................... [ 58%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 62%]
+...............................................................s....s... [ 63%]
+........................................................................ [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+.......................................................... [ 68%]
+........................................................................ [ 69%]
+........................................................................ [ 70%]
+........................................................................ [ 72%]
+..............................s....................................s.... [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 77%]
+........................................................................ [ 78%]
+........................................................................ [ 79%]
+.................................................................... [ 81%]
+........................................................................ [ 82%]
+................................................... [ 83%]
+....................................................ss.................. [ 84%]
+........................................................................ [ 85%]
+....................................s................................... [ 87%]
+........................................................................ [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+........................................................................ [ 93%]
+........................................................................ [ 94%]
+.......ss............................................................... [ 96%]
+........................................................................ [ 97%]
+......................................................................s. [ 98%]
+........................................................................ [ 99%]
+...                                                                      [100%]
+=============================== warnings summary ===============================
+tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_graph_message_raises_when_service_not_configured
+  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:475: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    _safe_super(NonCallableMock, self).__init__(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_resume_message_includes_duration
+  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/src/agentmap/agents/builtins/suspend_agent.py:300: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    self.log_error(f"Failed to publish resume message: {e}")
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_resume_message_uses_custom_topic_and_template
+  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:1124: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    return self._mock_call(*args, **kwargs)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_suspend_message_raises_when_service_not_configured
+  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/inspect.py:3062: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    arguments = {}
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/fresh_suite/integration/api/test_api_minimal.py::TestAPIBasics::test_execution_endpoint_basic
+  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:354: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    self._config_wrapper_stack = ConfigWrapperStack(config_wrapper)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/fresh_suite/integration/api/test_auth_endpoints.py::TestAuthenticationEndpoints::test_auth_service_unavailable
+  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/yaml/scanner.py:599: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    self.tokens.append(ValueToken(start_mark, end_mark))
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+5559 passed, 48 skipped, 1 deselected, 6 warnings, 228 subtests passed in 61.87s (0:01:01)
+✓ Tests complete
