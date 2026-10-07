@@ -41,9 +41,8 @@ class GovernedClientLifecycleMixin:
         self, provider: str, config: Dict[str, Any]
     ) -> Any:
         """Construct one governed owner per key with awaited rollback."""
-        cache_key = self._cache_key(provider, config, False, True)
         with self._cache_lock:
-            self._ensure_open()
+            cache_key = self._cache_key(provider, config, False, True)
             key_lock = self._key_locks.setdefault(cache_key, Lock())
             lifecycle = asyncio.create_task(
                 self._run_governed_construction(key_lock, cache_key, provider, config)
@@ -169,6 +168,7 @@ class GovernedClientLifecycleMixin:
         with self._cache_lock:
             owners, self._owners = self._owners, []
             self._clients.clear()
+            self._key_locks.clear()
             self._api_key_tokens.clear()
         failures: list[BaseException] = []
         for owner in owners:

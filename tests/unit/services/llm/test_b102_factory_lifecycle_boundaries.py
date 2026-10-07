@@ -1,6 +1,7 @@
 """B102 governed construction and shutdown are one terminal transaction."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 from unittest.mock import Mock
 
@@ -52,6 +53,62 @@ async def test_cache_clear_and_shutdown_release_credential_tokens__b102():
         await factory.get_or_create_governed_client(
             "openai", {"model": "m", "api_key": "late-async-secret"}
         )
+    assert factory._api_key_tokens == {}
+
+
+@pytest.mark.parametrize("governed", [False, True])
+def test_cache_clear_waits_for_client_publication__b102(monkeypatch, governed):
+    factory = LLMClientFactory(Mock())
+    key_ready, release_key, clear_started, clear_finished = (
+        Event(),
+        Event(),
+        Event(),
+        Event(),
+    )
+    original_key = factory._cache_key
+
+    def paused_key(*args):
+        key = original_key(*args)
+        key_ready.set()
+        assert release_key.wait(5)
+        return key
+
+    def clear_cache():
+        clear_started.set()
+        try:
+            factory.clear_cache()
+        finally:
+            clear_finished.set()
+
+    monkeypatch.setattr(factory, "_cache_key", paused_key)
+    monkeypatch.setattr(
+        factory, "_create_langchain_client", lambda *args, **kwargs: object()
+    )
+
+    def acquire():
+        if governed:
+            return asyncio.run(
+                factory.get_or_create_governed_client("openai", config("m"))
+            )
+        return factory.get_or_create_client("openai", config("m"))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        acquisition = pool.submit(acquire)
+        try:
+            assert key_ready.wait(5)
+            clearing = pool.submit(clear_cache)
+            assert clear_started.wait(5)
+            assert not clear_finished.wait(0.1), "cache clear must wait for publication"
+        finally:
+            release_key.set()
+        assert acquisition.result(timeout=5)
+        if governed:
+            with pytest.raises(LLMConfigurationError, match="awaited shutdown"):
+                clearing.result(timeout=5)
+            asyncio.run(factory.shutdown())
+        else:
+            clearing.result(timeout=5)
+    assert factory._clients == {}
     assert factory._api_key_tokens == {}
 
 

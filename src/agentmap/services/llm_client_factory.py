@@ -74,9 +74,8 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 "Governed response observation supports only non-streaming calls"
             )
 
-        cache_key = self._cache_key(provider, config, streaming, governed)
         with self._cache_lock:
-            self._ensure_open()
+            cache_key = self._cache_key(provider, config, streaming, governed)
             if cache_key in self._clients:
                 return self._clients[cache_key]
             if governed:
@@ -293,5 +292,6 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                     "Governed clients require awaited shutdown before cache clearing"
                 )
             self._clients.clear()
+            self._key_locks.clear()
             self._api_key_tokens.clear()
         self._logger.debug("Client cache cleared")
