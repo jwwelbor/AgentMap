@@ -1,7 +1,6 @@
 """Awaited construction and shutdown for governed provider clients."""
 
 import asyncio
-import hmac
 import secrets
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Dict
@@ -9,8 +8,6 @@ from typing import TYPE_CHECKING, Any, Dict
 from agentmap.async_lifecycle import await_terminal_task, raise_cleanup_failures
 from agentmap.exceptions import LLMConfigurationError
 from agentmap.services.llm.observed_clients import ObservedResources
-
-_CACHE_IDENTITY_SECRET = secrets.token_bytes(32)
 
 
 class GovernedClientLifecycleMixin:
@@ -34,6 +31,7 @@ class GovernedClientLifecycleMixin:
     def _initialize_governed_lifecycle(self) -> None:
         self._owners: list[ObservedResources] = []
         self._key_locks: dict[str, Lock] = {}
+        self._api_key_tokens: dict[str, str] = {}
         self._active_governed: set[asyncio.Task[Any]] = set()
         self._shutdown_task: asyncio.Task[None] | None = None
         self._closing = False
@@ -123,13 +121,15 @@ class GovernedClientLifecycleMixin:
             raise error
         return client
 
-    @staticmethod
     def _cache_key(
-        provider: str, config: Dict[str, Any], streaming: bool, governed: bool
+        self, provider: str, config: Dict[str, Any], streaming: bool, governed: bool
     ) -> str:
-        api_key_identity = hmac.digest(
-            _CACHE_IDENTITY_SECRET, (config.get("api_key") or "").encode(), "sha256"
-        ).hex()
+        api_key = config.get("api_key") or ""
+        with self._cache_lock:
+            api_key_identity = self._api_key_tokens.get(api_key)
+            if api_key_identity is None:
+                api_key_identity = secrets.token_hex(32)
+                self._api_key_tokens[api_key] = api_key_identity
         return (
             f"{provider}_{config.get('model')}_{api_key_identity}_"
             f"{config.get('max_tokens')}_{config.get('temperature', 0.7)!r}_{streaming}"
@@ -168,6 +168,7 @@ class GovernedClientLifecycleMixin:
         with self._cache_lock:
             owners, self._owners = self._owners, []
             self._clients.clear()
+            self._api_key_tokens.clear()
         failures: list[BaseException] = []
         for owner in owners:
             try:
