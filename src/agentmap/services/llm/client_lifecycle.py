@@ -32,6 +32,8 @@ class GovernedClientLifecycleMixin:
         self._owners: list[ObservedResources] = []
         self._key_locks: dict[str, Lock] = {}
         self._api_key_tokens: dict[str, str] = {}
+        self._published_tokens: set[str] = set()
+        self._pending_tokens: dict[str, int] = {}
         self._active_governed: set[asyncio.Task[Any]] = set()
         self._shutdown_task: asyncio.Task[None] | None = None
         self._closing = False
@@ -43,10 +45,19 @@ class GovernedClientLifecycleMixin:
         """Construct one governed owner per key with awaited rollback."""
         with self._cache_lock:
             cache_key = self._cache_key(provider, config, False, True)
+            api_key = config.get("api_key") or ""
+            token = self._api_key_tokens[api_key]
             key_lock = self._key_locks.setdefault(cache_key, Lock())
-            lifecycle = asyncio.create_task(
-                self._run_governed_construction(key_lock, cache_key, provider, config)
+            self._pending_tokens[token] = self._pending_tokens.get(token, 0) + 1
+            construction = self._run_governed_construction(
+                key_lock, cache_key, provider, config, api_key, token
             )
+            try:
+                lifecycle = asyncio.create_task(construction)
+            except Exception:
+                construction.close()
+                self._finish_pending_token(api_key, token)
+                raise
             self._active_governed.add(lifecycle)
         outcome = await await_terminal_task(lifecycle)
         return outcome.result()
@@ -57,17 +68,20 @@ class GovernedClientLifecycleMixin:
         cache_key: str,
         provider: str,
         config: Dict[str, Any],
+        api_key: str,
+        token: str,
     ) -> Any:
         current = asyncio.current_task()
         assert current is not None
         try:
             result = await asyncio.to_thread(
-                self._construct_governed, key_lock, cache_key, provider, config
+                self._construct_governed, key_lock, cache_key, provider, config, token
             )
             return await self._finish_governed_construction(result)
         finally:
             with self._cache_lock:
                 self._active_governed.discard(current)
+                self._finish_pending_token(api_key, token)
 
     def _construct_governed(
         self,
@@ -75,6 +89,7 @@ class GovernedClientLifecycleMixin:
         cache_key: str,
         provider: str,
         config: Dict[str, Any],
+        token: str,
     ) -> tuple[Any | None, ObservedResources | None, Exception | None]:
         with key_lock:
             with self._cache_lock:
@@ -96,6 +111,7 @@ class GovernedClientLifecycleMixin:
                     )
                     return None, owner, closing_error
                 self._clients[cache_key] = client
+                self._published_tokens.add(token)
                 self._owners.append(owner)
             return client, None, None
 
@@ -129,12 +145,31 @@ class GovernedClientLifecycleMixin:
             api_key_identity = self._api_key_tokens.get(api_key)
             if api_key_identity is None:
                 api_key_identity = secrets.token_hex(32)
+                while api_key_identity in self._api_key_tokens.values():
+                    api_key_identity = secrets.token_hex(32)
                 self._api_key_tokens[api_key] = api_key_identity
         return (
             f"{provider}_{config.get('model')}_{api_key_identity}_"
             f"{config.get('max_tokens')}_{config.get('temperature', 0.7)!r}_{streaming}"
             + ("_single_dispatch" if governed else "")
         )
+
+    def _finish_pending_token(self, api_key: str, token: str) -> None:
+        remaining = self._pending_tokens[token] - 1
+        if remaining:
+            self._pending_tokens[token] = remaining
+        else:
+            del self._pending_tokens[token]
+            self._release_unused_token(api_key, token)
+
+    def _release_unused_token(self, api_key: str, token: str) -> None:
+        if token in self._published_tokens or token in self._pending_tokens:
+            return
+        if self._api_key_tokens.get(api_key) == token:
+            del self._api_key_tokens[api_key]
+        for cache_key in list(self._key_locks):
+            if f"_{token}_" in cache_key:
+                del self._key_locks[cache_key]
 
     def _ensure_open(self) -> None:
         if self._closing or self._closed:
@@ -170,6 +205,8 @@ class GovernedClientLifecycleMixin:
             self._clients.clear()
             self._key_locks.clear()
             self._api_key_tokens.clear()
+            self._published_tokens.clear()
+            self._pending_tokens.clear()
         failures: list[BaseException] = []
         for owner in owners:
             try:

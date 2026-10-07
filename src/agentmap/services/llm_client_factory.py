@@ -76,15 +76,21 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
 
         with self._cache_lock:
             cache_key = self._cache_key(provider, config, streaming, governed)
+            api_key = config.get("api_key") or ""
+            token = self._api_key_tokens[api_key]
             if cache_key in self._clients:
                 return self._clients[cache_key]
-            if governed:
-                raise LLMConfigurationError(
-                    "Governed clients require awaited async construction"
-                )
-            client = self._create_langchain_client(provider, config, streaming)
-            self._clients[cache_key] = client
-            return client
+            try:
+                if governed:
+                    raise LLMConfigurationError(
+                        "Governed clients require awaited async construction"
+                    )
+                client = self._create_langchain_client(provider, config, streaming)
+                self._clients[cache_key] = client
+                self._published_tokens.add(token)
+                return client
+            finally:
+                self._release_unused_token(api_key, token)
 
     def _create_langchain_client(
         self,
@@ -294,4 +300,6 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
             self._clients.clear()
             self._key_locks.clear()
             self._api_key_tokens.clear()
+            self._published_tokens.clear()
+            self._pending_tokens.clear()
         self._logger.debug("Client cache cleared")
