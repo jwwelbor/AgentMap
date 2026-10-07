@@ -152,6 +152,53 @@ async def test_overlapping_lifespans_reject_different_config__b102(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_default_config_cannot_borrow_explicit_runtime__b102(monkeypatch):
+    service = SimpleNamespace(shutdown=AsyncMock())
+    container = SimpleNamespace(
+        app_config_service=Mock(),
+        auth_service=Mock(),
+        llm_service=Mock(return_value=service),
+    )
+    RuntimeManager.reset()
+    install = Mock(return_value=container)
+    monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", install)
+    monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
+    try:
+        async with create_lifespan("first.yml")(FastAPI()):
+            with pytest.raises(AgentMapNotInitialized, match="config differs"):
+                async with create_lifespan()(FastAPI()):
+                    pytest.fail("default-config app must not borrow explicit config")
+            service.shutdown.assert_not_awaited()
+        install.assert_called_once_with("first.yml")
+        service.shutdown.assert_awaited_once_with()
+    finally:
+        RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
+async def test_overlapping_lifespans_share_same_explicit_config__b102(monkeypatch):
+    service = SimpleNamespace(shutdown=AsyncMock())
+    container = SimpleNamespace(
+        app_config_service=Mock(),
+        auth_service=Mock(),
+        llm_service=Mock(return_value=service),
+    )
+    RuntimeManager.reset()
+    install = Mock(return_value=container)
+    monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", install)
+    monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
+    try:
+        async with create_lifespan("shared.yml")(FastAPI()):
+            async with create_lifespan("shared.yml")(FastAPI()):
+                assert RuntimeManager.get_container() is container
+            service.shutdown.assert_not_awaited()
+        install.assert_called_once_with("shared.yml")
+        service.shutdown.assert_awaited_once_with()
+    finally:
+        RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
 async def test_borrowed_runtime_rejects_different_config__b102(monkeypatch):
     service = SimpleNamespace(shutdown=AsyncMock())
     container = SimpleNamespace(

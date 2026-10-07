@@ -28,11 +28,7 @@ class RuntimeLifespanMixin:
                     "Overlapping HTTP lifespans must use the same event loop"
                 )
             previous = cls._current_container()
-            if (
-                previous is not None
-                and config_file is not None
-                and config_file != cls._runtime_config_file
-            ):
+            if previous is not None and config_file != cls._runtime_config_file:
                 raise AgentMapNotInitialized(
                     "HTTP lifespan config differs from the active runtime"
                 )
