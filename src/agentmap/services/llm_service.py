@@ -2371,6 +2371,10 @@ class LLMService:
         """Release governed client resources through the owning factory."""
         await self._client_factory.shutdown()
 
+    def prepare_sync_shutdown(self) -> bool:
+        """Reserve synchronous shutdown when no governed owner is active."""
+        return self._client_factory.prepare_sync_shutdown()
+
     def get_routing_stats(self) -> Dict[str, Any]:
         """
         Get routing service statistics if available.

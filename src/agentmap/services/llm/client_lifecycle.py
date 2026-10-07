@@ -135,6 +135,14 @@ class GovernedClientLifecycleMixin:
         if self._closing or self._closed:
             raise LLMConfigurationError("LLM client factory is shut down")
 
+    def prepare_sync_shutdown(self) -> bool:
+        """Reserve shutdown only when no governed owner needs its async loop."""
+        with self._cache_lock:
+            if self._owners or self._active_governed:
+                return False
+            self._closing = True
+            return True
+
     async def shutdown(self) -> None:
         """Reject new clients and finish cleanup despite caller cancellation."""
         with self._cache_lock:

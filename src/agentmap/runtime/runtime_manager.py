@@ -59,6 +59,14 @@ class RuntimeManager:
                 return
             if current is not None:
                 cls._reject_sync_refresh_in_event_loop()
+                service = current.llm_service()
+                prepare_sync_shutdown = getattr(
+                    service, "prepare_sync_shutdown", lambda: True
+                )
+                if not prepare_sync_shutdown():
+                    raise AgentMapNotInitialized(
+                        "Governed clients require ensure_initialized_async() for refresh"
+                    )
                 detached = cls._detach_if_current(current)
                 asyncio.run(cls._shutdown_container(detached))
             cls._install(config_file)
