@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from agentmap.deployment.http.api.server import FastAPIServer, create_lifespan
 from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
 from agentmap.runtime.init_ops import ensure_initialized_async
+from agentmap.runtime.lifespan_mixin import effective_config_file
 from agentmap.runtime.runtime_manager import RuntimeManager
 from agentmap.services.llm_client_factory import LLMClientFactory
 
@@ -55,6 +56,7 @@ async def test_lifespan_awaits_llm_shutdown_once__b102(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_lifespan_borrows_preexisting_runtime_without_shutdown__b102(monkeypatch):
+    RuntimeManager.reset()
     service = SimpleNamespace(shutdown=AsyncMock())
     container = SimpleNamespace(
         app_config_service=Mock(),
@@ -63,6 +65,7 @@ async def test_lifespan_borrows_preexisting_runtime_without_shutdown__b102(monke
     )
     RuntimeManager._container = container
     RuntimeManager._is_initialized = True
+    RuntimeManager._runtime_config_file = effective_config_file(None)
     monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
     try:
         async with create_lifespan()(FastAPI()):
@@ -209,7 +212,7 @@ async def test_borrowed_runtime_rejects_different_config__b102(monkeypatch):
     RuntimeManager.reset()
     RuntimeManager._container = container
     RuntimeManager._is_initialized = True
-    RuntimeManager._runtime_config_file = "host.yml"
+    RuntimeManager._runtime_config_file = effective_config_file("host.yml")
     monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
     try:
         with pytest.raises(AgentMapNotInitialized, match="config differs"):

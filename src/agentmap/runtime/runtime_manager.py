@@ -19,7 +19,11 @@ from agentmap.async_lifecycle import (
 from agentmap.di import initialize_di
 from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
 from agentmap.runtime.cleanup_mixin import RuntimeCleanupMixin
-from agentmap.runtime.lifespan_mixin import RuntimeLifespanMixin
+from agentmap.runtime.lifespan_mixin import (
+    RuntimeLifespanMixin,
+    canonical_config_path,
+    effective_config_file,
+)
 
 
 class RuntimeManager(RuntimeLifespanMixin, RuntimeCleanupMixin):
@@ -179,6 +183,10 @@ class RuntimeManager(RuntimeLifespanMixin, RuntimeCleanupMixin):
     def _install(cls, config_file: Optional[str]) -> None:
         try:
             container = initialize_di(config_file)
+            try:
+                installed_config = canonical_config_path(container.config.path())
+            except (AttributeError, TypeError):
+                installed_config = effective_config_file(config_file)
         except Exception as error:
             with cls._lock:
                 cls._is_initialized = False
@@ -188,7 +196,7 @@ class RuntimeManager(RuntimeLifespanMixin, RuntimeCleanupMixin):
         with cls._lock:
             cls._container = container
             cls._is_initialized = True
-            cls._runtime_config_file = config_file
+            cls._runtime_config_file = installed_config
 
     @classmethod
     async def shutdown(cls) -> None:

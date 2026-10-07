@@ -1,10 +1,22 @@
 """HTTP lifespan leases for the process runtime singleton."""
 
 import asyncio
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from agentmap.async_lifecycle import await_terminal_task
+from agentmap.di import discover_config_file
 from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
+
+
+def canonical_config_path(config_file: str | None) -> str | None:
+    """Identify one config file independent of relative path or symlink spelling."""
+    return str(Path(config_file).resolve()) if config_file else None
+
+
+def effective_config_file(config_file: str | None) -> str | None:
+    """Resolve AgentMap's explicit path or current-directory discovery."""
+    return canonical_config_path(config_file or discover_config_file())
 
 
 class RuntimeLifespanMixin:
@@ -28,7 +40,10 @@ class RuntimeLifespanMixin:
                     "Overlapping HTTP lifespans must use the same event loop"
                 )
             previous = cls._current_container()
-            if previous is not None and config_file != cls._runtime_config_file:
+            if (
+                previous is not None
+                and effective_config_file(config_file) != cls._runtime_config_file
+            ):
                 raise AgentMapNotInitialized(
                     "HTTP lifespan config differs from the active runtime"
                 )
