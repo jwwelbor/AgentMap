@@ -59,3 +59,33 @@ def raise_cleanup_failures(message: str, failures: list[BaseException]) -> None:
         raise failures[0]
     if failures:
         raise BaseExceptionGroup(message, failures)
+
+
+def raise_initialization_outcome(
+    outcome: TerminalTaskOutcome, cleanup: TerminalTaskOutcome
+) -> None:
+    """Raise the primary startup failure while retaining cleanup failures."""
+    original = (
+        outcome.caller_cancellation
+        or cleanup.caller_cancellation
+        or outcome.task_error
+        or cleanup.task_error
+    )
+    if original is None:
+        return
+    terminal = (
+        outcome.caller_cancellation,
+        outcome.task_error,
+        cleanup.caller_cancellation,
+        cleanup.task_error,
+    )
+    secondary = [
+        error for error in terminal if error is not None and error is not original
+    ]
+    if len(secondary) == 1:
+        raise original from secondary[0]
+    if secondary:
+        raise original from BaseExceptionGroup(
+            "runtime initialization cleanup failed", secondary
+        )
+    raise original

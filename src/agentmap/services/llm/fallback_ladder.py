@@ -67,9 +67,8 @@ class LLMFallbackAsyncLadderMixin:
         ``response``/``tier_error`` is set. ``client_resolved`` is True once
         ``get_or_create_client_fn`` succeeded -- preserves the MEDIUM-2 fix's
         "identity reflects only an attempted network call" semantics without
-        a callback. ``BudgetGuardRefusal`` is deliberately **not** caught --
-        it propagates so the ladder stops instead of treating a fail-closed
-        refusal as an ordinary tier failure (E05-F06 REQ-F-003 / NFR-F-003).
+        a callback. ``BudgetGuardRefusal`` is not caught -- it stops the ladder
+        instead of becoming a tier failure (E05-F06 REQ-F-003 / NFR-F-003).
         Extracted from ``try_with_fallback_async`` (NFR-F-006).
         """
         client_resolved = False

@@ -1899,8 +1899,7 @@ class LLMService:
         max_output_tokens: Optional[int] = None,
     ) -> LLMResponse:
         """Admit after preparation, settle before any return, retry or fallback."""
-        lifecycle = _attempt_lifecycle.get()
-        if lifecycle is None:
+        if (lifecycle := _attempt_lifecycle.get()) is None:
             response, duration = await self._invoke_timed_provider(
                 client, langchain_messages, provider, model, attempt_timeout
             )

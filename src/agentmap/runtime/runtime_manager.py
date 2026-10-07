@@ -11,12 +11,18 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Optional
 
-from agentmap.async_lifecycle import TerminalTaskOutcome, await_terminal_task
+from agentmap.async_lifecycle import (
+    TerminalTaskOutcome,
+    await_terminal_task,
+    raise_initialization_outcome,
+)
 from agentmap.di import initialize_di
 from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
+from agentmap.runtime.cleanup_mixin import RuntimeCleanupMixin
+from agentmap.runtime.lifespan_mixin import RuntimeLifespanMixin
 
 
-class RuntimeManager:
+class RuntimeManager(RuntimeLifespanMixin, RuntimeCleanupMixin):
     """
     Thread-safe, idempotent runtime container manager.
 
@@ -34,10 +40,7 @@ class RuntimeManager:
     _transaction_async_waiters: set[tuple[Any, Any]] = set()
     _is_initialized = False
     _container = None
-    _lifespan_tokens: set[object] = set()
-    _lifespan_owned = False
-    _lifespan_container = None
-    _lifespan_loop = None
+    _runtime_config_file = None
 
     @classmethod
     def initialize(
@@ -103,55 +106,6 @@ class RuntimeManager:
             cls._release_transaction(token)
 
     @classmethod
-    async def acquire_lifespan(
-        cls, startup: Callable[[Any, bool], None], *, config_file: Optional[str] = None
-    ) -> tuple[object, Any]:
-        """Initialize and lease the runtime for one HTTP application lifespan."""
-        transaction = await cls._acquire_async_transaction()
-        try:
-            loop = asyncio.get_running_loop()
-            if cls._lifespan_tokens and cls._lifespan_loop is not loop:
-                raise AgentMapNotInitialized(
-                    "Overlapping HTTP lifespans must use the same event loop"
-                )
-            previous = cls._current_container()
-            await cls._run_initialization_transaction(
-                startup, refresh=False, config_file=config_file
-            )
-            container = cls.get_container()
-            if not cls._lifespan_tokens:
-                cls._lifespan_owned = previous is None
-                cls._lifespan_container = container
-                cls._lifespan_loop = loop
-            lease = object()
-            cls._lifespan_tokens.add(lease)
-            return lease, container
-        finally:
-            cls._release_transaction(transaction)
-
-    @classmethod
-    async def release_lifespan(cls, lease: object) -> None:
-        """Release one HTTP lease and close its owned runtime after the last exit."""
-        transaction = await cls._acquire_async_transaction()
-        try:
-            if lease not in cls._lifespan_tokens:
-                raise RuntimeError("Unknown HTTP lifespan lease")
-            cls._lifespan_tokens.remove(lease)
-            if cls._lifespan_tokens:
-                return
-            owned = cls._lifespan_owned
-            container = cls._lifespan_container
-            cls._lifespan_owned = False
-            cls._lifespan_container = None
-            cls._lifespan_loop = None
-            if owned:
-                detached = cls._detach_if_current(container)
-                outcome = await cls._await_shutdown(detached)
-                outcome.result()
-        finally:
-            cls._release_transaction(transaction)
-
-    @classmethod
     async def _run_initialization_transaction(
         cls,
         startup: Callable[[Any, bool], None],
@@ -163,7 +117,7 @@ class RuntimeManager:
         if previous is not None and refresh:
             detached = cls._detach_if_current(previous)
             shutdown = await cls._await_shutdown(detached)
-            cls._raise_initialization_outcome(shutdown, TerminalTaskOutcome())
+            raise_initialization_outcome(shutdown, TerminalTaskOutcome())
         install_refresh = refresh and previous is None
         task = asyncio.create_task(
             cls._run_install_and_startup(startup, install_refresh, refresh, config_file)
@@ -172,7 +126,7 @@ class RuntimeManager:
         if outcome.task_error is None and outcome.caller_cancellation is None:
             return
         cleanup = await cls._rollback_candidate(previous, refresh)
-        cls._raise_initialization_outcome(outcome, cleanup)
+        raise_initialization_outcome(outcome, cleanup)
 
     @classmethod
     async def _run_install_and_startup(
@@ -229,10 +183,12 @@ class RuntimeManager:
             with cls._lock:
                 cls._is_initialized = False
                 cls._container = None
+                cls._runtime_config_file = None
             raise AgentMapNotInitialized(f"Initialization failed: {error}") from error
         with cls._lock:
             cls._container = container
             cls._is_initialized = True
+            cls._runtime_config_file = config_file
 
     @classmethod
     async def shutdown(cls) -> None:
@@ -309,59 +265,6 @@ class RuntimeManager:
         return True
 
     @classmethod
-    async def _shutdown_container(cls, container: Any | None) -> None:
-        if container is not None:
-            await container.llm_service().shutdown()
-
-    @classmethod
-    async def _await_shutdown(cls, container: Any | None) -> TerminalTaskOutcome:
-        if container is None:
-            return TerminalTaskOutcome()
-        task = asyncio.create_task(cls._shutdown_container(container))
-        return await await_terminal_task(task)
-
-    @classmethod
-    async def _rollback_candidate(
-        cls, previous: Any | None, refresh: bool
-    ) -> TerminalTaskOutcome:
-        if previous is not None and not refresh:
-            return TerminalTaskOutcome()
-        candidate = cls._current_container()
-        if candidate is None or candidate is previous:
-            return TerminalTaskOutcome()
-        detached = cls._detach_if_current(candidate)
-        return await cls._await_shutdown(detached)
-
-    @staticmethod
-    def _raise_initialization_outcome(
-        outcome: TerminalTaskOutcome, cleanup: TerminalTaskOutcome
-    ) -> None:
-        original = (
-            outcome.caller_cancellation
-            or cleanup.caller_cancellation
-            or outcome.task_error
-            or cleanup.task_error
-        )
-        if original is None:
-            return
-        terminal = (
-            outcome.caller_cancellation,
-            outcome.task_error,
-            cleanup.caller_cancellation,
-            cleanup.task_error,
-        )
-        secondary = [
-            error for error in terminal if error is not None and error is not original
-        ]
-        if len(secondary) == 1:
-            raise original from secondary[0]
-        if secondary:
-            raise original from BaseExceptionGroup(
-                "runtime initialization cleanup failed", secondary
-            )
-        raise original
-
-    @classmethod
     def _current_container(cls) -> Any | None:
         with cls._lock:
             if not cls._is_initialized:
@@ -376,6 +279,7 @@ class RuntimeManager:
             container = cls._container
             cls._is_initialized = False
             cls._container = None
+            cls._runtime_config_file = None
             return container
 
     @staticmethod
@@ -429,6 +333,7 @@ class RuntimeManager:
             with cls._lock:
                 cls._is_initialized = False
                 cls._container = None
+                cls._runtime_config_file = None
                 cls._lifespan_tokens.clear()
                 cls._lifespan_owned = False
                 cls._lifespan_container = None

@@ -1,5 +1,6 @@
 """B102 production HTTP lifespan owns the awaited LLM shutdown boundary."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -121,6 +122,119 @@ async def test_active_lifespan_rejects_runtime_replacement__b102(monkeypatch):
             assert RuntimeManager.get_container() is container
             service.shutdown.assert_not_awaited()
         service.shutdown.assert_awaited_once_with()
+    finally:
+        RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
+async def test_overlapping_lifespans_reject_different_config__b102(monkeypatch):
+    service = SimpleNamespace(shutdown=AsyncMock())
+    container = SimpleNamespace(
+        app_config_service=Mock(),
+        auth_service=Mock(),
+        llm_service=Mock(return_value=service),
+    )
+    RuntimeManager.reset()
+    install = Mock(return_value=container)
+    monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", install)
+    monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
+    try:
+        async with create_lifespan("first.yml")(FastAPI()):
+            with pytest.raises(AgentMapNotInitialized, match="config differs"):
+                async with create_lifespan("second.yml")(FastAPI()):
+                    pytest.fail("incompatible app must not start")
+            assert RuntimeManager.get_container() is container
+            service.shutdown.assert_not_awaited()
+        install.assert_called_once_with("first.yml")
+        service.shutdown.assert_awaited_once_with()
+    finally:
+        RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
+async def test_borrowed_runtime_rejects_different_config__b102(monkeypatch):
+    service = SimpleNamespace(shutdown=AsyncMock())
+    container = SimpleNamespace(
+        app_config_service=Mock(),
+        auth_service=Mock(),
+        llm_service=Mock(return_value=service),
+    )
+    RuntimeManager.reset()
+    RuntimeManager._container = container
+    RuntimeManager._is_initialized = True
+    RuntimeManager._runtime_config_file = "host.yml"
+    monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
+    try:
+        with pytest.raises(AgentMapNotInitialized, match="config differs"):
+            async with create_lifespan("other.yml")(FastAPI()):
+                pytest.fail("incompatible borrower must not start")
+        assert RuntimeManager.get_container() is container
+        service.shutdown.assert_not_awaited()
+    finally:
+        RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_lease_rejects_foreign_event_loop__b102(monkeypatch):
+    service = SimpleNamespace(shutdown=AsyncMock())
+    container = SimpleNamespace(
+        app_config_service=Mock(),
+        auth_service=Mock(),
+        llm_service=Mock(return_value=service),
+    )
+    RuntimeManager.reset()
+    monkeypatch.setattr(
+        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=container)
+    )
+    monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
+    try:
+        lease, _ = await RuntimeManager.acquire_lifespan(Mock())
+        with pytest.raises(AgentMapNotInitialized, match="same event loop"):
+            await asyncio.to_thread(
+                lambda: asyncio.run(RuntimeManager.acquire_lifespan(Mock()))
+            )
+        with pytest.raises(AgentMapNotInitialized, match="owning event loop"):
+            await asyncio.to_thread(
+                lambda: asyncio.run(RuntimeManager.release_lifespan(lease))
+            )
+        assert RuntimeManager.get_container() is container
+        service.shutdown.assert_not_awaited()
+        await RuntimeManager.release_lifespan(lease)
+        service.shutdown.assert_awaited_once_with()
+    finally:
+        RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_release_finishes_after_waiter_cancellation__b102(monkeypatch):
+    service = SimpleNamespace(shutdown=AsyncMock())
+    container = SimpleNamespace(llm_service=Mock(return_value=service))
+    RuntimeManager.reset()
+    monkeypatch.setattr(
+        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=container)
+    )
+    try:
+        lease, _ = await RuntimeManager.acquire_lifespan(Mock())
+        held = await RuntimeManager._acquire_async_transaction()
+        original = RuntimeManager._acquire_async_transaction.__func__
+        waiting = asyncio.Event()
+
+        async def observed(cls):
+            waiting.set()
+            return await original(cls)
+
+        monkeypatch.setattr(
+            RuntimeManager, "_acquire_async_transaction", classmethod(observed)
+        )
+        release = asyncio.create_task(RuntimeManager.release_lifespan(lease))
+        await waiting.wait()
+        release.cancel()
+        RuntimeManager._release_transaction(held)
+        with pytest.raises(asyncio.CancelledError):
+            await release
+        service.shutdown.assert_awaited_once_with()
+        assert not RuntimeManager.is_initialized()
+        assert not RuntimeManager._lifespan_tokens
     finally:
         RuntimeManager.reset()
 
