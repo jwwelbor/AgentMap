@@ -37,21 +37,15 @@ async def test_lifespan_awaits_llm_shutdown_once__b102(monkeypatch):
         auth_service=Mock(),
         llm_service=Mock(return_value=service),
     )
-    initialized = AsyncMock()
     monkeypatch.setattr(
-        "agentmap.deployment.http.api.server.ensure_initialized_async", initialized
+        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=container)
     )
-    monkeypatch.setattr(
-        "agentmap.deployment.http.api.server.get_container",
-        Mock(return_value=container),
-    )
-    RuntimeManager._container = container
-    RuntimeManager._is_initialized = True
+    monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
+    RuntimeManager.reset()
     app = FastAPI()
     try:
         async with create_lifespan()(app):
             assert app.state.container is container
-        initialized.assert_awaited_once_with(config_file=None)
         assert closed == ["closed"]
         assert not RuntimeManager.is_initialized()
     finally:
@@ -59,15 +53,88 @@ async def test_lifespan_awaits_llm_shutdown_once__b102(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_lifespan_borrows_preexisting_runtime_without_shutdown__b102(monkeypatch):
+    service = SimpleNamespace(shutdown=AsyncMock())
+    container = SimpleNamespace(
+        app_config_service=Mock(),
+        auth_service=Mock(),
+        llm_service=Mock(return_value=service),
+    )
+    RuntimeManager._container = container
+    RuntimeManager._is_initialized = True
+    monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
+    try:
+        async with create_lifespan()(FastAPI()):
+            assert RuntimeManager.get_container() is container
+        assert RuntimeManager.get_container() is container
+        service.shutdown.assert_not_awaited()
+    finally:
+        RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
+async def test_overlapping_lifespans_keep_runtime_until_last_exit__b102(monkeypatch):
+    service = SimpleNamespace(shutdown=AsyncMock())
+    container = SimpleNamespace(
+        app_config_service=Mock(),
+        auth_service=Mock(),
+        llm_service=Mock(return_value=service),
+    )
+    RuntimeManager.reset()
+
+    monkeypatch.setattr(
+        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=container)
+    )
+    monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
+    try:
+        async with create_lifespan()(FastAPI()):
+            async with create_lifespan()(FastAPI()):
+                assert RuntimeManager.get_container() is container
+            assert RuntimeManager.get_container() is container
+            service.shutdown.assert_not_awaited()
+        service.shutdown.assert_awaited_once_with()
+    finally:
+        RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
+async def test_active_lifespan_rejects_runtime_replacement__b102(monkeypatch):
+    service = SimpleNamespace(shutdown=AsyncMock())
+    container = SimpleNamespace(
+        app_config_service=Mock(),
+        auth_service=Mock(),
+        llm_service=Mock(return_value=service),
+    )
+    RuntimeManager.reset()
+    monkeypatch.setattr(
+        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=container)
+    )
+    monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
+    try:
+        async with create_lifespan()(FastAPI()):
+            with pytest.raises(AgentMapNotInitialized, match="active HTTP lifespans"):
+                await RuntimeManager.shutdown()
+            with pytest.raises(AgentMapNotInitialized, match="active HTTP lifespans"):
+                await RuntimeManager.initialize_async(Mock(), refresh=True)
+            with pytest.raises(AgentMapNotInitialized, match="active HTTP lifespans"):
+                RuntimeManager.initialize(refresh=True)
+            assert RuntimeManager.get_container() is container
+            service.shutdown.assert_not_awaited()
+        service.shutdown.assert_awaited_once_with()
+    finally:
+        RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
 async def test_lifespan_uses_transactional_async_startup__b102(monkeypatch):
     failure = RuntimeError("startup transaction failed")
-    initialize = AsyncMock(side_effect=failure)
-    shutdown = AsyncMock()
+    acquire = AsyncMock(side_effect=failure)
+    release = AsyncMock()
     monkeypatch.setattr(
-        "agentmap.deployment.http.api.server.ensure_initialized_async", initialize
+        "agentmap.deployment.http.api.server.acquire_runtime_lifespan", acquire
     )
     monkeypatch.setattr(
-        "agentmap.deployment.http.api.server.shutdown_runtime", shutdown
+        "agentmap.deployment.http.api.server.release_runtime_lifespan", release
     )
 
     with pytest.raises(RuntimeError) as caught:
@@ -75,8 +142,8 @@ async def test_lifespan_uses_transactional_async_startup__b102(monkeypatch):
             pytest.fail("failed startup must not enter the application lifespan")
 
     assert caught.value is failure
-    initialize.assert_awaited_once_with(config_file=None)
-    shutdown.assert_not_awaited()
+    acquire.assert_awaited_once_with(config_file=None)
+    release.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -34,6 +34,10 @@ class RuntimeManager:
     _transaction_async_waiters: set[tuple[Any, Any]] = set()
     _is_initialized = False
     _container = None
+    _lifespan_tokens: set[object] = set()
+    _lifespan_owned = False
+    _lifespan_container = None
+    _lifespan_loop = None
 
     @classmethod
     def initialize(
@@ -55,6 +59,10 @@ class RuntimeManager:
         token = cls._acquire_sync_transaction()
         try:
             current = cls._current_container()
+            if refresh and cls._lifespan_tokens:
+                raise AgentMapNotInitialized(
+                    "Cannot refresh a runtime with active HTTP lifespans"
+                )
             if current is not None and not refresh:
                 return
             if current is not None:
@@ -84,11 +92,64 @@ class RuntimeManager:
         """Own one serialized initialize, validate, and rollback transaction."""
         token = await cls._acquire_async_transaction()
         try:
+            if refresh and cls._lifespan_tokens:
+                raise AgentMapNotInitialized(
+                    "Cannot refresh a runtime with active HTTP lifespans"
+                )
             await cls._run_initialization_transaction(
                 startup, refresh=refresh, config_file=config_file
             )
         finally:
             cls._release_transaction(token)
+
+    @classmethod
+    async def acquire_lifespan(
+        cls, startup: Callable[[Any, bool], None], *, config_file: Optional[str] = None
+    ) -> tuple[object, Any]:
+        """Initialize and lease the runtime for one HTTP application lifespan."""
+        transaction = await cls._acquire_async_transaction()
+        try:
+            loop = asyncio.get_running_loop()
+            if cls._lifespan_tokens and cls._lifespan_loop is not loop:
+                raise AgentMapNotInitialized(
+                    "Overlapping HTTP lifespans must use the same event loop"
+                )
+            previous = cls._current_container()
+            await cls._run_initialization_transaction(
+                startup, refresh=False, config_file=config_file
+            )
+            container = cls.get_container()
+            if not cls._lifespan_tokens:
+                cls._lifespan_owned = previous is None
+                cls._lifespan_container = container
+                cls._lifespan_loop = loop
+            lease = object()
+            cls._lifespan_tokens.add(lease)
+            return lease, container
+        finally:
+            cls._release_transaction(transaction)
+
+    @classmethod
+    async def release_lifespan(cls, lease: object) -> None:
+        """Release one HTTP lease and close its owned runtime after the last exit."""
+        transaction = await cls._acquire_async_transaction()
+        try:
+            if lease not in cls._lifespan_tokens:
+                raise RuntimeError("Unknown HTTP lifespan lease")
+            cls._lifespan_tokens.remove(lease)
+            if cls._lifespan_tokens:
+                return
+            owned = cls._lifespan_owned
+            container = cls._lifespan_container
+            cls._lifespan_owned = False
+            cls._lifespan_container = None
+            cls._lifespan_loop = None
+            if owned:
+                detached = cls._detach_if_current(container)
+                outcome = await cls._await_shutdown(detached)
+                outcome.result()
+        finally:
+            cls._release_transaction(transaction)
 
     @classmethod
     async def _run_initialization_transaction(
@@ -178,6 +239,10 @@ class RuntimeManager:
         """Detach the runtime and await its LLM resource owner."""
         token = await cls._acquire_async_transaction()
         try:
+            if cls._lifespan_tokens:
+                raise AgentMapNotInitialized(
+                    "Cannot shut down a runtime with active HTTP lifespans"
+                )
             container = cls._detach_if_current(cls._current_container())
             await cls._shutdown_container(container)
         finally:
@@ -364,5 +429,9 @@ class RuntimeManager:
             with cls._lock:
                 cls._is_initialized = False
                 cls._container = None
+                cls._lifespan_tokens.clear()
+                cls._lifespan_owned = False
+                cls._lifespan_container = None
+                cls._lifespan_loop = None
         finally:
             cls._release_transaction(token)

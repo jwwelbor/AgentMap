@@ -24,9 +24,8 @@ from agentmap.exceptions.runtime_exceptions import (
 
 # ✅ FACADE PATTERN: Only import from runtime facade
 from agentmap.runtime_api import (
-    ensure_initialized_async,
-    get_container,
-    shutdown_runtime,
+    acquire_runtime_lifespan,
+    release_runtime_lifespan,
 )
 
 
@@ -51,15 +50,13 @@ def create_lifespan(config_file: Optional[str] = None):
         Awaits runtime initialization once at startup and stores the container
         in app.state for use by dependencies.
         """
-        runtime_started = False
+        lease = None
         try:
             # ✅ FACADE PATTERN: Use only runtime facade for initialization
             # ✅ FIX: Pass config_file to the async initialization transaction
-            await ensure_initialized_async(config_file=config_file)
-            runtime_started = True
+            lease, container = await acquire_runtime_lifespan(config_file=config_file)
 
             # ✅ CRITICAL FIX: Store container in app.state for dependencies.py
-            container = get_container()
             app.state.container = container
 
             # ✅ FIX: Pre-warm critical services to prevent race conditions
@@ -77,8 +74,8 @@ def create_lifespan(config_file: Optional[str] = None):
             print(f"Failed to initialize AgentMap runtime: {e}")
             raise
         finally:
-            if runtime_started:
-                await shutdown_runtime()
+            if lease is not None:
+                await release_runtime_lifespan(lease)
             print("AgentMap runtime shutting down")
 
     return lifespan

@@ -52,6 +52,20 @@ async def ensure_initialized_async(
     )
 
 
+async def acquire_runtime_lifespan(
+    *, config_file: str | None = None
+) -> tuple[object, Any]:
+    """Lease the initialized runtime for an HTTP application lifespan."""
+    return await RuntimeManager.acquire_lifespan(
+        _validate_cache, config_file=config_file
+    )
+
+
+async def release_runtime_lifespan(lease: object) -> None:
+    """Release an HTTP application's runtime lease."""
+    await RuntimeManager.release_lifespan(lease)
+
+
 def get_container():
     return RuntimeManager.get_container()
 
