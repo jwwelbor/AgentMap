@@ -59,6 +59,30 @@ def test_runtime_records_real_di_effective_identity__b102(
 
 
 @pytest.mark.asyncio
+async def test_real_di_symlink_first_can_borrow_discovered_file__b102(
+    tmp_path, monkeypatch
+):
+    config = tmp_path / "agentmap_config.yaml"
+    config.write_text("{}\n")
+    alias = tmp_path / "alias.yml"
+    alias.symlink_to(config)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("agentmap.runtime.init_ops._validate_cache", Mock())
+    RuntimeManager.reset()
+    try:
+        RuntimeManager.initialize(config_file=str(alias))
+        installed = RuntimeManager.get_container()
+        assert RuntimeManager._runtime_config_file == str(config.resolve())
+
+        app = FastAPI()
+        async with create_lifespan()(app):
+            assert app.state.container is installed
+        assert RuntimeManager.get_container() is installed
+    finally:
+        RuntimeManager.reset()
+
+
+@pytest.mark.asyncio
 async def test_default_config_rejects_discovery_after_cwd_change__b102(
     tmp_path, monkeypatch, runtime_setup
 ):
