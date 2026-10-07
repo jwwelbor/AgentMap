@@ -5,10 +5,11 @@ Original: Regression tests for T-E05-F02-009: temperature-sensitive client cachi
 Extended: T-E06-F02-001: streaming dimension in cache key + regression coverage.
 """
 
+import hmac
 import unittest
-from hashlib import sha256
 from unittest.mock import Mock, patch
 
+from agentmap.services.llm import client_lifecycle
 from agentmap.services.llm_client_factory import LLMClientFactory
 from tests.utils.mock_service_factory import MockServiceFactory
 
@@ -312,7 +313,11 @@ class TestLLMClientFactoryStreamingCacheKey(unittest.TestCase):
         false_key = next(k for k in keys if k.endswith("_False"))
         true_key = next(k for k in keys if k.endswith("_True"))
 
-        identity = sha256(config["api_key"].encode()).hexdigest()
+        identity = hmac.digest(
+            client_lifecycle._CACHE_IDENTITY_SECRET,
+            config["api_key"].encode(),
+            "sha256",
+        ).hex()
         self.assertEqual(false_key, f"openai_gpt-4_{identity}_256_0.4_False")
         self.assertEqual(true_key, f"openai_gpt-4_{identity}_256_0.4_True")
         self.assertNotIn(config["api_key"], repr(keys))

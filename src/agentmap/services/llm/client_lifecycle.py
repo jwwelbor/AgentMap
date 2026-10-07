@@ -1,13 +1,16 @@
 """Awaited construction and shutdown for governed provider clients."""
 
 import asyncio
-from hashlib import sha256
+import hmac
+import secrets
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Dict
 
 from agentmap.async_lifecycle import await_terminal_task, raise_cleanup_failures
 from agentmap.exceptions import LLMConfigurationError
 from agentmap.services.llm.observed_clients import ObservedResources
+
+_CACHE_IDENTITY_SECRET = secrets.token_bytes(32)
 
 
 class GovernedClientLifecycleMixin:
@@ -124,7 +127,9 @@ class GovernedClientLifecycleMixin:
     def _cache_key(
         provider: str, config: Dict[str, Any], streaming: bool, governed: bool
     ) -> str:
-        api_key_identity = sha256((config.get("api_key") or "").encode()).hexdigest()
+        api_key_identity = hmac.digest(
+            _CACHE_IDENTITY_SECRET, (config.get("api_key") or "").encode(), "sha256"
+        ).hex()
         return (
             f"{provider}_{config.get('model')}_{api_key_identity}_"
             f"{config.get('max_tokens')}_{config.get('temperature', 0.7)!r}_{streaming}"
