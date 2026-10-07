@@ -126,6 +126,7 @@ class GovernedClientLifecycleMixin:
     ) -> str:
         api_key = config.get("api_key") or ""
         with self._cache_lock:
+            self._ensure_open()
             api_key_identity = self._api_key_tokens.get(api_key)
             if api_key_identity is None:
                 api_key_identity = secrets.token_hex(32)

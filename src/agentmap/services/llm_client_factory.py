@@ -293,4 +293,5 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                     "Governed clients require awaited shutdown before cache clearing"
                 )
             self._clients.clear()
+            self._api_key_tokens.clear()
         self._logger.debug("Client cache cleared")

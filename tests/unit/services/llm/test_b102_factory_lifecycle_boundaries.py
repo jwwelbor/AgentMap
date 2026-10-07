@@ -32,6 +32,30 @@ class AsyncResource:
 
 
 @pytest.mark.asyncio
+async def test_cache_clear_and_shutdown_release_credential_tokens__b102():
+    factory = LLMClientFactory(Mock())
+    first = {"model": "m", "api_key": "first-secret"}
+    factory._cache_key("openai", first, False, False)
+    assert set(factory._api_key_tokens) == {"first-secret"}
+
+    factory.clear_cache()
+    assert factory._api_key_tokens == {}
+
+    factory._cache_key("openai", first, False, False)
+    await factory.shutdown()
+    assert factory._api_key_tokens == {}
+    with pytest.raises(LLMConfigurationError, match="shut down"):
+        factory.get_or_create_client(
+            "openai", {"model": "m", "api_key": "late-sync-secret"}
+        )
+    with pytest.raises(LLMConfigurationError, match="shut down"):
+        await factory.get_or_create_governed_client(
+            "openai", {"model": "m", "api_key": "late-async-secret"}
+        )
+    assert factory._api_key_tokens == {}
+
+
+@pytest.mark.asyncio
 async def test_failed_construction_awaits_transactional_owner_rollback__b102(
     monkeypatch,
 ):
