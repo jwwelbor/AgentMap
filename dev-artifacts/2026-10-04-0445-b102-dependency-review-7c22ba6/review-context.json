@@ -1,0 +1,29 @@
+{
+  "entity": "B102",
+  "base_commit": "f8a37400a2a56b51a305dad78e7a491027f1a5f5",
+  "head_commit": "7c22ba61a8a685400c5f9826d3fc9adfe6ebeace",
+  "diff_sha256": "c73121f2fe52e68db59999b089695bc0034e86003e0aa2d483d77b07fae45138",
+  "changed_file_count": 17,
+  "changed_files": [
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/handoff.md",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/black.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/counterfactual-red-summary.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused-collect.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/isort.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/lint.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/make-test.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/mypy-normalized-comparison.log",
+    "src/agentmap/deployment/http/api/routes/admin.py",
+    "src/agentmap/runtime/runtime_manager.py",
+    "tests/fresh_suite/unit/services/test_llm_client_factory.py",
+    "tests/unit/deployment/http/api/test_b102_admin_async_initialization.py",
+    "tests/unit/runtime/test_b102_runtime_coordination.py",
+    "tests/unit/runtime/test_b102_runtime_shutdown.py",
+    "tests/unit/services/llm/test_b102_credential_cache_identity.py",
+    "tests/unit/services/llm/test_b102_review_size.py"
+  ],
+  "runner_mode": "dispatched-six-angle",
+  "fallback_reason": "native Workflow unavailable",
+  "scope_note": "Fresh exact-pin review of AgentMap dependency rework 8; all 17 changed files, including retained evidence, are in scope."
+}

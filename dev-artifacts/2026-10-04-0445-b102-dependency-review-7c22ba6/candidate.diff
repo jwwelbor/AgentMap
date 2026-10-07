@@ -1,0 +1,1095 @@
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/handoff.md b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/handoff.md
+new file mode 100644
+index 0000000..84ac343
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/handoff.md
+@@ -0,0 +1,52 @@
++# B102 AgentMap dependency review rework 8 handoff
++
++## Snapshot and outcome
++
++- Pinned clean starting head: `f8a37400a2a56b51a305dad78e7a491027f1a5f5`
++- Implementation commit: `4a14ade4a80142f07dbc779919871e36359f6974`
++- Scope: AgentMap dependency worktree only; no WWGM, Shark, release, merge, provider, credential, database, or network mutation
++- Result: all six B102-R7 blockers are repaired locally and covered by the requested defect-class sweep
++- Required disposition: **blocked** pending a fresh exact-pin review, package release, TD-140, WWGM host integration, restart reconciliation, terminal/process-death acceptance, and product acceptance
++
++The inherited HTTP server complexity remains tracked as TD-588 and was not changed. The prior raw mypy transcript remains canonical evidence and was not duplicated.
++
++## Finding disposition
++
++| Finding | Disposition and proof |
++|---|---|
++| B102-R7-01 | Replaced executor-backed lock acquisition with `RuntimeManager` condition ownership and loop-Future async waiters. Identity tokens guard release. The 1- and 2-worker test queues more callers than workers, proves queued callers add zero executor submissions, and completes every caller. |
++| B102-R7-02 | All six initializing async admin handlers await `ensure_initialized_async()`. A synchronous initializer on an active event loop raises typed `AgentMapNotInitialized` when an async transaction owns the runtime. A real ASGI `GET /admin/health` contention test proves the loop remains responsive and the request completes. |
++| B102-R7-03 | Rollback now returns the complete `TerminalTaskOutcome`. Cancellation from startup or rollback is selected before ordinary failures, with startup and cleanup failures retained as the cause or a `BaseExceptionGroup`. |
++| B102-R7-04 | Runtime replacement and provider-cache refresh use separate flags. `refresh=True` reaches cache validation after an existing runtime is shut down and replaced, including when the replacement cache already reports initialized. |
++| B102-R7-05 | Deterministic shutdown-entry/release barriers cover cancellation during prerequisite old-runtime shutdown, both with successful cleanup and with cleanup failure. Both variants prove exact-once shutdown, no replacement install, detached state, and primary cancellation. |
++| B102-R7-06 | The documented `tests/unit` structural guard scans and deduplicates B102 modules from both `tests/unit` and `tests/fresh_suite/unit`. Its inventory test requires both roots. The one B102 credential-identity test in the inherited oversized legacy module moved to a focused 31-line `tests/unit` module without changing its behavior. |
++
++There were no non-blockers or nits in the pinned review. No finding was silently deferred.
++
++## Defect-class sweep
++
++The focused set covers bounded default executors with one and two workers; more waiters than workers; sync-versus-async transaction ownership; every async admin initializer and an actual HTTP route under contention; first start and refresh; cancellation while waiting for the transaction, during prerequisite shutdown, during post-install startup, and during rollback; successful and failing cleanup; an already initialized replacement provider cache; and structural enforcement across both retained test roots. All tests use offline fakes and deterministic events.
++
++## Verification
++
++| Check | Result | Evidence |
++|---|---|---|
++| Counterfactual probes before production edits | Expected RED for refresh propagation, rollback cancellation priority, admin async wiring, and two-root inventory; prerequisite cancellation probes already passed | `verification/counterfactual-red-summary.log` |
++| All B102-tagged modules plus runtime init/state tests | 316 passed; 0 skipped; 0 warnings | `verification/focused.log`, `verification/focused-collect.log` |
++| `make test` at implementation commit | 5,711 passed; 49 skipped; 1 deselected; 5 warnings; 228 subtests passed | `verification/make-test.log` |
++| isort check on eight task-owned Python files | PASS | `verification/isort.log` |
++| Black check on eight task-owned Python files | 8 files unchanged | `verification/black.log` |
++| `make lint` | PASS across `src/` and `tests/` | `verification/lint.log` |
++| `make type-check` | Non-green inherited TD-052 state: cached run reported 1,623 errors in 248 files | `verification/mypy-normalized-comparison.log` |
++| Isolated-cache mypy at baseline and candidate | Both 1,638 errors in 248 files; both 1,779 normalized diagnostics; added 0, removed 0 | `verification/mypy-normalized-comparison.log` |
++| `git diff --check` / staged evidence check | PASS | recorded before each commit |
++
++The 49 full-suite skips and one deselection are reported by pytest and remain visible in the retained full log. The five warnings are all unawaited-`AsyncMock` warnings in unrelated retained tests: three `test_suspend_agent_messaging.py` cases (`graph_message_raises_when_service_not_configured`, `resume_message_includes_duration`, and `returns_none_when_resume_value_is_none`), `test_init_command.py::test_init_copies_config_files`, and `test_api_minimal.py::test_execution_endpoint_basic`. The warning count varied between full-suite runs because the inherited warnings are nondeterministic; the table reports the final exact-commit run.
++
++TD-052 remains non-green. The isolated-cache comparison controls incremental cache drift and shows no diagnostic delta from exact baseline `f8a3740`. This increment retains only checksums and the normalized comparison, and references the prior canonical raw transcript at SHA-256 `ceaf54afb4c67c3358e4508d412852eddeba776608b7ed7ef74f2047bce52f63`.
++
++## Remaining gates
++
++Run a fresh exact-pin dependency review on the evidence commit. Package release, TD-140, WWGM host integration, restart reconciliation, terminal/process-death acceptance, and product acceptance remain open. No release or host-readiness claim is made by this dependency-only repair.
++
++**RECOMMENDED OUTCOME: blocked**
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/black.log b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/black.log
+new file mode 100644
+index 0000000..91b28b7
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/black.log
+@@ -0,0 +1,3 @@
++command: uv run black --check <8 task-owned Python files>
++All done! ✨ 🍰 ✨
++8 files would be left unchanged.
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/counterfactual-red-summary.log b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/counterfactual-red-summary.log
+new file mode 100644
+index 0000000..77dbe3e
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/counterfactual-red-summary.log
+@@ -0,0 +1,14 @@
++phase: before production edits, against f8a37400a2a56b51a305dad78e7a491027f1a5f5
++result: expected RED
++- async replacement with an already initialized provider cache called _refresh_cache 0 times instead of once
++- cancellation first delivered during rollback raised AgentMapNotInitialized instead of CancelledError as the primary outcome
++- async admin route probes awaited ensure_initialized_async 0 times
++- structural inventory did not contain the retained tests/fresh_suite root
++- prerequisite-shutdown cancellation success and cleanup-failure probes passed, establishing the previously missing counterfactual before the implementation changed
++
++additional bounded-executor counterfactual:
++- the final bounded-executor regression test was copied into an archived f8a3740 tree
++- the old executor-backed lock submitted waiter work into the bounded default executor and did not terminate after more than 20 seconds; the run was interrupted
++- on the candidate, the same parametrized 1-worker and 2-worker test completes and proves queued callers add zero executor submissions while the owner is blocked
++
++This is a concise observation record, not a reconstructed raw pytest transcript.
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused-collect.log b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused-collect.log
+new file mode 100644
+index 0000000..f2db578
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused-collect.log
+@@ -0,0 +1,28 @@
++command: rg -l __b102 tests | sort
++tests/fresh_suite/unit/services/llm/test_attempt_lifecycle.py
++tests/fresh_suite/unit/services/llm/test_attempt_lifecycle_boundaries.py
++tests/fresh_suite/unit/services/llm/test_b102_cleanup_lifecycle.py
++tests/fresh_suite/unit/services/llm/test_b102_client_ownership.py
++tests/fresh_suite/unit/services/llm/test_b102_cost_trust.py
++tests/fresh_suite/unit/services/llm/test_b102_credential_wire.py
++tests/fresh_suite/unit/services/llm/test_b102_response_cleanup.py
++tests/fresh_suite/unit/services/llm/test_governed_clients.py
++tests/fresh_suite/unit/services/llm/test_response_evidence.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_controls.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_proxy.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_routing.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_security.py
++tests/fresh_suite/unit/services/llm/test_response_review_rework.py
++tests/unit/deployment/http/api/test_b102_admin_async_initialization.py
++tests/unit/deployment/http/api/test_b102_lifespan_shutdown.py
++tests/unit/runtime/test_b102_async_lifecycle.py
++tests/unit/runtime/test_b102_runtime_coordination.py
++tests/unit/runtime/test_b102_runtime_shutdown.py
++tests/unit/services/llm/test_b102_credential_cache_identity.py
++tests/unit/services/llm/test_b102_factory_lifecycle_boundaries.py
++tests/unit/services/llm/test_b102_governed_barriers.py
++tests/unit/services/llm/test_b102_review_size.py
++tests/unit/services/llm/test_b102_terminal_outcomes.py
++additional: tests/unit/runtime/test_init_ops.py
++additional: tests/unit/runtime/test_runtime_state.py
++collected result: 316 passed
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused.log b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused.log
+new file mode 100644
+index 0000000..ca6f677
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused.log
+@@ -0,0 +1,6 @@
++........................................................................ [ 22%]
++........................................................................ [ 45%]
++........................................................................ [ 68%]
++........................................................................ [ 91%]
++............................                                             [100%]
++316 passed in 4.01s
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/isort.log b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/isort.log
+new file mode 100644
+index 0000000..9e7776a
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/isort.log
+@@ -0,0 +1,2 @@
++command: uv run isort --check-only --sp pyproject.toml <8 task-owned Python files>
++result: PASS
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/lint.log b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/lint.log
+new file mode 100644
+index 0000000..c572b1a
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/lint.log
+@@ -0,0 +1,4 @@
++command: make lint
++Running flake8 linter...
++uv run flake8 src/ tests/
++✓ Linting complete
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/make-test.log b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/make-test.log
+new file mode 100644
+index 0000000..80d27f4
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/make-test.log
+@@ -0,0 +1,116 @@
++Running pytest...
++uv run pytest tests/
++.............................s.......................................... [  1%]
++........................................................................ [  2%]
++............................................s...s.........s.s..ssssssss. [  3%]
++........................................................................................... [  5%]
++................................................................ [  6%]
++........................................................................ [  7%]
++........................................................................ [  8%]
++........................................................................ [ 10%]
++........................................................................ [ 11%]
++................................................................................................................................. [ 13%]
++............................................................................................................. [ 15%]
++....................................................... [ 16%]
++............................................................. [ 17%]
++.................................................................... [ 18%]
++........................................................................ [ 20%]
++........................................................................ [ 21%]
++........................................................................ [ 22%]
++........................................................................ [ 23%]
++..........................................................s............. [ 25%]
++.........s.............................................................. [ 26%]
++........................................................................ [ 27%]
++........................................................................ [ 28%]
++........................................................................ [ 30%]
++........................................................................ [ 31%]
++........................................................................ [ 32%]
++................................................................ [ 33%]
++........................................................................ [ 34%]
++........................................................................ [ 36%]
++............................s....s.....................s................ [ 37%]
++s....................................................................... [ 38%]
++........................................................................ [ 39%]
++....................s......s.....s..........s........................... [ 41%]
++..................................................................... [ 42%]
++........................................................................ [ 43%]
++........................................................................ [ 44%]
++........................................................................ [ 46%]
++........................................................................ [ 47%]
++............................................................... [ 48%]
++........................................................................ [ 49%]
++.......................................s.........ss......................................................................... [ 51%]
++.........................................................s.............. [ 53%]
++........................................................................ [ 54%]
++.........ss.....s.s........s............................................ [ 55%]
++.................................................ssss..sss........ [ 56%]
++........................................................................ [ 57%]
++........................................................................ [ 59%]
++........................................................................ [ 60%]
++........................................................................ [ 61%]
++....................................s....s.............................. [ 62%]
++........................................................................ [ 64%]
++........................................................................ [ 65%]
++........................................................................ [ 66%]
++.......................................................... [ 67%]
++........................................................................ [ 68%]
++........................................................................ [ 70%]
++........................................................................ [ 71%]
++...s....................................s............................... [ 72%]
++........................................................................ [ 73%]
++........................................................................ [ 75%]
++........................................................................ [ 76%]
++........................................................................ [ 77%]
++........................................................................ [ 78%]
++.................................................................... [ 80%]
++........................................................................ [ 81%]
++................................................... [ 82%]
++.................................................ss..................... [ 83%]
++........................................................................ [ 84%]
++.................................s...................................... [ 86%]
++........................................................................ [ 87%]
++........................................................................ [ 88%]
++........................................................................ [ 89%]
++........................................................................ [ 91%]
++........................................................................ [ 92%]
++........................................................................ [ 93%]
++........................................................................ [ 94%]
++................ss...................................................... [ 96%]
++........................................................................ [ 97%]
++........................................................................ [ 98%]
++.......s................................................................ [ 99%]
++............                                                             [100%]
++=============================== warnings summary ===============================
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_graph_message_raises_when_service_not_configured
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/inspect.py:3157: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    arg_val = kwargs.pop(param_name)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_resume_message_includes_duration
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/src/agentmap/agents/builtins/suspend_agent.py:300: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    self.log_error(f"Failed to publish resume message: {e}")
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_returns_none_when_resume_value_is_none
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:2133: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    setattr(_type, entry, MagicProxy(entry, self))
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/cli/test_init_command.py::TestInitCommand::test_init_copies_config_files
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/click/core.py:2899: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    for decl in decls:
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/integration/api/test_api_minimal.py::TestAPIBasics::test_execution_endpoint_basic
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:892: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    get_schema = getattr(obj, '__get_pydantic_core_schema__', None)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++5711 passed, 49 skipped, 1 deselected, 5 warnings, 228 subtests passed in 61.42s (0:01:01)
++✓ Tests complete
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/mypy-normalized-comparison.log b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/mypy-normalized-comparison.log
+new file mode 100644
+index 0000000..823d182
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/mypy-normalized-comparison.log
+@@ -0,0 +1,17 @@
++command: .venv/bin/mypy --cache-dir <isolated-cache> src/
++pinned baseline: f8a37400a2a56b51a305dad78e7a491027f1a5f5
++candidate source: 4a14ade4a80142f07dbc779919871e36359f6974
++baseline result: 1638 errors in 248 files; diagnostics: 1779
++candidate result: 1638 errors in 248 files; diagnostics: 1779
++normalized added: 0
++normalized removed: 0
++baseline clean-run sha256: 3c9e27cc499461d7460bbafbe4c34e02c1db850211ed2aaeb3b1f7288902c86e
++candidate clean-run sha256: 318e2f81822b0cf4a0e48ae17ab800cf33a2d35a0021d97a4061fc4f1d68573b
++baseline normalized sha256: 5a36d6a728c4f555e3125523139cd211b9c2d2960eed64a2cbeed25f9877b55f
++candidate normalized sha256: 5a36d6a728c4f555e3125523139cd211b9c2d2960eed64a2cbeed25f9877b55f
++make type-check result: non-green TD-052 state; exit 2; 1623 errors in 248 files
++make type-check ephemeral raw sha256: 4b8d27e9d2e83381c9d415c0396ea06b3d71758ff174d5b373354f2d07d1fca2
++canonical retained prior raw log: dev-artifacts/2026-10-04-b102-dependency-review-rework-6/verification/mypy.log
++canonical prior raw sha256: ceaf54afb4c67c3358e4508d412852eddeba776608b7ed7ef74f2047bce52f63
++note: later amendments changed tests only; the mypy input tree under src is the recorded candidate source.
++note: no new raw mypy transcript is committed.
+diff --git a/src/agentmap/deployment/http/api/routes/admin.py b/src/agentmap/deployment/http/api/routes/admin.py
+index a32b907..f455352 100644
+--- a/src/agentmap/deployment/http/api/routes/admin.py
++++ b/src/agentmap/deployment/http/api/routes/admin.py
+@@ -11,7 +11,7 @@ from agentmap.deployment.http.api.dependencies import requires_auth
+ from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
+ from agentmap.runtime_api import (
+     diagnose_system,
+-    ensure_initialized,
++    ensure_initialized_async,
+     get_config,
+     validate_cache,
+ )
+@@ -73,7 +73,7 @@ router = APIRouter(prefix="/admin", tags=["Administration"])
+ async def get_diagnostics(request: Request):
+     """Get comprehensive system diagnostics."""
+     try:
+-        ensure_initialized()
++        await ensure_initialized_async()
+ 
+         result = diagnose_system()
+         if not result.get("success"):
+@@ -103,7 +103,7 @@ async def get_diagnostics(request: Request):
+ async def get_configuration(request: Request):
+     """Get current system configuration."""
+     try:
+-        ensure_initialized()
++        await ensure_initialized_async()
+ 
+         result = get_config()
+         if not result.get("success"):
+@@ -122,7 +122,7 @@ async def get_configuration(request: Request):
+ async def get_cache_stats(request: Request):
+     """Get cache statistics."""
+     try:
+-        ensure_initialized()
++        await ensure_initialized_async()
+ 
+         result = validate_cache(stats=True)
+         if not result.get("success"):
+@@ -145,7 +145,7 @@ async def clear_cache(
+ ):
+     """Clear validation cache."""
+     try:
+-        ensure_initialized()
++        await ensure_initialized_async()
+ 
+         if file_path:
+             result = validate_cache(clear=True, file_path=file_path)
+@@ -186,7 +186,7 @@ async def health_check():
+     try:
+         # TODO: Add get_health() to runtime_api
+         # For now, just check if initialized
+-        ensure_initialized()
++        await ensure_initialized_async()
+         return HealthResponse(status="healthy", initialized=True)
+     except AgentMapNotInitialized:
+         return HealthResponse(status="not_initialized", initialized=False)
+@@ -199,7 +199,7 @@ async def health_check():
+ async def get_system_paths(request: Request):
+     """Get system directory paths."""
+     try:
+-        ensure_initialized()
++        await ensure_initialized_async()
+ 
+         # TODO: Add get_system_paths() to runtime_api
+         # For now, get from config
+diff --git a/src/agentmap/runtime/runtime_manager.py b/src/agentmap/runtime/runtime_manager.py
+index 9ba2cd3..eab379c 100644
+--- a/src/agentmap/runtime/runtime_manager.py
++++ b/src/agentmap/runtime/runtime_manager.py
+@@ -24,7 +24,9 @@ class RuntimeManager:
+     """
+ 
+     _lock = threading.RLock()
+-    _transaction_lock = threading.Lock()
++    _transaction_condition = threading.Condition()
++    _transaction_owner: object | None = None
++    _transaction_async_waiters: set[tuple[Any, Any]] = set()
+     _is_initialized = False
+     _container = None
+ 
+@@ -45,7 +47,8 @@ class RuntimeManager:
+         Raises:
+             AgentMapNotInitialized: If initialization fails for any reason.
+         """
+-        with cls._transaction_lock:
++        token = cls._acquire_sync_transaction()
++        try:
+             current = cls._current_container()
+             if current is not None and not refresh:
+                 return
+@@ -54,6 +57,8 @@ class RuntimeManager:
+                 detached = cls._detach_if_current(current)
+                 asyncio.run(cls._shutdown_container(detached))
+             cls._install(config_file)
++        finally:
++            cls._release_transaction(token)
+ 
+     @classmethod
+     async def initialize_async(
+@@ -64,13 +69,13 @@ class RuntimeManager:
+         config_file: Optional[str] = None,
+     ) -> None:
+         """Own one serialized initialize, validate, and rollback transaction."""
+-        await cls._acquire_transaction()
++        token = await cls._acquire_async_transaction()
+         try:
+             await cls._run_initialization_transaction(
+                 startup, refresh=refresh, config_file=config_file
+             )
+         finally:
+-            cls._transaction_lock.release()
++            cls._release_transaction(token)
+ 
+     @classmethod
+     async def _run_initialization_transaction(
+@@ -84,34 +89,36 @@ class RuntimeManager:
+         if previous is not None and refresh:
+             detached = cls._detach_if_current(previous)
+             shutdown = await cls._await_shutdown(detached)
+-            cls._raise_initialization_outcome(shutdown, None)
+-        worker_refresh = refresh and previous is None
++            cls._raise_initialization_outcome(shutdown, TerminalTaskOutcome())
++        install_refresh = refresh and previous is None
+         task = asyncio.create_task(
+             asyncio.to_thread(
+                 cls._install_and_startup,
+                 startup,
+-                worker_refresh,
++                install_refresh,
++                refresh,
+                 config_file,
+             )
+         )
+         outcome = await await_terminal_task(task)
+         if outcome.task_error is None and outcome.caller_cancellation is None:
+             return
+-        cleanup_error = await cls._rollback_candidate(previous, refresh)
+-        cls._raise_initialization_outcome(outcome, cleanup_error)
++        cleanup = await cls._rollback_candidate(previous, refresh)
++        cls._raise_initialization_outcome(outcome, cleanup)
+ 
+     @classmethod
+     def _install_and_startup(
+         cls,
+         startup: Callable[[Any, bool], None],
+-        worker_refresh: bool,
++        install_refresh: bool,
++        cache_refresh: bool,
+         config_file: Optional[str],
+     ) -> None:
+         try:
+             cls._initialize_in_transaction(
+-                refresh=worker_refresh, config_file=config_file
++                refresh=install_refresh, config_file=config_file
+             )
+-            startup(cls.get_container(), worker_refresh)
++            startup(cls.get_container(), cache_refresh)
+         except AgentMapNotInitialized:
+             raise
+         except Exception as error:
+@@ -141,23 +148,72 @@ class RuntimeManager:
+     @classmethod
+     async def shutdown(cls) -> None:
+         """Detach the runtime and await its LLM resource owner."""
+-        await cls._acquire_transaction()
++        token = await cls._acquire_async_transaction()
+         try:
+             container = cls._detach_if_current(cls._current_container())
+             await cls._shutdown_container(container)
+         finally:
+-            cls._transaction_lock.release()
++            cls._release_transaction(token)
+ 
+     @classmethod
+-    async def _acquire_transaction(cls) -> None:
+-        task = asyncio.create_task(asyncio.to_thread(cls._transaction_lock.acquire))
+-        outcome = await await_terminal_task(task)
+-        acquired = outcome.task_error is None and bool(outcome.value)
+-        if outcome.caller_cancellation is not None:
+-            if acquired:
+-                cls._transaction_lock.release()
+-            outcome.result()
+-        outcome.result()
++    async def _acquire_async_transaction(cls) -> object:
++        loop = asyncio.get_running_loop()
++        while True:
++            with cls._transaction_condition:
++                if cls._transaction_owner is None:
++                    token = object()
++                    cls._transaction_owner = token
++                    return token
++                future = loop.create_future()
++                waiter = (loop, future)
++                cls._transaction_async_waiters.add(waiter)
++            try:
++                await future
++            finally:
++                with cls._transaction_condition:
++                    cls._transaction_async_waiters.discard(waiter)
++
++    @classmethod
++    def _acquire_sync_transaction(cls) -> object:
++        in_event_loop = cls._in_event_loop()
++        with cls._transaction_condition:
++            if in_event_loop and cls._transaction_owner is not None:
++                raise AgentMapNotInitialized(
++                    "Synchronous runtime initialization cannot wait for an active "
++                    "async transaction; await ensure_initialized_async()"
++                )
++            while cls._transaction_owner is not None:
++                cls._transaction_condition.wait()
++            token = object()
++            cls._transaction_owner = token
++            return token
++
++    @classmethod
++    def _release_transaction(cls, token: object) -> None:
++        with cls._transaction_condition:
++            if cls._transaction_owner is not token:
++                raise RuntimeError("Runtime transaction owner mismatch")
++            cls._transaction_owner = None
++            cls._transaction_condition.notify_all()
++            waiters = tuple(cls._transaction_async_waiters)
++        for loop, future in waiters:
++            try:
++                loop.call_soon_threadsafe(cls._wake_transaction_waiter, future)
++            except RuntimeError:
++                continue
++
++    @staticmethod
++    def _wake_transaction_waiter(future: Any) -> None:
++        if not future.done():
++            future.set_result(None)
++
++    @staticmethod
++    def _in_event_loop() -> bool:
++        try:
++            asyncio.get_running_loop()
++        except RuntimeError:
++            return False
++        return True
+ 
+     @classmethod
+     async def _shutdown_container(cls, container: Any | None) -> None:
+@@ -174,37 +230,36 @@ class RuntimeManager:
+     @classmethod
+     async def _rollback_candidate(
+         cls, previous: Any | None, refresh: bool
+-    ) -> BaseException | None:
++    ) -> TerminalTaskOutcome:
+         if previous is not None and not refresh:
+-            return None
++            return TerminalTaskOutcome()
+         candidate = cls._current_container()
+         if candidate is None or candidate is previous:
+-            return None
++            return TerminalTaskOutcome()
+         detached = cls._detach_if_current(candidate)
+-        outcome = await cls._await_shutdown(detached)
+-        return cls._outcome_error(outcome)
+-
+-    @staticmethod
+-    def _outcome_error(outcome: TerminalTaskOutcome) -> BaseException | None:
+-        if outcome.caller_cancellation is not None and outcome.task_error is not None:
+-            return BaseExceptionGroup(
+-                "runtime rollback failed",
+-                [outcome.caller_cancellation, outcome.task_error],
+-            )
+-        return outcome.caller_cancellation or outcome.task_error
++        return await cls._await_shutdown(detached)
+ 
+     @staticmethod
+     def _raise_initialization_outcome(
+-        outcome: TerminalTaskOutcome, cleanup_error: BaseException | None
++        outcome: TerminalTaskOutcome, cleanup: TerminalTaskOutcome
+     ) -> None:
+-        original = outcome.caller_cancellation or outcome.task_error
++        original = (
++            outcome.caller_cancellation
++            or cleanup.caller_cancellation
++            or outcome.task_error
++            or cleanup.task_error
++        )
+         if original is None:
+             return
+-        secondary: list[BaseException] = []
+-        if outcome.caller_cancellation is not None and outcome.task_error is not None:
+-            secondary.append(outcome.task_error)
+-        if cleanup_error is not None:
+-            secondary.append(cleanup_error)
++        terminal = (
++            outcome.caller_cancellation,
++            outcome.task_error,
++            cleanup.caller_cancellation,
++            cleanup.task_error,
++        )
++        secondary = [
++            error for error in terminal if error is not None and error is not original
++        ]
+         if len(secondary) == 1:
+             raise original from secondary[0]
+         if secondary:
+@@ -276,7 +331,10 @@ class RuntimeManager:
+         This method clears the initialization state and container reference,
+         allowing for clean reinitialization. Thread-safe using RLock.
+         """
+-        with cls._transaction_lock:
++        token = cls._acquire_sync_transaction()
++        try:
+             with cls._lock:
+                 cls._is_initialized = False
+                 cls._container = None
++        finally:
++            cls._release_transaction(token)
+diff --git a/tests/fresh_suite/unit/services/test_llm_client_factory.py b/tests/fresh_suite/unit/services/test_llm_client_factory.py
+index c490112..079667b 100644
+--- a/tests/fresh_suite/unit/services/test_llm_client_factory.py
++++ b/tests/fresh_suite/unit/services/test_llm_client_factory.py
+@@ -317,40 +317,6 @@ class TestLLMClientFactoryStreamingCacheKey(unittest.TestCase):
+         self.assertEqual(true_key, f"openai_gpt-4_{identity}_256_0.4_True")
+         self.assertNotIn(config["api_key"], repr(keys))
+ 
+-    def test_same_prefix_credentials_do_not_share_client__b102(self):
+-        """B102 supersedes TC-F02-KEY-6's unsafe eight-character identity.
+-
+-        Each distinct complete credential gets its own provider client.
+-        """
+-        config1 = dict(self._base_config)
+-        config1["api_key"] = "abcdefgh_LONGER1"
+-        config2 = dict(self._base_config)
+-        config2["api_key"] = "abcdefgh_LONGER2"
+-        config3 = dict(self._base_config)
+-        config3["api_key"] = "XXXXXXXX_anything"
+-
+-        first_client = Mock(name="first_client")
+-        second_client = Mock(name="second_client")
+-        third_client = Mock(name="third_client")
+-
+-        with patch.object(
+-            self.factory,
+-            "_create_langchain_client",
+-            side_effect=[first_client, second_client, third_client],
+-        ) as mock_create:
+-            got1 = self.factory.get_or_create_client("openai", config1, streaming=False)
+-            got2 = self.factory.get_or_create_client("openai", config2, streaming=False)
+-            got3 = self.factory.get_or_create_client("openai", config3, streaming=False)
+-
+-        self.assertIs(got1, first_client)
+-        self.assertIs(got2, second_client)
+-        self.assertIs(got3, third_client)
+-        self.assertEqual(mock_create.call_count, 3)
+-        self.assertIs(
+-            self.factory.get_or_create_client("openai", config1, streaming=False),
+-            first_client,
+-        )
+-
+     def test_default_streaming_arg_behaves_as_non_streaming(self):
+         """TC-F02-REG-3: calling with no streaming arg behaves as non-streaming.
+ 
+diff --git a/tests/unit/deployment/http/api/test_b102_admin_async_initialization.py b/tests/unit/deployment/http/api/test_b102_admin_async_initialization.py
+new file mode 100644
+index 0000000..473412e
+--- /dev/null
++++ b/tests/unit/deployment/http/api/test_b102_admin_async_initialization.py
+@@ -0,0 +1,108 @@
++"""B102 admin endpoints use nonblocking runtime initialization."""
++
++import asyncio
++from threading import Event
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, Mock
++
++import httpx
++import pytest
++from fastapi import FastAPI
++
++from agentmap.deployment.http.api.routes import admin
++from agentmap.runtime.init_ops import ensure_initialized_async
++from agentmap.runtime.runtime_manager import RuntimeManager
++
++
++@pytest.mark.asyncio
++async def test_every_async_admin_initializer_awaits_async_facade__b102(monkeypatch):
++    initialize = AsyncMock()
++    legacy_sync = Mock()
++    monkeypatch.setattr(admin, "ensure_initialized_async", initialize, raising=False)
++    monkeypatch.setattr(admin, "ensure_initialized", legacy_sync, raising=False)
++    monkeypatch.setattr(
++        admin,
++        "diagnose_system",
++        Mock(return_value={"success": True, "outputs": {}, "metadata": {}}),
++    )
++    monkeypatch.setattr(
++        admin,
++        "get_config",
++        Mock(
++            return_value={
++                "success": True,
++                "outputs": {
++                    "csv_repository_path": "",
++                    "custom_agents_path": "",
++                    "functions_path": "",
++                },
++            }
++        ),
++    )
++    monkeypatch.setattr(
++        admin,
++        "validate_cache",
++        Mock(
++            return_value={
++                "success": True,
++                "outputs": {"cache_stats": {}, "removed_entries": 0},
++            }
++        ),
++    )
++    request = Mock()
++    calls = [
++        lambda: admin.get_diagnostics.__wrapped__(request),
++        lambda: admin.get_configuration.__wrapped__(request),
++        lambda: admin.get_cache_stats.__wrapped__(request),
++        lambda: admin.clear_cache.__wrapped__(request=request),
++        admin.health_check,
++        lambda: admin.get_system_paths.__wrapped__(request),
++    ]
++    for call in calls:
++        initialize.reset_mock()
++        await call()
++        initialize.assert_awaited_once_with()
++    legacy_sync.assert_not_called()
++
++
++@pytest.mark.asyncio
++async def test_admin_health_waits_without_blocking_transaction_owner__b102(monkeypatch):
++    loop = asyncio.get_running_loop()
++    entered, release = asyncio.Event(), Event()
++    service = SimpleNamespace(shutdown=AsyncMock())
++    installed = SimpleNamespace(
++        ready=False,
++        llm_service=Mock(return_value=service),
++    )
++    RuntimeManager.reset()
++    monkeypatch.setattr(
++        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=installed)
++    )
++    monkeypatch.setattr(
++        "agentmap.runtime.init_ops._is_cache_initialized", lambda value: value.ready
++    )
++
++    def refresh(value):
++        loop.call_soon_threadsafe(entered.set)
++        assert release.wait(5)
++        value.ready = True
++
++    monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", refresh)
++    owner = asyncio.create_task(ensure_initialized_async())
++    await entered.wait()
++    app = FastAPI()
++    app.include_router(admin.router)
++    transport = httpx.ASGITransport(app=app)
++    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
++        health = asyncio.create_task(client.get("/admin/health"))
++        marker = asyncio.Event()
++        loop.call_soon(marker.set)
++        await marker.wait()
++        with RuntimeManager._transaction_condition:
++            assert len(RuntimeManager._transaction_async_waiters) == 1
++        release.set()
++        await owner
++        response = await health
++        assert response.status_code == 200
++        assert response.json() == {"status": "healthy", "initialized": True}
++    await RuntimeManager.shutdown()
+diff --git a/tests/unit/runtime/test_b102_runtime_coordination.py b/tests/unit/runtime/test_b102_runtime_coordination.py
+new file mode 100644
+index 0000000..ae57bbd
+--- /dev/null
++++ b/tests/unit/runtime/test_b102_runtime_coordination.py
+@@ -0,0 +1,214 @@
++"""B102 runtime coordination never blocks the event loop or loses outcomes."""
++
++import asyncio
++from concurrent.futures import ThreadPoolExecutor
++from threading import Event
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, Mock
++
++import pytest
++
++from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
++from agentmap.runtime.init_ops import ensure_initialized, ensure_initialized_async
++from agentmap.runtime.runtime_manager import RuntimeManager
++
++
++class CountingExecutor(ThreadPoolExecutor):
++    def __init__(self, max_workers):
++        super().__init__(max_workers=max_workers)
++        self.submissions = 0
++
++    def submit(self, fn, /, *args, **kwargs):
++        self.submissions += 1
++        return super().submit(fn, *args, **kwargs)
++
++
++def container(*, shutdown=None, ready=True):
++    service = SimpleNamespace(shutdown=shutdown or AsyncMock())
++    return SimpleNamespace(
++        ready=ready,
++        llm_service=Mock(return_value=service),
++    )
++
++
++def flatten(error: BaseException) -> list[BaseException]:
++    if isinstance(error, BaseExceptionGroup):
++        return [item for child in error.exceptions for item in flatten(child)]
++    return [error]
++
++
++@pytest.mark.asyncio
++async def test_async_replacement_preserves_requested_cache_refresh__b102(monkeypatch):
++    old, replacement = container(), container()
++    refresh_cache = Mock()
++    RuntimeManager._container, RuntimeManager._is_initialized = old, True
++    monkeypatch.setattr(
++        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=replacement)
++    )
++    monkeypatch.setattr(
++        "agentmap.runtime.init_ops._is_cache_initialized", lambda value: value.ready
++    )
++    monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", refresh_cache)
++    try:
++        await ensure_initialized_async(refresh=True)
++        refresh_cache.assert_called_once_with(replacement)
++        assert RuntimeManager.get_container() is replacement
++    finally:
++        await RuntimeManager.shutdown()
++
++
++@pytest.mark.asyncio
++async def test_cancellation_during_prerequisite_shutdown_is_primary__b102(monkeypatch):
++    entered, release = asyncio.Event(), asyncio.Event()
++
++    async def shutdown():
++        entered.set()
++        await release.wait()
++
++    old = container(shutdown=AsyncMock(side_effect=shutdown))
++    install = Mock(return_value=container())
++    RuntimeManager._container, RuntimeManager._is_initialized = old, True
++    monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", install)
++    refresh = asyncio.create_task(ensure_initialized_async(refresh=True))
++    await entered.wait()
++    refresh.cancel()
++    release.set()
++    with pytest.raises(asyncio.CancelledError):
++        await refresh
++    old.llm_service().shutdown.assert_awaited_once_with()
++    install.assert_not_called()
++    assert not RuntimeManager.is_initialized()
++
++
++@pytest.mark.asyncio
++async def test_prerequisite_shutdown_failure_stays_under_cancellation__b102(
++    monkeypatch,
++):
++    entered, release = asyncio.Event(), asyncio.Event()
++    failure = RuntimeError("offline old-runtime cleanup failure")
++
++    async def shutdown():
++        entered.set()
++        await release.wait()
++        raise failure
++
++    old = container(shutdown=AsyncMock(side_effect=shutdown))
++    RuntimeManager._container, RuntimeManager._is_initialized = old, True
++    monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", Mock())
++    refresh = asyncio.create_task(ensure_initialized_async(refresh=True))
++    await entered.wait()
++    refresh.cancel()
++    release.set()
++    with pytest.raises(asyncio.CancelledError) as caught:
++        await refresh
++    assert caught.value.__cause__ is failure
++    old.llm_service().shutdown.assert_awaited_once_with()
++    assert not RuntimeManager.is_initialized()
++
++
++@pytest.mark.asyncio
++async def test_cancellation_during_rollback_remains_primary__b102(monkeypatch):
++    entered, release = asyncio.Event(), asyncio.Event()
++    cleanup_failure = RuntimeError("offline rollback failure")
++
++    async def shutdown():
++        entered.set()
++        await release.wait()
++        raise cleanup_failure
++
++    installed = container(shutdown=AsyncMock(side_effect=shutdown), ready=False)
++    RuntimeManager.reset()
++    monkeypatch.setattr(
++        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=installed)
++    )
++    monkeypatch.setattr(
++        "agentmap.runtime.init_ops._refresh_cache",
++        Mock(side_effect=ValueError("offline startup failure")),
++    )
++    startup = asyncio.create_task(ensure_initialized_async())
++    await entered.wait()
++    startup.cancel()
++    release.set()
++    with pytest.raises(asyncio.CancelledError) as caught:
++        await startup
++    retained = flatten(caught.value.__cause__)
++    assert any(isinstance(error, AgentMapNotInitialized) for error in retained)
++    assert cleanup_failure in retained
++    assert not RuntimeManager.is_initialized()
++
++
++@pytest.mark.parametrize("workers", [1, 2])
++@pytest.mark.asyncio
++async def test_bounded_executor_burst_cannot_starve_transaction_owner__b102(
++    monkeypatch, workers
++):
++    loop = asyncio.get_running_loop()
++    executor = CountingExecutor(max_workers=workers)
++    loop.set_default_executor(executor)
++    entered, release = asyncio.Event(), Event()
++    installed = container(ready=False)
++    monkeypatch.setattr(
++        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=installed)
++    )
++    monkeypatch.setattr(
++        "agentmap.runtime.init_ops._is_cache_initialized", lambda value: value.ready
++    )
++
++    def refresh(value):
++        loop.call_soon_threadsafe(entered.set)
++        assert release.wait(5)
++        value.ready = True
++
++    monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", refresh)
++    owner = asyncio.create_task(ensure_initialized_async())
++    await entered.wait()
++    owner_submissions = executor.submissions
++
++    async def queued_initializer(started):
++        started.set()
++        await ensure_initialized_async()
++
++    started = [asyncio.Event() for _ in range(workers + 2)]
++    queued = [asyncio.create_task(queued_initializer(event)) for event in started]
++    await asyncio.gather(*(event.wait() for event in started))
++    submissions_while_owner_blocked = executor.submissions
++    try:
++        assert submissions_while_owner_blocked == owner_submissions
++    except AssertionError:
++        for waiter in queued:
++            waiter.cancel()
++        release.set()
++        await asyncio.gather(owner, *queued, return_exceptions=True)
++        raise
++    release.set()
++    await asyncio.wait_for(asyncio.gather(owner, *queued), timeout=2)
++    await RuntimeManager.shutdown()
++
++
++@pytest.mark.asyncio
++async def test_sync_initializer_refuses_async_owner_without_blocking__b102(monkeypatch):
++    loop = asyncio.get_running_loop()
++    entered, release = asyncio.Event(), Event()
++    installed = container(ready=False)
++    monkeypatch.setattr(
++        "agentmap.runtime.runtime_manager.initialize_di", Mock(return_value=installed)
++    )
++    monkeypatch.setattr(
++        "agentmap.runtime.init_ops._is_cache_initialized", lambda value: value.ready
++    )
++
++    def refresh(value):
++        loop.call_soon_threadsafe(entered.set)
++        assert release.wait(5)
++        value.ready = True
++
++    monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", refresh)
++    owner = asyncio.create_task(ensure_initialized_async())
++    await entered.wait()
++    try:
++        with pytest.raises(AgentMapNotInitialized, match="async transaction"):
++            ensure_initialized()
++    finally:
++        release.set()
++    await owner
++    await RuntimeManager.shutdown()
+diff --git a/tests/unit/runtime/test_b102_runtime_shutdown.py b/tests/unit/runtime/test_b102_runtime_shutdown.py
+index 1639387..75e48a6 100644
+--- a/tests/unit/runtime/test_b102_runtime_shutdown.py
++++ b/tests/unit/runtime/test_b102_runtime_shutdown.py
+@@ -61,6 +61,7 @@ async def test_async_refresh_closes_loop_bound_owner_on_caller_loop__b102(monkey
+     monkeypatch.setattr(
+         "agentmap.runtime.init_ops._is_cache_initialized", Mock(return_value=True)
+     )
++    monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", Mock())
+     try:
+         await ensure_initialized_async(refresh=True)
+         assert closed == [True]
+@@ -210,7 +211,7 @@ async def test_concurrent_failed_start_cannot_detach_peer_success__b102(monkeypa
+     failed = asyncio.create_task(ensure_initialized_async())
+     assert await asyncio.to_thread(entered.wait, 5)
+     succeeded = asyncio.create_task(ensure_initialized_async())
+-    assert RuntimeManager._transaction_lock.locked()
++    assert RuntimeManager._transaction_owner is not None
+     release.set()
+     first_result, second_result = await asyncio.gather(
+         failed, succeeded, return_exceptions=True
+@@ -318,10 +319,11 @@ async def test_concurrent_refresh_transactions_close_each_replaced_owner__b102(
+     monkeypatch.setattr(
+         "agentmap.runtime.init_ops._is_cache_initialized", Mock(return_value=True)
+     )
++    monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", Mock())
+     first = asyncio.create_task(ensure_initialized_async(refresh=True))
+     await shutdown_entered.wait()
+     second = asyncio.create_task(ensure_initialized_async(refresh=True))
+-    assert RuntimeManager._transaction_lock.locked()
++    assert RuntimeManager._transaction_owner is not None
+     release_shutdown.set()
+     await asyncio.gather(first, second)
+     try:
+diff --git a/tests/unit/services/llm/test_b102_credential_cache_identity.py b/tests/unit/services/llm/test_b102_credential_cache_identity.py
+new file mode 100644
+index 0000000..80e4eb8
+--- /dev/null
++++ b/tests/unit/services/llm/test_b102_credential_cache_identity.py
+@@ -0,0 +1,31 @@
++"""B102 governed cache identity uses the complete credential."""
++
++from unittest.mock import Mock, patch
++
++from agentmap.services.llm_client_factory import LLMClientFactory
++
++
++def test_same_prefix_credentials_do_not_share_client__b102():
++    """Distinct complete credentials must own distinct provider clients."""
++    factory = LLMClientFactory(Mock())
++    configs = [
++        {"api_key": "abcdefgh_LONGER1", "model": "offline"},
++        {"api_key": "abcdefgh_LONGER2", "model": "offline"},
++        {"api_key": "XXXXXXXX_anything", "model": "offline"},
++    ]
++    clients = [Mock(name=f"client-{index}") for index in range(3)]
++    with patch.object(
++        factory,
++        "_create_langchain_client",
++        side_effect=clients,
++    ) as create:
++        actual = [
++            factory.get_or_create_client("openai", config, streaming=False)
++            for config in configs
++        ]
++    assert actual == clients
++    assert create.call_count == 3
++    assert (
++        factory.get_or_create_client("openai", configs[0], streaming=False)
++        is clients[0]
++    )
+diff --git a/tests/unit/services/llm/test_b102_review_size.py b/tests/unit/services/llm/test_b102_review_size.py
+index a399939..0e4596f 100644
+--- a/tests/unit/services/llm/test_b102_review_size.py
++++ b/tests/unit/services/llm/test_b102_review_size.py
+@@ -6,15 +6,23 @@ from pathlib import Path
+ import pytest
+ 
+ ROOT = Path(__file__).resolve().parents[4]
+-TEST_DIRS = (ROOT / "tests/unit",)
++TEST_DIRS = (ROOT / "tests/unit", ROOT / "tests/fresh_suite/unit")
+ B102_TEST_MODULES = sorted(
+-    path.relative_to(ROOT)
+-    for test_dir in TEST_DIRS
+-    for path in test_dir.rglob("test_*.py")
+-    if "__b102" in path.read_text() or path.name == "test_cost_calculator.py"
++    {
++        path.relative_to(ROOT)
++        for test_dir in TEST_DIRS
++        for path in test_dir.rglob("test_*.py")
++        if "__b102" in path.read_text() or path.name == "test_cost_calculator.py"
++    }
+ )
+ 
+ 
++def test_b102_structural_inventory_retains_both_test_roots():
++    roots = {path.parts[:2] for path in B102_TEST_MODULES}
++    assert ("tests", "unit") in roots
++    assert ("tests", "fresh_suite") in roots
++
++
+ @pytest.mark.parametrize(
+     "path,name",
+     [

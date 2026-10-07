@@ -1,0 +1,8 @@
+........................................................................ [ 24%]
+........................................................................ [ 48%]
+........................................................................ [ 72%]
+.......s................................................................ [ 96%]
+...........                                                              [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/fresh_suite/unit/services/test_llm_client_factory.py:869: commit 68e1141 not resolvable in this checkout's history (TD-025a diff-scope guard requires it) — skipping rather than failing on an unrelated history rewrite.
+298 passed, 1 skipped in 4.22s

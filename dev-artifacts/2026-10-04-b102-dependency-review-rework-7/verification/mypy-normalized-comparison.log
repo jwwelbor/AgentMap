@@ -1,0 +1,10 @@
+command: .venv/bin/mypy --cache-dir <isolated-cache> src/
+pinned baseline: d308bc5363842e67e850b1792a1095ec38f114c2
+baseline result: 1638 errors in 248 files; diagnostics: 1779
+current result: 1638 errors in 248 files; diagnostics: 1779
+normalized added: 0
+normalized removed: 0
+baseline clean-run sha256: 7004747bbddc1cef64f28afc5b0afe02aa57dfdf9133cd060bad3329f08f2721
+current clean-run sha256: 3c9e27cc499461d7460bbafbe4c34e02c1db850211ed2aaeb3b1f7288902c86e
+canonical retained prior raw log: dev-artifacts/2026-10-04-b102-dependency-review-rework-6/verification/mypy.log
+canonical prior raw sha256: ceaf54afb4c67c3358e4508d412852eddeba776608b7ed7ef74f2047bce52f63

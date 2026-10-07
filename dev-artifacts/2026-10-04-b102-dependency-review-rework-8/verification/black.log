@@ -1,0 +1,3 @@
+command: uv run black --check <8 task-owned Python files>
+All done! ✨ 🍰 ✨
+8 files would be left unchanged.

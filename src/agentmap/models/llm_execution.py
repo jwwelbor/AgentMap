@@ -46,9 +46,11 @@ class LLMResponse:
 
     ``cost`` is the deterministic receipt derived from ``usage`` and the
     configured price catalog (E05-F06). It is ``None`` whenever pricing is
-    unconfigured, no catalog entry matches the resolved provider/model, or any
-    positive-count usage bucket lacks a configured rate — never a fabricated
-    or partial total (REQ-F-001/REQ-F-002).
+    unconfigured, no catalog entry matches the resolved provider/model, any
+    non-None token count is negative, or a positive-count bucket lacks a rate.
+    Missing input/output counts also mean unknown cost unless their rate is
+    explicitly zero; absent optional cache counts contribute zero. No partial
+    or fabricated total is returned (REQ-F-001/REQ-F-002).
 
     ``tool_calls`` is the normalized tool-call list extracted from the
     provider response (E05-F06). It is ``None`` when the response carried no

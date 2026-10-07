@@ -1,0 +1,23 @@
+{
+  "entity": "B102",
+  "base_commit": "49f486e4e851d6953093153823b59457f57d6472",
+  "head_commit": "56b0efabc0340e1c5dcb95b98062d23ad8fe4bc6",
+  "diff_sha256": "9e7d234655d5e57fe0055657abcaa6531be3734da20e4e93eef0d8b38b2aa648",
+  "changed_file_count": 11,
+  "changed_files": [
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/handoff.md",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/black.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/counterfactual-red.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/focused-collect.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/focused.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/isort.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/lint.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/make-test.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/mypy-normalized-comparison.log",
+    "src/agentmap/runtime/runtime_manager.py",
+    "tests/unit/runtime/test_b102_public_facade_starvation.py"
+  ],
+  "runner_mode": "dispatched-six-angle",
+  "fallback_reason": "native Workflow unavailable",
+  "scope_note": "Fresh exact-pin review of AgentMap dependency review rework 9 and retained evidence."
+}

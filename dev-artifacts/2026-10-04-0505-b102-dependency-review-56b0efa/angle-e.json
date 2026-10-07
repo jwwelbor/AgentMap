@@ -1,0 +1,37 @@
+{
+  "reviewed_files": [
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/handoff.md",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/black.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/counterfactual-red.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/focused-collect.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/focused.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/isort.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/lint.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/make-test.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-9/verification/mypy-normalized-comparison.log",
+    "src/agentmap/runtime/runtime_manager.py",
+    "tests/unit/runtime/test_b102_public_facade_starvation.py"
+  ],
+  "findings": [
+    {
+      "file": "tests/unit/runtime/test_b102_public_facade_starvation.py",
+      "line": 139,
+      "severity": "non-blocker",
+      "rule": "TESTS",
+      "summary": "The executor regression tests do not verify the explicit ContextVar propagation that replaces asyncio.to_thread semantics.",
+      "diagnosis": "The production change manually copies the caller context and runs initialization inside it, but every new case uses ordinary mocks and state. Deleting contextvars.copy_context() and context.run from _run_install_and_startup would leave all six new tests and the retained focused suite green, despite changing the former asyncio.to_thread context-propagation contract.",
+      "evidence": "The parameterized test at lines 136-167 proves default-executor starvation recovery for list, inspect, and validate, but it never sets a ContextVar or observes one inside initialize_di, startup, or cache refresh; no ContextVar coverage for runtime initialization exists elsewhere in tests.",
+      "correction": "Add a counterfactual case that sets a sentinel ContextVar in the calling task, observes that exact value from initialize_di or _refresh_cache on the lifecycle executor, and would fail if copy_context/context.run were removed."
+    },
+    {
+      "file": "tests/unit/runtime/test_b102_public_facade_starvation.py",
+      "line": 120,
+      "severity": "non-blocker",
+      "rule": "TESTS",
+      "summary": "The starvation regression depends on millisecond polling and a one-second wall-clock completion cutoff.",
+      "diagnosis": "The test treats failure to finish within one second as proof of executor starvation, while worker readiness is detected by up to 1,000 asyncio.sleep(0.001) polls. A loaded CI host can therefore produce the same result as the deadlock even when the dedicated lifecycle executor is correct.",
+      "evidence": "wait_for_thread_event loops over asyncio.sleep(0.001) at lines 117-121, and complete_tasks_or_break_counterfactual classifies any task pending after asyncio.wait(..., timeout=1) at lines 125-128 as starved.",
+      "correction": "Signal worker readiness into an asyncio.Event with loop.call_soon_threadsafe instead of polling, then use a generously bounded outer deadlock guard while asserting the ordering events that distinguish queued lifecycle work from ordinary slow completion."
+    }
+  ]
+}

@@ -5,13 +5,21 @@ Handles the creation of provider-specific LangChain clients (OpenAI, Anthropic, 
 with proper dependency management and client caching.
 """
 
-from typing import Any, Dict
+from threading import RLock
+from typing import Any, Callable, Dict
 
 from agentmap.exceptions import LLMConfigurationError, LLMDependencyError
+from agentmap.services.llm.client_lifecycle import GovernedClientLifecycleMixin
+from agentmap.services.llm.observed_clients import (
+    ObservedResources,
+    governed_google_kwargs,
+    governed_openai_kwargs,
+    observed_anthropic_client,
+)
 from agentmap.services.logging_service import LoggingService
 
 
-class LLMClientFactory:
+class LLMClientFactory(GovernedClientLifecycleMixin):
     """Factory for creating and caching LangChain LLM clients."""
 
     def __init__(self, logging_service: LoggingService):
@@ -22,6 +30,8 @@ class LLMClientFactory:
             logging_service: Service for logging
         """
         self._clients = {}  # Cache for LangChain clients
+        self._cache_lock = RLock()
+        self._initialize_governed_lifecycle()
         self._logger = logging_service.get_class_logger("agentmap.llm.factory")
 
     @staticmethod
@@ -48,82 +58,57 @@ class LLMClientFactory:
         return streaming
 
     def get_or_create_client(
-        self, provider: str, config: Dict[str, Any], streaming: bool = False
+        self,
+        provider: str,
+        config: Dict[str, Any],
+        streaming: bool = False,
+        *,
+        governed: bool = False,
     ) -> Any:
-        """
-        Get or create a LangChain client for the provider.
-
-        Args:
-            provider: Provider name (openai, anthropic, google)
-            config: Provider configuration dictionary
-            streaming: When True, construct a streaming-aware client with
-                provider-specific usage opt-in flags (e.g. stream_usage=True
-                for Anthropic, stream_options={"include_usage": True} for OpenAI).
-                Defaults to False so all existing callers are unaffected.
-
-        Returns:
-            LangChain client instance
-
-        Raises:
-            TypeError: If ``streaming`` is not a ``bool`` (TD-024).
-        """
+        """Cache separate ordinary, streaming, and governed clients."""
         streaming = self._validate_streaming_flag(streaming)
+        if not isinstance(governed, bool):
+            raise TypeError("governed must be a bool")
+        if governed and streaming:
+            raise LLMConfigurationError(
+                "Governed response observation supports only non-streaming calls"
+            )
 
-        # Create cache key based on provider and critical config.
-        # The streaming dimension is appended last so streaming and non-streaming
-        # clients for the same (provider, config) are cached separately.
-        max_tok = config.get("max_tokens")
-        temperature = config.get("temperature", 0.7)
-        # ``api_key`` may be present-but-None (keys are often optionally loaded);
-        # ``or ""`` guards against ``None[:8]`` raising TypeError.
-        api_key_prefix = (config.get("api_key") or "")[:8]
-        cache_key = (
-            f"{provider}_{config.get('model')}_{api_key_prefix}_"
-            f"{max_tok}_{temperature!r}_{streaming}"
-        )
-
-        if cache_key in self._clients:
-            return self._clients[cache_key]
-
-        # Create new client
-        client = self._create_langchain_client(provider, config, streaming)
-
-        # Cache the client.
-        # Accepted benign race: concurrent fan-out coroutines can arrive here
-        # simultaneously for the same cache_key, each creating an equivalent
-        # client and storing it.  The last write wins and both clients are
-        # identical (same provider, model, temperature, API key prefix, and
-        # streaming-ness), so the race produces no incorrect behaviour.
-        # An asyncio.Lock would eliminate the redundant work but adds complexity
-        # not justified by the low probability of simultaneous first-use of the
-        # exact same key.
-        self._clients[cache_key] = client
-
-        return client
+        with self._cache_lock:
+            cache_key = self._cache_key(provider, config, streaming, governed)
+            api_key = config.get("api_key") or ""
+            token = self._api_key_tokens[api_key]
+            if cache_key in self._clients:
+                return self._clients[cache_key]
+            try:
+                if governed:
+                    raise LLMConfigurationError(
+                        "Governed clients require awaited async construction"
+                    )
+                client = self._create_langchain_client(provider, config, streaming)
+                self._clients[cache_key] = client
+                self._published_tokens.add(token)
+                return client
+            finally:
+                self._release_unused_token(api_key, token)
 
     def _create_langchain_client(
-        self, provider: str, config: Dict[str, Any], streaming: bool = False
+        self,
+        provider: str,
+        config: Dict[str, Any],
+        streaming: bool = False,
+        *,
+        governed: bool = False,
+        owner: ObservedResources | None = None,
     ) -> Any:
-        """
-        Create a LangChain client for the specified provider.
+        """Build the selected wrapper without mutating any cached client.
 
-        Args:
-            provider: Provider name
-            config: Provider configuration
-            streaming: When True, add provider-specific usage opt-in flags
-                to the constructed LangChain client (e.g. stream_usage=True
-                for Anthropic, stream_options={"include_usage": True} for OpenAI).
-                Defaults to False; non-streaming construction is unchanged.
-
-        Returns:
-            LangChain client instance
-
-        Raises:
-            LLMConfigurationError: If configuration is invalid
-            LLMDependencyError: If required dependencies are missing
-            TypeError: If ``streaming`` is not a ``bool`` (TD-024).
+        Governed calls use verified modern wrappers with SDK retries disabled.
+        Streaming and ungoverned calls retain their existing wrapper defaults.
         """
         streaming = self._validate_streaming_flag(streaming)
+        if not isinstance(governed, bool):
+            raise TypeError("governed must be a bool")
 
         api_key = config.get("api_key")
         if not api_key:
@@ -134,26 +119,36 @@ class LLMClientFactory:
         max_tokens = config.get("max_tokens")
 
         try:
-            if provider == "openai":
-                return self._create_openai_client(
-                    api_key, model, temperature, max_tokens, streaming
-                )
-            elif provider == "anthropic":
-                return self._create_anthropic_client(
-                    api_key, model, temperature, max_tokens, streaming
-                )
-            elif provider == "google":
-                return self._create_google_client(
-                    api_key, model, temperature, max_tokens, streaming
-                )
-            else:
-                raise LLMConfigurationError(f"Unsupported provider: {provider}")
+            builder = self._client_builder(provider)
+            builder_kwargs: Dict[str, Any] = (
+                {"governed": True, "owner": owner} if governed else {}
+            )
+            return builder(
+                api_key,
+                model,
+                temperature,
+                max_tokens,
+                streaming,
+                **builder_kwargs,
+            )
 
         except ImportError as e:
             raise LLMDependencyError(
                 f"Missing dependencies for {provider}. "
                 f"Install with: pip install agentmap[{provider}]"
             ) from e
+
+    def _client_builder(self, provider: str) -> Callable[..., Any]:
+        """Select the supported provider constructor."""
+        builders = {
+            "openai": self._create_openai_client,
+            "anthropic": self._create_anthropic_client,
+            "google": self._create_google_client,
+        }
+        try:
+            return builders[provider]
+        except KeyError as error:
+            raise LLMConfigurationError(f"Unsupported provider: {provider}") from error
 
     def _create_openai_client(
         self,
@@ -162,25 +157,19 @@ class LLMClientFactory:
         temperature: float,
         max_tokens: int | None = None,
         streaming: bool = False,
+        *,
+        governed: bool = False,
+        owner: ObservedResources | None = None,
     ) -> Any:
-        """
-        Create OpenAI LangChain client.
-
-        Args:
-            api_key: OpenAI API key
-            model: Model name
-            temperature: Temperature setting
-            max_tokens: Optional max response tokens
-            streaming: When True, adds stream_options={"include_usage": True}
-                so the LangChain wrapper forwards end-of-stream usage metadata.
-
-        Returns:
-            ChatOpenAI client instance
-        """
+        """Build OpenAI client, with streaming usage or governed observation."""
         try:
             # Try the new langchain-openai package first
             from langchain_openai import ChatOpenAI
         except ImportError:
+            if governed:
+                raise LLMDependencyError(
+                    "Governed calls require the verified langchain-openai wrapper"
+                )
             # Fall back to legacy import
             try:
                 from langchain.chat_models import ChatOpenAI
@@ -198,6 +187,8 @@ class LLMClientFactory:
             "temperature": temperature,
             "openai_api_key": api_key,
         }
+        if governed:
+            kwargs.update(governed_openai_kwargs(owner))
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         if streaming:
@@ -211,27 +202,20 @@ class LLMClientFactory:
         temperature: float,
         max_tokens: int | None = None,
         streaming: bool = False,
+        *,
+        governed: bool = False,
+        owner: ObservedResources | None = None,
     ) -> Any:
-        """
-        Create Anthropic LangChain client.
-
-        Args:
-            api_key: Anthropic API key
-            model: Model name
-            temperature: Temperature setting
-            max_tokens: Optional max response tokens
-            streaming: When True, adds stream_usage=True so the LangChain
-                wrapper forwards end-of-stream usage metadata.
-
-        Returns:
-            ChatAnthropic client instance
-        """
+        """Build Anthropic client, with streaming usage or governed observation."""
         try:
             # Try langchain-anthropic first
             from langchain_anthropic import ChatAnthropic
         except ImportError:
+            if governed:
+                raise LLMDependencyError(
+                    "Governed calls require the verified langchain-anthropic wrapper"
+                )
             try:
-                # Fall back to community package
                 from langchain_community.chat_models import ChatAnthropic
 
                 self._logger.warning(
@@ -239,7 +223,6 @@ class LLMClientFactory:
                 )
             except ImportError:
                 try:
-                    # Legacy fallback
                     from langchain.chat_models import ChatAnthropic
 
                     self._logger.warning(
@@ -259,6 +242,8 @@ class LLMClientFactory:
             kwargs["max_tokens"] = max_tokens
         if streaming:
             kwargs["stream_usage"] = True
+        if governed:
+            return observed_anthropic_client(kwargs, owner)
         return ChatAnthropic(**kwargs)
 
     def _create_google_client(
@@ -268,26 +253,19 @@ class LLMClientFactory:
         temperature: float,
         max_tokens: int | None = None,
         streaming: bool = False,
+        *,
+        governed: bool = False,
+        owner: ObservedResources | None = None,
     ) -> Any:
-        """
-        Create Google LangChain client.
-
-        Args:
-            api_key: Google API key
-            model: Model name
-            temperature: Temperature setting
-            max_tokens: Optional max response tokens
-            streaming: Accepted for signature uniformity with other builders;
-                no Google streaming usage opt-in is set (Gemini streaming usage
-                is unverified and out of epic scope — engineering-context.md:100).
-
-        Returns:
-            ChatGoogleGenerativeAI client instance
-        """
+        """Build Google client; streaming has no verified usage opt-in."""
         try:
             # Try langchain-google-genai first
             from langchain_google_genai import ChatGoogleGenerativeAI
         except ImportError:
+            if governed:
+                raise LLMDependencyError(
+                    "Governed calls require the verified langchain-google-genai wrapper"
+                )
             try:
                 # Fall back to community package
                 from langchain_community.chat_models import ChatGoogleGenerativeAI
@@ -305,11 +283,23 @@ class LLMClientFactory:
             "temperature": temperature,
             "google_api_key": api_key,
         }
+        if governed:
+            kwargs.update(governed_google_kwargs(owner))
         if max_tokens is not None:
             kwargs["max_output_tokens"] = max_tokens
         return ChatGoogleGenerativeAI(**kwargs)
 
     def clear_cache(self) -> None:
         """Clear the client cache."""
-        self._clients.clear()
+        with self._cache_lock:
+            self._ensure_open()
+            if self._owners or self._active_governed:
+                raise LLMConfigurationError(
+                    "Governed clients require awaited shutdown before cache clearing"
+                )
+            self._clients.clear()
+            self._key_locks.clear()
+            self._api_key_tokens.clear()
+            self._published_tokens.clear()
+            self._pending_tokens.clear()
         self._logger.debug("Client cache cleared")

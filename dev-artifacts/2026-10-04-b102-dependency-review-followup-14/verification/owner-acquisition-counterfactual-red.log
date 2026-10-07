@@ -1,0 +1,3 @@
+mutation: install_owner_gate never acknowledges owner acquisition
+command: timeout 2s uv run pytest -q tests/unit/runtime/test_b102_public_facade_starvation.py::test_timeout_lets_live_owner_release_its_transaction__b102
+exit-code: 124 (expected 124 before bounded acquisition repair)

@@ -1,0 +1,3 @@
+command: uv run black --check tests/unit/runtime/test_b102_public_facade_starvation.py
+All done! ✨ 🍰 ✨
+1 file would be left unchanged.

@@ -1,0 +1,220 @@
+"""Awaited construction and shutdown for governed provider clients."""
+
+import asyncio
+import secrets
+from threading import Lock
+from typing import TYPE_CHECKING, Any, Dict
+
+from agentmap.async_lifecycle import await_terminal_task, raise_cleanup_failures
+from agentmap.exceptions import LLMConfigurationError
+from agentmap.services.llm.observed_clients import ObservedResources
+
+
+class GovernedClientLifecycleMixin:
+    """Per-key construction and terminal resource ownership for the factory."""
+
+    _cache_lock: Any
+    _clients: dict[str, Any]
+
+    if TYPE_CHECKING:
+
+        def _create_langchain_client(
+            self,
+            provider: str,
+            config: Dict[str, Any],
+            streaming: bool = False,
+            *,
+            governed: bool = False,
+            owner: ObservedResources | None = None,
+        ) -> Any: ...
+
+    def _initialize_governed_lifecycle(self) -> None:
+        self._owners: list[ObservedResources] = []
+        self._key_locks: dict[str, Lock] = {}
+        self._api_key_tokens: dict[str, str] = {}
+        self._published_tokens: set[str] = set()
+        self._pending_tokens: dict[str, int] = {}
+        self._active_governed: set[asyncio.Task[Any]] = set()
+        self._shutdown_task: asyncio.Task[None] | None = None
+        self._closing = False
+        self._closed = False
+
+    async def get_or_create_governed_client(
+        self, provider: str, config: Dict[str, Any]
+    ) -> Any:
+        """Construct one governed owner per key with awaited rollback."""
+        with self._cache_lock:
+            cache_key = self._cache_key(provider, config, False, True)
+            api_key = config.get("api_key") or ""
+            token = self._api_key_tokens[api_key]
+            key_lock = self._key_locks.setdefault(cache_key, Lock())
+            self._pending_tokens[token] = self._pending_tokens.get(token, 0) + 1
+            construction = self._run_governed_construction(
+                key_lock, cache_key, provider, config, api_key, token
+            )
+            try:
+                lifecycle = asyncio.create_task(construction)
+            except Exception:
+                construction.close()
+                self._finish_pending_token(api_key, token)
+                raise
+            self._active_governed.add(lifecycle)
+        outcome = await await_terminal_task(lifecycle)
+        return outcome.result()
+
+    async def _run_governed_construction(
+        self,
+        key_lock: Lock,
+        cache_key: str,
+        provider: str,
+        config: Dict[str, Any],
+        api_key: str,
+        token: str,
+    ) -> Any:
+        current = asyncio.current_task()
+        assert current is not None
+        try:
+            result = await asyncio.to_thread(
+                self._construct_governed, key_lock, cache_key, provider, config, token
+            )
+            return await self._finish_governed_construction(result)
+        finally:
+            with self._cache_lock:
+                self._active_governed.discard(current)
+                self._finish_pending_token(api_key, token)
+
+    def _construct_governed(
+        self,
+        key_lock: Lock,
+        cache_key: str,
+        provider: str,
+        config: Dict[str, Any],
+        token: str,
+    ) -> tuple[Any | None, ObservedResources | None, Exception | None]:
+        with key_lock:
+            with self._cache_lock:
+                self._ensure_open()
+                cached = self._clients.get(cache_key)
+                if cached is not None:
+                    return cached, None, None
+            owner = ObservedResources()
+            try:
+                client = self._create_langchain_client(
+                    provider, config, governed=True, owner=owner
+                )
+            except Exception as error:
+                return None, owner, error
+            with self._cache_lock:
+                if self._closing or self._closed:
+                    closing_error = LLMConfigurationError(
+                        "LLM client factory is shut down"
+                    )
+                    return None, owner, closing_error
+                self._clients[cache_key] = client
+                self._published_tokens.add(token)
+                self._owners.append(owner)
+            return client, None, None
+
+    async def _finish_governed_construction(
+        self, result: tuple[Any | None, ObservedResources | None, Exception | None]
+    ) -> Any:
+        client, owner, error = result
+        if owner is not None:
+            try:
+                await owner.aclose()
+            except (
+                asyncio.CancelledError,
+                BaseExceptionGroup,
+                Exception,
+            ) as cleanup_error:
+                assert error is not None
+                raise BaseExceptionGroup(
+                    "governed client construction and rollback failed",
+                    [error, cleanup_error],
+                )
+        if error is not None:
+            raise error
+        return client
+
+    def _cache_key(
+        self, provider: str, config: Dict[str, Any], streaming: bool, governed: bool
+    ) -> str:
+        api_key = config.get("api_key") or ""
+        with self._cache_lock:
+            self._ensure_open()
+            api_key_identity = self._api_key_tokens.get(api_key)
+            if api_key_identity is None:
+                api_key_identity = secrets.token_hex(32)
+                while api_key_identity in self._api_key_tokens.values():
+                    api_key_identity = secrets.token_hex(32)
+                self._api_key_tokens[api_key] = api_key_identity
+        return (
+            f"{provider}_{config.get('model')}_{api_key_identity}_"
+            f"{config.get('max_tokens')}_{config.get('temperature', 0.7)!r}_{streaming}"
+            + ("_single_dispatch" if governed else "")
+        )
+
+    def _finish_pending_token(self, api_key: str, token: str) -> None:
+        remaining = self._pending_tokens[token] - 1
+        if remaining:
+            self._pending_tokens[token] = remaining
+        else:
+            del self._pending_tokens[token]
+            self._release_unused_token(api_key, token)
+
+    def _release_unused_token(self, api_key: str, token: str) -> None:
+        if token in self._published_tokens or token in self._pending_tokens:
+            return
+        if self._api_key_tokens.get(api_key) == token:
+            del self._api_key_tokens[api_key]
+        for cache_key in list(self._key_locks):
+            if f"_{token}_" in cache_key:
+                del self._key_locks[cache_key]
+
+    def _ensure_open(self) -> None:
+        if self._closing or self._closed:
+            raise LLMConfigurationError("LLM client factory is shut down")
+
+    def prepare_sync_shutdown(self) -> bool:
+        """Reserve shutdown only when no governed owner needs its async loop."""
+        with self._cache_lock:
+            if self._owners or self._active_governed:
+                return False
+            self._closing = True
+            return True
+
+    async def shutdown(self) -> None:
+        """Reject new clients and finish cleanup despite caller cancellation."""
+        with self._cache_lock:
+            if self._closed:
+                return
+            self._closing = True
+            if self._shutdown_task is None:
+                self._shutdown_task = asyncio.create_task(self._finish_shutdown())
+            task = self._shutdown_task
+        outcome = await await_terminal_task(task)
+        outcome.result()
+
+    async def _finish_shutdown(self) -> None:
+        with self._cache_lock:
+            active = list(self._active_governed)
+        if active:
+            await asyncio.gather(*active, return_exceptions=True)
+        with self._cache_lock:
+            owners, self._owners = self._owners, []
+            self._clients.clear()
+            self._key_locks.clear()
+            self._api_key_tokens.clear()
+            self._published_tokens.clear()
+            self._pending_tokens.clear()
+        failures: list[BaseException] = []
+        for owner in owners:
+            try:
+                await owner.aclose()
+            except (asyncio.CancelledError, BaseExceptionGroup) as error:
+                failures.append(error)
+            except Exception as error:
+                failures.append(error)
+        with self._cache_lock:
+            self._closed = True
+        raise_cleanup_failures("governed client shutdown failed", failures)

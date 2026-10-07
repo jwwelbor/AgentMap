@@ -1,0 +1,22 @@
+{
+  "reviewed_files": [
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/handoff.md",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/black.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/counterfactual-red-summary.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused-collect.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/isort.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/lint.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/make-test.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/mypy-normalized-comparison.log",
+    "src/agentmap/deployment/http/api/routes/admin.py",
+    "src/agentmap/runtime/runtime_manager.py",
+    "tests/fresh_suite/unit/services/test_llm_client_factory.py",
+    "tests/unit/deployment/http/api/test_b102_admin_async_initialization.py",
+    "tests/unit/runtime/test_b102_runtime_coordination.py",
+    "tests/unit/runtime/test_b102_runtime_shutdown.py",
+    "tests/unit/services/llm/test_b102_credential_cache_identity.py",
+    "tests/unit/services/llm/test_b102_review_size.py"
+  ],
+  "findings": []
+}

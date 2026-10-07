@@ -1,0 +1,24 @@
+{
+  "entity": "B102",
+  "base_commit": "8b12f714f041d6162dfb40eb1b8851291a5dfe26",
+  "head_commit": "1a87874f22b6842dfe3ec0bd170ad1ac6dfaa1dc",
+  "diff_sha256": "604055ea43a4c806eb160b54a33f5855905978a3370989408ef7baea9a625d7c",
+  "changed_file_count": 12,
+  "changed_files": [
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/handoff.md",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/black.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-copy-counterfactual-red.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-run-counterfactual-red.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused-collect.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/git-diff-check.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/isort.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/lint.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/make-test.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/production-source-diff.log",
+    "tests/unit/runtime/test_b102_public_facade_starvation.py"
+  ],
+  "runner_mode": "dispatched-six-angle",
+  "fallback_reason": "native Workflow unavailable",
+  "scope_note": "Fresh exact-pin review of AgentMap B102 dependency follow-up 10; production source is unchanged."
+}

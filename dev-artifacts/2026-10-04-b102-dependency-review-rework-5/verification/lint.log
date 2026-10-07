@@ -1,0 +1,3 @@
+Running flake8 linter...
+uv run flake8 src/ tests/
+✓ Linting complete

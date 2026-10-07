@@ -13,7 +13,7 @@ Legacy imports via `agentmap.runtime_api` continue to work.
 """
 
 from .bundle_ops import scaffold_agents, update_bundle
-from .init_ops import ensure_initialized, get_container
+from .init_ops import ensure_initialized, get_container, shutdown_runtime
 from .runtime_manager import RuntimeManager
 from .system_ops import (
     diagnose_system,
@@ -41,6 +41,7 @@ from .workflow_ops import (
 __all__ = [
     "ensure_initialized",
     "get_container",
+    "shutdown_runtime",
     "run_workflow",
     "run_workflow_async",
     "run_workflow_stream_async",

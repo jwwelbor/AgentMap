@@ -1,0 +1,14 @@
+command: wc -l tests/unit/runtime/test_b102_public_facade_starvation.py; AST top-level function spans
+350 tests/unit/runtime/test_b102_public_facade_starvation.py lines
+runtime_container: 23 lines
+install_owner_gate: 15 lines
+configure_runtime: 5 lines
+test_lifecycle_executor_preserves_calling_task_context__b102: 37 lines
+facade_call: 6 lines
+reap_tasks: 6 lines
+guard_completion: 32 lines
+test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102: 28 lines
+test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102: 47 lines
+test_live_owner_timeout_cleanup__b102: 22 lines
+test_public_sync_facades_cannot_starve_async_transaction_owner__b102: 48 lines
+result: PASS (file <=350 lines; all top-level functions <=50 lines)

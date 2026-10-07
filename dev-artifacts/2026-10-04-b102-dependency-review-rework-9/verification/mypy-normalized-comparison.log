@@ -1,0 +1,19 @@
+command: .venv/bin/mypy --cache-dir <isolated-cache> src/
+normalization: strip line and column locations; retain file, severity, message, and error code
+pinned baseline: 49f486e4e851d6953093153823b59457f57d6472
+candidate source: 6185161897810c54cf9c55e87b3885f28ffd6ae6
+baseline exit: 1; Found 1638 errors in 248 files (checked 438 source files)
+candidate exit: 1; Found 1638 errors in 248 files (checked 438 source files)
+baseline diagnostics: 1779
+candidate diagnostics: 1779
+normalized added: 0
+normalized removed: 0
+baseline raw sha256: b32fed50f781826002a394ded5101a108c4b6550b3c03d6ea789d71bda3be576
+candidate raw sha256: 7759d58579f8bf8f224b64a6d6a89508e849e3525e12113bee4ffbb6a5fcd495
+baseline normalized sha256: 5a36d6a728c4f555e3125523139cd211b9c2d2960eed64a2cbeed25f9877b55f
+candidate normalized sha256: 5a36d6a728c4f555e3125523139cd211b9c2d2960eed64a2cbeed25f9877b55f
+make type-check exit: 2; Found 1623 errors in 248 files (checked 438 source files)
+make type-check raw sha256: 7c75d87ad0417d7c79cf0841b114f79bfeada50cdd220f7a9e92a3c6b7ef98f1
+classification: inherited TD-052 non-green state; candidate adds zero normalized diagnostics
+note: one inherited runtime_manager diagnostic moved from line 309 to 329; normalization correctly treats this as unchanged
+note: raw mypy transcripts are ephemeral and not retained

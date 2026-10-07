@@ -1,0 +1,7 @@
+baseline normalized: 1767
+current normalized: 1764
+added: 0
+removed: 3
+- src/agentmap/services/llm_client_factory.py:LINE: error: Need type annotation for "_clients" (hint: "_clients: dict[<type>, <type>] = ...")  [var-annotated]
+- src/agentmap/runtime/workflow_ops.py:LINE: error: Library stubs not installed for "pandas"  [import-untyped]
+- src/agentmap/runtime/workflow_ops.py:LINE: note: Hint: "python3 -m pip install pandas-stubs"

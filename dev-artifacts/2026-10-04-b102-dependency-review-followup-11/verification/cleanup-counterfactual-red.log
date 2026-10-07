@@ -1,0 +1,138 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary0] __
+
+primary = AssertionError('lifecycle started before transaction release')
+
+    @pytest.mark.parametrize(
+        "primary",
+        [
+            AssertionError("lifecycle started before transaction release"),
+            RuntimeError("offline completion failure"),
+            LifecycleProbeAbort("offline base failure"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(primary):
+        """An early lifecycle signal stays primary after all gated tasks terminate."""
+        release = asyncio.Event()
+        lifecycle_started = asyncio.Event()
+        completed = []
+
+        async def gated(label):
+            await release.wait()
+            completed.append(label)
+
+        owner = asyncio.create_task(gated("owner"))
+        facades = [asyncio.create_task(gated(f"facade-{index}")) for index in range(2)]
+
+        async def fail_after_early_start():
+            lifecycle_started.set()
+            raise primary
+
+        completion = asyncio.create_task(fail_after_early_start())
+        try:
+            await lifecycle_started.wait()
+            with pytest.raises(type(primary)) as caught:
+                await complete_before_deadlock_guard(
+                    completion, release, [owner, *facades]
+                )
+            assert caught.value is primary
+>           assert release.is_set()
+E           assert False
+E            +  where False = is_set()
+E            +    where is_set = <asyncio.locks.Event object at 0x7a12f20a7e50 [unset, waiters:3]>.is_set
+
+tests/unit/runtime/test_b102_public_facade_starvation.py:217: AssertionError
+_ test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary1] __
+
+primary = RuntimeError('offline completion failure')
+
+    @pytest.mark.parametrize(
+        "primary",
+        [
+            AssertionError("lifecycle started before transaction release"),
+            RuntimeError("offline completion failure"),
+            LifecycleProbeAbort("offline base failure"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(primary):
+        """An early lifecycle signal stays primary after all gated tasks terminate."""
+        release = asyncio.Event()
+        lifecycle_started = asyncio.Event()
+        completed = []
+
+        async def gated(label):
+            await release.wait()
+            completed.append(label)
+
+        owner = asyncio.create_task(gated("owner"))
+        facades = [asyncio.create_task(gated(f"facade-{index}")) for index in range(2)]
+
+        async def fail_after_early_start():
+            lifecycle_started.set()
+            raise primary
+
+        completion = asyncio.create_task(fail_after_early_start())
+        try:
+            await lifecycle_started.wait()
+            with pytest.raises(type(primary)) as caught:
+                await complete_before_deadlock_guard(
+                    completion, release, [owner, *facades]
+                )
+            assert caught.value is primary
+>           assert release.is_set()
+E           assert False
+E            +  where False = is_set()
+E            +    where is_set = <asyncio.locks.Event object at 0x7a12f20a4990 [unset, waiters:3]>.is_set
+
+tests/unit/runtime/test_b102_public_facade_starvation.py:217: AssertionError
+_ test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary2] __
+
+primary = LifecycleProbeAbort('offline base failure')
+
+    @pytest.mark.parametrize(
+        "primary",
+        [
+            AssertionError("lifecycle started before transaction release"),
+            RuntimeError("offline completion failure"),
+            LifecycleProbeAbort("offline base failure"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(primary):
+        """An early lifecycle signal stays primary after all gated tasks terminate."""
+        release = asyncio.Event()
+        lifecycle_started = asyncio.Event()
+        completed = []
+
+        async def gated(label):
+            await release.wait()
+            completed.append(label)
+
+        owner = asyncio.create_task(gated("owner"))
+        facades = [asyncio.create_task(gated(f"facade-{index}")) for index in range(2)]
+
+        async def fail_after_early_start():
+            lifecycle_started.set()
+            raise primary
+
+        completion = asyncio.create_task(fail_after_early_start())
+        try:
+            await lifecycle_started.wait()
+            with pytest.raises(type(primary)) as caught:
+                await complete_before_deadlock_guard(
+                    completion, release, [owner, *facades]
+                )
+            assert caught.value is primary
+>           assert release.is_set()
+E           assert False
+E            +  where False = is_set()
+E            +    where is_set = <asyncio.locks.Event object at 0x7a12f1f79c10 [unset, waiters:3]>.is_set
+
+tests/unit/runtime/test_b102_public_facade_starvation.py:217: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary0]
+FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary1]
+FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary2]

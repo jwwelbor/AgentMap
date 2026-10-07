@@ -1,0 +1,308 @@
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/handoff.md b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/handoff.md
+new file mode 100644
+index 0000000..23ca232
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/handoff.md
+@@ -0,0 +1,38 @@
++# B102 AgentMap dependency review follow-up 16 handoff
++
++## Snapshot and outcome
++
++- Pinned clean starting head: `9290cd3f131661407679a129c137da258cc00b2c`
++- Test implementation commit: `2b5197f22913787129820f8c9c4fb1e02cf84401`
++- Scope: one B102 runtime test module and this evidence package; production source is unchanged
++- Result: B102-R15-01 is fixed locally by proving the initialization transaction owner entered before the acquisition-timeout path is asserted
++
++## Finding disposition
++
++| Finding | Disposition and proof |
++|---|---|
++| B102-R15-01 | Fixed now. The gated initialization transaction sets an independent `entered` event before waiting for acknowledgement. The no-acknowledgement test awaits that event and asserts `RuntimeManager._transaction_owner is not None` before exercising the bounded acquisition timeout. Its existing `finally` cleanup releases the gate and reaps the owner. This distinguishes a real live-owner timeout from a test that merely observes no acknowledgement. |
++
++No finding was deferred, and no production source changed.
++
++## Verification
++
++| Check | Result | Evidence |
++|---|---|---|
++| Changed B102 runtime module | 14 passed | `verification/changed-module.log` |
++| B102-tagged modules plus runtime init/state tests | 332 passed | `verification/focused.log` |
++| Full `make test` at the test implementation commit | 5,727 passed; 49 skipped; 1 deselected; 6 warnings; 228 subtests passed | `verification/make-test.log` |
++| Black | PASS; 795 files would be left unchanged | `verification/black.log` |
++| isort | PASS; exit code 0 | `verification/isort.log` |
++| Repository lint | PASS | `verification/lint.log` |
++| Structural limits | PASS; 350 file lines, 11 top-level functions, longest function 48 lines | `verification/structure.log` |
++| Production-source diff from pinned starting head | Empty | `verification/production-source-diff.log` |
++| `git diff --check` from pinned starting head | PASS | `verification/git-diff-check.log` |
++
++The full-suite skips, benchmark deselection, and six warnings remain visible in the retained log. Mypy was not run because production source did not change and tests are excluded by the repository's mypy configuration.
++
++## Remaining gates
++
++Run a fresh exact-pin dependency review on the test implementation and evidence commit. Package release, TD-140, WWGM host integration, restart reconciliation, terminal/process-death acceptance, and product acceptance remain open. No release or host-readiness claim is made by this test-only repair.
++
++**RECOMMENDED OUTCOME: blocked pending final review/release/TD-140/host/product gates.**
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/black.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/black.log
+new file mode 100644
+index 0000000..3d227e0
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/black.log
+@@ -0,0 +1,2 @@
++All done! ✨ 🍰 ✨
++795 files would be left unchanged.
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/changed-module.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/changed-module.log
+new file mode 100644
+index 0000000..fc27703
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/changed-module.log
+@@ -0,0 +1,2 @@
++..............                                                           [100%]
++14 passed in 1.52s
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/focused.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/focused.log
+new file mode 100644
+index 0000000..8464ea3
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/focused.log
+@@ -0,0 +1,6 @@
++........................................................................ [ 21%]
++........................................................................ [ 43%]
++........................................................................ [ 65%]
++........................................................................ [ 86%]
++............................................                             [100%]
++332 passed in 4.93s
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/git-diff-check.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/git-diff-check.log
+new file mode 100644
+index 0000000..e69de29
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/isort.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/isort.log
+new file mode 100644
+index 0000000..e69de29
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/lint.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/lint.log
+new file mode 100644
+index 0000000..bfaf58c
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/lint.log
+@@ -0,0 +1,3 @@
++Running flake8 linter...
++uv run flake8 src/ tests/
++✓ Linting complete
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/make-test.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/make-test.log
+new file mode 100644
+index 0000000..5bb995c
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/make-test.log
+@@ -0,0 +1,122 @@
++Running pytest...
++uv run pytest tests/
++.............................s.......................................... [  1%]
++........................................................................ [  2%]
++............................................s...s.........s.s..ssssssss. [  3%]
++........................................................................................... [  5%]
++................................................................ [  6%]
++........................................................................ [  7%]
++........................................................................ [  8%]
++........................................................................ [ 10%]
++........................................................................ [ 11%]
++................................................................................................................................. [ 13%]
++............................................................................................................. [ 15%]
++....................................................... [ 16%]
++............................................................. [ 17%]
++.................................................................... [ 18%]
++........................................................................ [ 19%]
++........................................................................ [ 21%]
++........................................................................ [ 22%]
++........................................................................ [ 23%]
++..........................................................s............. [ 24%]
++.........s.............................................................. [ 26%]
++........................................................................ [ 27%]
++........................................................................ [ 28%]
++........................................................................ [ 29%]
++........................................................................ [ 31%]
++........................................................................ [ 32%]
++................................................................ [ 33%]
++........................................................................ [ 34%]
++........................................................................ [ 36%]
++............................s....s.....................s................ [ 37%]
++s....................................................................... [ 38%]
++........................................................................ [ 39%]
++....................s......s.....s..........s........................... [ 41%]
++..................................................................... [ 42%]
++........................................................................ [ 43%]
++........................................................................ [ 44%]
++........................................................................ [ 45%]
++........................................................................ [ 47%]
++............................................................... [ 48%]
++........................................................................ [ 49%]
++.......................................s.........ss......................................................................... [ 51%]
++.........................................................s.............. [ 52%]
++........................................................................ [ 54%]
++.........ss.....s.s........s............................................ [ 55%]
++.................................................ssss..sss........ [ 56%]
++........................................................................ [ 57%]
++........................................................................ [ 59%]
++........................................................................ [ 60%]
++........................................................................ [ 61%]
++....................................s....s.............................. [ 62%]
++........................................................................ [ 64%]
++........................................................................ [ 65%]
++........................................................................ [ 66%]
++.......................................................... [ 67%]
++........................................................................ [ 68%]
++........................................................................ [ 70%]
++........................................................................ [ 71%]
++...s....................................s............................... [ 72%]
++........................................................................ [ 73%]
++........................................................................ [ 75%]
++........................................................................ [ 76%]
++........................................................................ [ 77%]
++........................................................................ [ 78%]
++.................................................................... [ 79%]
++........................................................................ [ 81%]
++................................................... [ 82%]
++...............................................................ss....... [ 83%]
++........................................................................ [ 84%]
++...............................................s........................ [ 85%]
++........................................................................ [ 87%]
++........................................................................ [ 88%]
++........................................................................ [ 89%]
++........................................................................ [ 90%]
++........................................................................ [ 92%]
++........................................................................ [ 93%]
++........................................................................ [ 94%]
++................................ss...................................... [ 95%]
++........................................................................ [ 97%]
++........................................................................ [ 98%]
++.......................s................................................ [ 99%]
++............................                                             [100%]
++=============================== warnings summary ===============================
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_graph_message_raises_when_service_not_configured
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:475: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    _safe_super(NonCallableMock, self).__init__(
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_resume_message_includes_duration
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/src/agentmap/agents/builtins/suspend_agent.py:300: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    self.log_error(f"Failed to publish resume message: {e}")
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_resume_message_uses_custom_topic_and_template
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:1124: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    return self._mock_call(*args, **kwargs)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_suspend_message_raises_when_service_not_configured
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/inspect.py:3062: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    arguments = {}
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/integration/api/test_api_minimal.py::TestAPIBasics::test_execution_endpoint_basic
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:354: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    self._config_wrapper_stack = ConfigWrapperStack(config_wrapper)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/integration/api/test_auth_endpoints.py::BaseAPIIntegrationTest::test_root_endpoint
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/yaml/constructor.py:178: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    return super().construct_scalar(node)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++5727 passed, 49 skipped, 1 deselected, 6 warnings, 228 subtests passed in 62.06s (0:01:02)
++✓ Tests complete
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/pinned-commits.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/pinned-commits.log
+new file mode 100644
+index 0000000..00c2b96
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/pinned-commits.log
+@@ -0,0 +1,2 @@
++9290cd3f131661407679a129c137da258cc00b2c
++2b5197f22913787129820f8c9c4fb1e02cf84401
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/production-source-diff.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/production-source-diff.log
+new file mode 100644
+index 0000000..e69de29
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/structure.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/structure.log
+new file mode 100644
+index 0000000..6946a73
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-16/verification/structure.log
+@@ -0,0 +1,2 @@
++tests/unit/runtime/test_b102_public_facade_starvation.py: 350 lines; 11 top-level functions; maximum function span 48 lines
++PASS: file <= 350 lines and every top-level function <= 50 lines
+diff --git a/tests/unit/runtime/test_b102_public_facade_starvation.py b/tests/unit/runtime/test_b102_public_facade_starvation.py
+index b5e36cb..7af28ce 100644
+--- a/tests/unit/runtime/test_b102_public_facade_starvation.py
++++ b/tests/unit/runtime/test_b102_public_facade_starvation.py
+@@ -20,6 +20,7 @@ from agentmap.runtime.workflow_ops import (
+ GUARD_SECONDS, TEST_TIMEOUT_SECONDS = 10, 1
+ CANCELLATION_MESSAGE = "offline caller cancellation"
+ TIMEOUT_MESSAGE = "public facades starved the runtime lifecycle"
++EARLY_ERRORS = AssertionError("assertion"), RuntimeError("error"), BaseException("base")
+ 
+ 
+ class ActiveExecutor(ThreadPoolExecutor):
+@@ -71,11 +72,12 @@ def runtime_container(tmp_path: Path):
+     )
+ 
+ 
+-def install_owner_gate(monkeypatch, *, ack=True):
+-    acquired, release, skip_lifecycle = (asyncio.Event() for _ in range(3))
++def install_owner_gate(patch, *, ack=True):
++    entered, acquired, release, skip_lifecycle = (asyncio.Event() for _ in range(4))
+     original = RuntimeManager._run_initialization_transaction
+ 
+     async def gated(cls, startup, *, refresh: bool, config_file: str | None):
++        entered.set()
+         if ack:
+             acquired.set()
+         await release.wait()
+@@ -83,9 +85,8 @@ def install_owner_gate(monkeypatch, *, ack=True):
+             return
+         await original(startup, refresh=refresh, config_file=config_file)
+ 
+-    transaction = classmethod(gated)
+-    monkeypatch.setattr(RuntimeManager, "_run_initialization_transaction", transaction)
+-    return acquired, release, skip_lifecycle
++    patch.setattr(RuntimeManager, "_run_initialization_transaction", classmethod(gated))
++    return entered, acquired, release, skip_lifecycle
+ 
+ 
+ def configure_runtime(monkeypatch, initialize) -> None:
+@@ -185,10 +186,7 @@ async def guard_completion(
+         raise primary
+ 
+ 
+-@pytest.mark.parametrize(
+-    "primary",
+-    [AssertionError("assertion"), RuntimeError("error"), BaseException("base")],
+-)
++@pytest.mark.parametrize("primary", EARLY_ERRORS)
+ @pytest.mark.asyncio
+ async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(primary):
+     release, lifecycle_started = (asyncio.Event() for _ in range(2))
+@@ -274,10 +272,12 @@ async def test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102(route):
+ @pytest.mark.parametrize("ack", [True, False], ids=["guard", "acquisition-timeout"])
+ @pytest.mark.asyncio
+ async def test_live_owner_timeout_cleanup__b102(monkeypatch, ack):
+-    acquired, release, skip = install_owner_gate(monkeypatch, ack=ack)
++    entered, acquired, release, skip = install_owner_gate(monkeypatch, ack=ack)
+     RuntimeManager.reset()
+     owner = asyncio.create_task(ensure_initialized_async())
+     try:
++        await asyncio.wait_for(entered.wait(), timeout=TEST_TIMEOUT_SECONDS)
++        assert RuntimeManager._transaction_owner is not None
+         if ack:
+             await asyncio.wait_for(acquired.wait(), timeout=TEST_TIMEOUT_SECONDS)
+             with pytest.raises(AssertionError, match=f"^{TIMEOUT_MESSAGE}$") as caught:
+@@ -306,7 +306,7 @@ async def test_public_sync_facades_cannot_starve_async_transaction_owner__b102(
+     loop = asyncio.get_running_loop()
+     executor = ActiveExecutor(loop, max_workers=workers)
+     loop.set_default_executor(executor)
+-    acquired, release, skip_lifecycle = install_owner_gate(monkeypatch)
++    _, acquired, release, skip_lifecycle = install_owner_gate(monkeypatch)
+     installed = runtime_container(tmp_path)
+     lifecycle_started = asyncio.Event()
+ 

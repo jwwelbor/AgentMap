@@ -1,0 +1,15 @@
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/handoff.md
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/black.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/changed-module.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/focused-collect.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/focused-command.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/focused.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/git-diff-check.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/independent-cleanup-counterfactual-red.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/isort.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/lint.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/make-test.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/owner-seam-counterfactual-red.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/pinned-commits.log
+dev-artifacts/2026-10-04-b102-dependency-review-followup-12/verification/production-source-diff.log
+tests/unit/runtime/test_b102_public_facade_starvation.py

@@ -88,3 +88,4 @@ class LLMBudgetCheck:
     message_count: int
     input_chars: int
     attempt_kind: str  # "primary" | "fallback"
+    attempt_lifecycle_active: bool = False

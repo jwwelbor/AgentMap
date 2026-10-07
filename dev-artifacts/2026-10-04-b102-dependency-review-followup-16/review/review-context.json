@@ -1,0 +1,23 @@
+{
+  "entity": "B102",
+  "base_commit": "9290cd3f131661407679a129c137da258cc00b2c",
+  "head_commit": "92531641cad6769be41b89c4420b4e81d140b51b",
+  "test_implementation_commit": "2b5197f22913787129820f8c9c4fb1e02cf84401",
+  "test_verification_scope": "pinned-commits.log records the base and test implementation commit; the exact review head is the subsequent evidence commit",
+  "diff_path": "dev-artifacts/2026-10-04-b102-dependency-review-followup-16/review/candidate.diff",
+  "diff_sha256": "18488031f0662a5a6aba169dbbe05482eaac9ae23028d6469f027d6300ea84b1",
+  "changed_file_count": 12,
+  "changed_files_path": "dev-artifacts/2026-10-04-b102-dependency-review-followup-16/review/changed-files.txt",
+  "project_root": "/home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts",
+  "branch": "fix/wwgm-b102-physical-attempts",
+  "finding": "B102-R15-01: prove transaction owner entry before acquisition timeout",
+  "runner_mode": "dispatched-six-angle",
+  "specialists_completed": 6,
+  "completed_angles": {"A": "angle-a.json", "B": "angle-b.json", "C": "angle-c.json", "D": "angle-d.json", "E": "angle-e.json", "F": "angle-f.json"},
+  "active_angles": [],
+  "consolidator_completed": true,
+  "verdict": "PASS",
+  "report_path": "REVIEW.md",
+  "adversarial_model": "none",
+  "fallback_reason": "native Workflow unavailable; host subagent dispatch required"
+}

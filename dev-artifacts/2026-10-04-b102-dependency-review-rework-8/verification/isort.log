@@ -1,0 +1,2 @@
+command: uv run isort --check-only --sp pyproject.toml <8 task-owned Python files>
+result: PASS

@@ -1,0 +1,28 @@
+{
+  "reviewed_files": [
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/handoff.md",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/black.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-copy-counterfactual-red.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/context-run-counterfactual-red.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused-collect.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/focused.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/git-diff-check.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/isort.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/lint.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/make-test.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-followup-10/verification/production-source-diff.log",
+    "tests/unit/runtime/test_b102_public_facade_starvation.py"
+  ],
+  "findings": [
+    {
+      "file": "tests/unit/runtime/test_b102_public_facade_starvation.py",
+      "line": 107,
+      "severity": "non-blocker",
+      "rule": "TESTS",
+      "summary": "The regressions do not prove that blocking lifecycle startup remains off the event-loop thread.",
+      "diagnosis": "The repair's contract is a lifecycle-dedicated executor, but the ContextVar test only observes propagated values and the starvation test only proves that startup is not queued behind the saturated default executor. Replacing run_in_executor with a direct context.run(_install_and_startup, ...) call on the event-loop thread preserves the ContextVar values, sets lifecycle_started, avoids the shared-pool deadlock, and leaves every changed assertion green while reintroducing event-loop blocking.",
+      "evidence": "The callbacks at lines 116-126 record only ContextVar values, and observed_initialize_di at lines 185-187 records only that startup began. Neither compares the callback thread with the calling event-loop thread or the dedicated lifecycle executor.",
+      "correction": "Record the event-loop thread identity before initialization and assert that initialize_di and the cache startup callback execute on a different thread, alongside the existing exact-identity ContextVar assertions. Retain a red counterfactual that invokes lifecycle work directly on the event-loop thread."
+    }
+  ]
+}

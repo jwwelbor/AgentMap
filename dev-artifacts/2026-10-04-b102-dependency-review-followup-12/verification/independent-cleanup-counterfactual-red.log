@@ -1,0 +1,50 @@
+mutation: guard_completion omits release.set() in its unconditional cleanup
+command: uv run pytest -q tests/unit/runtime/test_b102_public_facade_starvation.py::test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102[cancellation]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102[cancellation] __
+
+route = 'cancellation'
+
+    @pytest.mark.parametrize("route", ["cancellation", "timeout"])
+    @pytest.mark.asyncio
+    async def test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102(route):
+        """Cancellation and timeout stay primary after every gated task terminates."""
+        release, timeout_cleanup, entered = (asyncio.Event() for _ in range(3))
+        completed = []
+
+        async def gated(label):
+            await release.wait()
+            assert route != "timeout" or timeout_cleanup.is_set()
+            completed.append(label)
+
+        owner, facade, completion = [
+            asyncio.create_task(gated(label)) for label in ("owner", "facade", "completion")
+        ]
+        guard = asyncio.create_task(
+            guard_completion(
+                completion,
+                release,
+                [owner, facade],
+                timeout=0.01 if route == "timeout" else GUARD_SECONDS,
+                entered=entered,
+                on_timeout=timeout_cleanup.set,
+            )
+        )
+        expected = asyncio.CancelledError if route == "cancellation" else AssertionError
+        try:
+            await entered.wait()
+            if route == "cancellation":
+                guard.cancel("offline caller cancellation")
+            done, _ = await asyncio.wait([guard], timeout=1)
+>           assert done == {guard}
+E           AssertionError: assert set() == {<Task cancel...k_wakeup()]>>}
+E
+E             Extra items in the right set:
+E             <Task cancelling name='Task-5' coro=<guard_completion() running at /home/jwwel/projects/agentmap/.worktrees/s010-physi...wwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/tasks.py:908, Task.task_wakeup()]>>
+E             Use -v to get more diff
+
+tests/unit/runtime/test_b102_public_facade_starvation.py:280: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102[cancellation]
+exit-code: 1 (expected nonzero)

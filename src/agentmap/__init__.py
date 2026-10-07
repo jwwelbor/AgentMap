@@ -36,6 +36,7 @@ _LAZY_IMPORTS = {
     "agentmap.runtime_api": [
         "agentmap_initialize",
         "ensure_initialized",
+        "shutdown_runtime",
         "run_workflow",
         "run_workflow_async",
         "list_graphs",
@@ -81,6 +82,7 @@ __all__ = [
     # Runtime API
     "agentmap_initialize",  # Recommended for external apps
     "ensure_initialized",  # Internal/legacy name
+    "shutdown_runtime",
     "run_workflow",
     "run_workflow_async",
     "list_graphs",

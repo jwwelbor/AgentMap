@@ -1,0 +1,33 @@
+{
+  "reviewed_files": [
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/handoff.md",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/black.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/counterfactual-red-summary.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused-collect.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/focused.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/isort.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/lint.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/make-test.log",
+    "dev-artifacts/2026-10-04-b102-dependency-review-rework-8/verification/mypy-normalized-comparison.log",
+    "src/agentmap/deployment/http/api/routes/admin.py",
+    "src/agentmap/runtime/runtime_manager.py",
+    "tests/fresh_suite/unit/services/test_llm_client_factory.py",
+    "tests/unit/deployment/http/api/test_b102_admin_async_initialization.py",
+    "tests/unit/runtime/test_b102_runtime_coordination.py",
+    "tests/unit/runtime/test_b102_runtime_shutdown.py",
+    "tests/unit/services/llm/test_b102_credential_cache_identity.py",
+    "tests/unit/services/llm/test_b102_review_size.py"
+  ],
+  "findings": [
+    {
+      "file": "tests/unit/runtime/test_b102_runtime_coordination.py",
+      "line": 142,
+      "severity": "blocker",
+      "rule": "TESTS",
+      "summary": "The bounded-executor regression covers only async waiters and misses the production mixed sync-facade deadlock.",
+      "diagnosis": "The new condition makes async waiters consume no executor workers, but non-event-loop synchronous callers still block in Condition.wait() while the async owner submits _install_and_startup through the same default executor. The bounded-executor test queues only ensure_initialized_async calls, and the sync-refusal test invokes ensure_initialized directly on the event-loop thread, so neither exercises a synchronous ensure_initialized call already occupying a default-executor worker. The critical starvation contract therefore remains unverified, and the current implementation can deadlock in that caller shape.",
+      "evidence": "test_bounded_executor_burst_cannot_starve_transaction_owner__b102 at lines 142-185 creates every queued caller with ensure_initialized_async(), while test_sync_initializer_refuses_async_owner_without_blocking__b102 at lines 188-214 calls ensure_initialized() inline on the active event loop and reaches the typed-refusal branch. No changed test runs a public asyncio.to_thread-backed synchronous facade concurrently with an async transaction owner under one- and two-worker executors.",
+      "correction": "Add deterministic one- and two-worker counterfactuals in which ensure_initialized_async owns the transaction while public to_thread-backed synchronous facade callers occupy the bounded default executor; assert every caller terminates without starvation and that the runtime reaches the intended terminal state. The test must fail against both the prior executor-lock implementation and the current condition implementation until sync acquisition can no longer block owner startup behind those workers."
+    }
+  ]
+}

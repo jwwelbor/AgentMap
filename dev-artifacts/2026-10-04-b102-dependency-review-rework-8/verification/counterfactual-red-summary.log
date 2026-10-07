@@ -1,0 +1,14 @@
+phase: before production edits, against f8a37400a2a56b51a305dad78e7a491027f1a5f5
+result: expected RED
+- async replacement with an already initialized provider cache called _refresh_cache 0 times instead of once
+- cancellation first delivered during rollback raised AgentMapNotInitialized instead of CancelledError as the primary outcome
+- async admin route probes awaited ensure_initialized_async 0 times
+- structural inventory did not contain the retained tests/fresh_suite root
+- prerequisite-shutdown cancellation success and cleanup-failure probes passed, establishing the previously missing counterfactual before the implementation changed
+
+additional bounded-executor counterfactual:
+- the final bounded-executor regression test was copied into an archived f8a3740 tree
+- the old executor-backed lock submitted waiter work into the bounded default executor and did not terminate after more than 20 seconds; the run was interrupted
+- on the candidate, the same parametrized 1-worker and 2-worker test completes and proves queued callers add zero executor submissions while the owner is blocked
+
+This is a concise observation record, not a reconstructed raw pytest transcript.

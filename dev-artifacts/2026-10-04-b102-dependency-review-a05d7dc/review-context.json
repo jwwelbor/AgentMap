@@ -1,0 +1,11 @@
+{
+  "entity": "B102",
+  "base_commit": "802676098d1a573c188a452b918ed684fe07ccde",
+  "test_commit": "de9ed08268d72c001d7bf401b9a9c5b81853906a",
+  "evidence_head": "a05d7dce04f77a826c6d0cdf6510271584732a8f",
+  "diff_sha256": "d420e3c42ad6d857da5c3ad010cd21c38373cac3a0595db71bd9af5311aa69a8",
+  "changed_file_count": 14,
+  "runner_mode": "dispatched-six-angle",
+  "fallback_reason": "native Workflow unavailable",
+  "scope_note": "Exact task-owned AgentMap follow-up 13 diff. Production source is unchanged; the review covers the runtime counterfactual test and retained evidence."
+}

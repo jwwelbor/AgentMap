@@ -1,0 +1,11 @@
+{
+  "entity": "B102",
+  "base_commit": "44476ce",
+  "implementation_commit": "7f14e02a61e5e6fadd12bcd5f6d84fe63616f9f1",
+  "evidence_head": "0af6f17c473669a6d0e609fbdd2c0ebeaee5606b",
+  "diff_sha256": "ff00c4efcf22cda21e70c8ba4c0a8c8c5fd2ad63350c685f2fec07a10b56fe59",
+  "changed_file_count": 16,
+  "runner_mode": "dispatched-six-angle",
+  "fallback_reason": "native Workflow unavailable",
+  "scope_note": "Exact B102 follow-up 14 test and retained-evidence commits. Production source under src/agentmap is unchanged. Review fixes only the bounded real-owner acquisition cleanup and timeout-callback negative proof from review 13. Package release, TD-140 integration, WWGM host integration, and product acceptance remain outside scope."
+}

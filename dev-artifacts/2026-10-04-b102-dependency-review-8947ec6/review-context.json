@@ -1,0 +1,11 @@
+{
+  "entity": "B102",
+  "base_commit": "e6dad8f",
+  "implementation_commit": "301bd4ffc6ea43f62054736a4053892fe80883bd",
+  "evidence_head": "8947ec6e3863f6cd1240f8b3b95a39451ca30880",
+  "diff_sha256": "8da0e9ee3154ed84a24d64edb87a6af2efaef76717505d93fd22bf5ce35967dd",
+  "changed_file_count": 14,
+  "runner_mode": "dispatched-six-angle",
+  "fallback_reason": "native Workflow unavailable",
+  "scope_note": "Exact B102 follow-up 15 test and evidence commits. The controlled no-acknowledgement green counterfactual closes review-14 proof completeness. Production source under src/agentmap remains unchanged; release, TD-140/WWGM integration, and product gates are outside scope."
+}

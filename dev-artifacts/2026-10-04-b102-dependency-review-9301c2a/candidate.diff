@@ -1,0 +1,707 @@
+diff --git a/tests/unit/runtime/test_b102_public_facade_starvation.py b/tests/unit/runtime/test_b102_public_facade_starvation.py
+index 27750c1..5242d03 100644
+--- a/tests/unit/runtime/test_b102_public_facade_starvation.py
++++ b/tests/unit/runtime/test_b102_public_facade_starvation.py
+@@ -4,12 +4,13 @@ import asyncio
+ from concurrent.futures import ThreadPoolExecutor
+ from contextvars import ContextVar
+ from pathlib import Path
+-from threading import Lock
++from threading import Lock, get_ident
+ from types import SimpleNamespace
+ from unittest.mock import AsyncMock, Mock
+ 
+ import pytest
+ 
++from agentmap.async_lifecycle import await_terminal_task
+ from agentmap.runtime.init_ops import ensure_initialized_async
+ from agentmap.runtime.runtime_manager import RuntimeManager
+ from agentmap.runtime.workflow_ops import (
+@@ -18,6 +19,12 @@ from agentmap.runtime.workflow_ops import (
+     validate_workflow_async,
+ )
+ 
++DEADLOCK_GUARD_SECONDS = 10
++
++
++class LifecycleProbeAbort(BaseException):
++    """Exercise cleanup for failures outside the ``Exception`` hierarchy."""
++
+ 
+ class ActiveExecutor(ThreadPoolExecutor):
+     """Expose when every bounded worker has entered a submitted facade."""
+@@ -111,18 +118,19 @@ async def test_lifecycle_executor_preserves_calling_task_context__b102(
+     lifecycle_context = ContextVar("b102_lifecycle_context")
+     sentinel = object()
+     observed = {}
++    event_loop_thread = get_ident()
+     installed = runtime_container(tmp_path)
+ 
+     def initialize_di(config_file):
+-        observed["initialize"] = lifecycle_context.get()
++        observed["initialize"] = (lifecycle_context.get(), get_ident())
+         return installed
+ 
+     def is_cache_initialized(value):
+-        observed.setdefault("startup", lifecycle_context.get())
++        observed.setdefault("startup", (lifecycle_context.get(), get_ident()))
+         return value.ready
+ 
+     def refresh_cache(value):
+-        observed["cache"] = lifecycle_context.get()
++        observed["cache"] = (lifecycle_context.get(), get_ident())
+         value.ready = True
+ 
+     monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", initialize_di)
+@@ -135,11 +143,15 @@ async def test_lifecycle_executor_preserves_calling_task_context__b102(
+     token = lifecycle_context.set(sentinel)
+     try:
+         await ensure_initialized_async()
+-        assert observed == {
++        assert {name: value for name, (value, _) in observed.items()} == {
+             "initialize": sentinel,
+             "startup": sentinel,
+             "cache": sentinel,
+         }
++        assert all(
++            callback_thread != event_loop_thread
++            for _, callback_thread in observed.values()
++        )
+     finally:
+         lifecycle_context.reset(token)
+         if RuntimeManager.is_initialized():
+@@ -154,17 +166,125 @@ def facade_call(name: str, graph_file: Path):
+     return validate_workflow_async("workflow::graph")
+ 
+ 
+-async def complete_before_deadlock_guard(completion, tasks) -> None:
+-    """Use one generous outer timeout and unblock the pre-fix counterfactual."""
+-    try:
+-        await asyncio.wait_for(asyncio.shield(completion), timeout=10)
+-    except TimeoutError:
+-        with RuntimeManager._transaction_condition:
+-            token = RuntimeManager._transaction_owner
+-        if token is not None:
+-            RuntimeManager._release_transaction(token)
++async def reap_tasks_through_cancellation(tasks):
++    """Return the first caller cancellation after every task reaches terminal state."""
++
++    async def reap():
+         await asyncio.gather(*tasks, return_exceptions=True)
+-        raise AssertionError("public facades starved the runtime lifecycle") from None
++
++    outcome = await await_terminal_task(asyncio.create_task(reap()))
++    return outcome.caller_cancellation
++
++
++async def complete_before_deadlock_guard(completion, release, tasks) -> None:
++    """Bound completion, then release and reap every deliberately gated task."""
++    primary = None
++    timed_out = False
++    try:
++        done, _ = await asyncio.wait([completion], timeout=DEADLOCK_GUARD_SECONDS)
++        if not done:
++            primary = AssertionError("public facades starved the runtime lifecycle")
++            timed_out = True
++        else:
++            completion.result()
++    except BaseException as error:
++        primary = error
++    finally:
++        release.set()
++        if timed_out:
++            with RuntimeManager._transaction_condition:
++                token = RuntimeManager._transaction_owner
++            if token is not None:
++                RuntimeManager._release_transaction(token)
++        cancellation = await reap_tasks_through_cancellation([completion, *tasks])
++        if primary is None:
++            primary = cancellation
++    if primary is not None:
++        raise primary
++
++
++@pytest.mark.parametrize(
++    "primary",
++    [
++        AssertionError("lifecycle started before transaction release"),
++        RuntimeError("offline completion failure"),
++        LifecycleProbeAbort("offline base failure"),
++    ],
++)
++@pytest.mark.asyncio
++async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(primary):
++    """An early lifecycle signal stays primary after all gated tasks terminate."""
++    release = asyncio.Event()
++    lifecycle_started = asyncio.Event()
++    completed = []
++
++    async def gated(label):
++        await release.wait()
++        completed.append(label)
++
++    owner = asyncio.create_task(gated("owner"))
++    facades = [asyncio.create_task(gated(f"facade-{index}")) for index in range(2)]
++
++    async def fail_after_early_start():
++        lifecycle_started.set()
++        raise primary
++
++    completion = asyncio.create_task(fail_after_early_start())
++    try:
++        await lifecycle_started.wait()
++        with pytest.raises(type(primary)) as caught:
++            await complete_before_deadlock_guard(completion, release, [owner, *facades])
++        assert caught.value is primary
++        assert release.is_set()
++        assert completion.done()
++        assert owner.done()
++        assert all(facade.done() for facade in facades)
++        assert completed == ["owner", "facade-0", "facade-1"]
++    finally:
++        release.set()
++        await asyncio.gather(owner, *facades, completion, return_exceptions=True)
++
++
++@pytest.mark.parametrize("route", ["cancellation", "timeout"])
++@pytest.mark.asyncio
++async def test_guard_reaps_gated_tasks_on_cancellation_or_timeout__b102(
++    monkeypatch, route
++):
++    """Cancellation and timeout stay primary after every gated task terminates."""
++    release = asyncio.Event()
++    completed = []
++
++    async def gated(label):
++        await release.wait()
++        completed.append(label)
++
++    owner = asyncio.create_task(gated("owner"))
++    facade = asyncio.create_task(gated("facade"))
++    completion = asyncio.create_task(gated("completion"))
++    if route == "timeout":
++        monkeypatch.setitem(
++            complete_before_deadlock_guard.__globals__,
++            "DEADLOCK_GUARD_SECONDS",
++            0.01,
++        )
++    guard = asyncio.create_task(
++        complete_before_deadlock_guard(completion, release, [owner, facade])
++    )
++    if route == "cancellation":
++        await asyncio.sleep(0)
++        guard.cancel("offline caller cancellation")
++        done, _ = await asyncio.wait([guard], timeout=1)
++        assert done == {guard}
++        with pytest.raises(asyncio.CancelledError, match="offline caller cancellation"):
++            guard.result()
++    else:
++        done, _ = await asyncio.wait([guard], timeout=1)
++        assert done == {guard}
++        with pytest.raises(AssertionError, match="starved the runtime lifecycle"):
++            guard.result()
++    assert release.is_set()
++    assert all(task.done() for task in [owner, facade, completion, guard])
++    assert completed == ["owner", "facade", "completion"]
+ 
+ 
+ @pytest.mark.parametrize("workers", [1, 2])
+@@ -210,7 +330,7 @@ async def test_public_sync_facades_cannot_starve_async_transaction_owner__b102(
+ 
+     completion = asyncio.create_task(exercise_ordered_startup())
+     try:
+-        await complete_before_deadlock_guard(completion, [owner, *calls])
++        await complete_before_deadlock_guard(completion, release, [owner, *calls])
+         assert owner.result() is None
+         assert all(call.result()["success"] for call in calls)
+         assert RuntimeManager.is_initialized()
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/handoff.md b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/handoff.md
+new file mode 100644
+index 0000000..b8fc52b
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/handoff.md
+@@ -0,0 +1,41 @@
++# B102 AgentMap dependency review follow-up 11 handoff
++
++## Snapshot and outcome
++
++- Pinned clean starting head: `7938579e30f71c9c207693845d18c52df7a27649`
++- Test implementation commit: `2c253384f74e066c1086a79614fa2ddfb600c935`
++- Scope: one AgentMap B102 runtime test plus this evidence; production source is unchanged
++- Result: B102-R10-01 through B102-R10-03 are fixed locally
++
++## Finding disposition
++
++| Finding | Disposition and proof |
++|---|---|
++| B102-R10-01 | Fixed now. The ordered-startup guard catches `BaseException`, unconditionally opens the transaction gate, and waits through caller cancellation until the owner, every facade, and the completion task reach a terminal state. Assertion, ordinary exception, custom `BaseException`, caller cancellation, and timeout paths preserve the primary failure. The early-lifecycle counterfactual first failed 3/3 before this cleanup was added; the final parameterized regressions are green and bounded. |
++| B102-R10-02 | Fixed now. `verification/production-source-diff.log` records and executes `git diff 7938579e30f71c9c207693845d18c52df7a27649..2c253384f74e066c1086a79614fa2ddfb600c935 -- src/agentmap`; its result is empty. |
++| B102-R10-03 | Fixed now. The context regression records the event-loop thread and the thread used by DI initialization, cache startup, and cache refresh. All three callbacks preserve the caller's exact `ContextVar` identity and run on a different lifecycle thread. A direct-loop source mutation retains context identity but fails the new thread assertion; the expected RED transcript is retained and the mutation was reverted. |
++
++No finding was deferred, and no production source changed.
++
++## Verification
++
++| Check | Result | Evidence |
++|---|---|---|
++| Early-lifecycle cleanup counterfactual before repair | Expected RED: 3/3 assertion, exception, and `BaseException` cases failed because the gate remained closed | `verification/cleanup-counterfactual-red.log` |
++| Direct-loop lifecycle mutation | Expected RED: callback thread assertion failed while exact context identity remained green | `verification/direct-loop-counterfactual-red.log` |
++| Changed B102 runtime module | 12 passed; 0 skipped; 0 warnings | `verification/changed-module.log` |
++| B102-tagged modules plus runtime init/state tests | 330 passed; 0 skipped; 0 warnings | `verification/focused.log`, `verification/focused-collect.log`, `verification/focused-command.log` |
++| Black | PASS; one file unchanged | `verification/black.log` |
++| isort | PASS | `verification/isort.log` |
++| Repository lint | PASS | `verification/lint.log` |
++| Full `make test` at the test implementation commit | 5,725 passed; 49 skipped; 1 deselected; 6 warnings; 228 subtests passed | `verification/make-test.log` |
++| Production-source diff from pinned starting head | Empty using the revision range before `--` | `verification/production-source-diff.log` |
++| `git diff --check` from pinned starting head | PASS | `verification/git-diff-check.log` |
++
++The full-suite skips and benchmark deselection remain visible in the retained log. The six warnings are inherited from unchanged suspend-agent messaging, minimal API, and auth-root tests; all are unawaited-`AsyncMock` warnings outside the changed test. The focused run has no skips or warnings. Mypy was not run because production source did not change and tests are excluded by the repository's mypy configuration.
++
++## Remaining gates
++
++Run a fresh exact-pin dependency review on the evidence commit. Package release, TD-140, WWGM host integration, restart reconciliation, terminal/process-death acceptance, and product acceptance remain open. No release or host-readiness claim is made by this test-only repair.
++
++**RECOMMENDED OUTCOME: blocked pending final review/release/TD-140/host/product gates.**
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/black.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/black.log
+new file mode 100644
+index 0000000..0dff210
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/black.log
+@@ -0,0 +1,2 @@
++All done! ✨ 🍰 ✨
++1 file would be left unchanged.
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/changed-module.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/changed-module.log
+new file mode 100644
+index 0000000..a92993b
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/changed-module.log
+@@ -0,0 +1,2 @@
++............                                                             [100%]
++12 passed in 0.52s
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/cleanup-counterfactual-red.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/cleanup-counterfactual-red.log
+new file mode 100644
+index 0000000..a4efdae
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/cleanup-counterfactual-red.log
+@@ -0,0 +1,138 @@
++FFF                                                                      [100%]
++=================================== FAILURES ===================================
++_ test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary0] __
++
++primary = AssertionError('lifecycle started before transaction release')
++
++    @pytest.mark.parametrize(
++        "primary",
++        [
++            AssertionError("lifecycle started before transaction release"),
++            RuntimeError("offline completion failure"),
++            LifecycleProbeAbort("offline base failure"),
++        ],
++    )
++    @pytest.mark.asyncio
++    async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(primary):
++        """An early lifecycle signal stays primary after all gated tasks terminate."""
++        release = asyncio.Event()
++        lifecycle_started = asyncio.Event()
++        completed = []
++
++        async def gated(label):
++            await release.wait()
++            completed.append(label)
++
++        owner = asyncio.create_task(gated("owner"))
++        facades = [asyncio.create_task(gated(f"facade-{index}")) for index in range(2)]
++
++        async def fail_after_early_start():
++            lifecycle_started.set()
++            raise primary
++
++        completion = asyncio.create_task(fail_after_early_start())
++        try:
++            await lifecycle_started.wait()
++            with pytest.raises(type(primary)) as caught:
++                await complete_before_deadlock_guard(
++                    completion, release, [owner, *facades]
++                )
++            assert caught.value is primary
++>           assert release.is_set()
++E           assert False
++E            +  where False = is_set()
++E            +    where is_set = <asyncio.locks.Event object at 0x7a12f20a7e50 [unset, waiters:3]>.is_set
++
++tests/unit/runtime/test_b102_public_facade_starvation.py:217: AssertionError
++_ test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary1] __
++
++primary = RuntimeError('offline completion failure')
++
++    @pytest.mark.parametrize(
++        "primary",
++        [
++            AssertionError("lifecycle started before transaction release"),
++            RuntimeError("offline completion failure"),
++            LifecycleProbeAbort("offline base failure"),
++        ],
++    )
++    @pytest.mark.asyncio
++    async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(primary):
++        """An early lifecycle signal stays primary after all gated tasks terminate."""
++        release = asyncio.Event()
++        lifecycle_started = asyncio.Event()
++        completed = []
++
++        async def gated(label):
++            await release.wait()
++            completed.append(label)
++
++        owner = asyncio.create_task(gated("owner"))
++        facades = [asyncio.create_task(gated(f"facade-{index}")) for index in range(2)]
++
++        async def fail_after_early_start():
++            lifecycle_started.set()
++            raise primary
++
++        completion = asyncio.create_task(fail_after_early_start())
++        try:
++            await lifecycle_started.wait()
++            with pytest.raises(type(primary)) as caught:
++                await complete_before_deadlock_guard(
++                    completion, release, [owner, *facades]
++                )
++            assert caught.value is primary
++>           assert release.is_set()
++E           assert False
++E            +  where False = is_set()
++E            +    where is_set = <asyncio.locks.Event object at 0x7a12f20a4990 [unset, waiters:3]>.is_set
++
++tests/unit/runtime/test_b102_public_facade_starvation.py:217: AssertionError
++_ test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary2] __
++
++primary = LifecycleProbeAbort('offline base failure')
++
++    @pytest.mark.parametrize(
++        "primary",
++        [
++            AssertionError("lifecycle started before transaction release"),
++            RuntimeError("offline completion failure"),
++            LifecycleProbeAbort("offline base failure"),
++        ],
++    )
++    @pytest.mark.asyncio
++    async def test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102(primary):
++        """An early lifecycle signal stays primary after all gated tasks terminate."""
++        release = asyncio.Event()
++        lifecycle_started = asyncio.Event()
++        completed = []
++
++        async def gated(label):
++            await release.wait()
++            completed.append(label)
++
++        owner = asyncio.create_task(gated("owner"))
++        facades = [asyncio.create_task(gated(f"facade-{index}")) for index in range(2)]
++
++        async def fail_after_early_start():
++            lifecycle_started.set()
++            raise primary
++
++        completion = asyncio.create_task(fail_after_early_start())
++        try:
++            await lifecycle_started.wait()
++            with pytest.raises(type(primary)) as caught:
++                await complete_before_deadlock_guard(
++                    completion, release, [owner, *facades]
++                )
++            assert caught.value is primary
++>           assert release.is_set()
++E           assert False
++E            +  where False = is_set()
++E            +    where is_set = <asyncio.locks.Event object at 0x7a12f1f79c10 [unset, waiters:3]>.is_set
++
++tests/unit/runtime/test_b102_public_facade_starvation.py:217: AssertionError
++=========================== short test summary info ============================
++FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary0]
++FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary1]
++FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_early_lifecycle_failure_releases_and_reaps_gated_tasks__b102[primary2]
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/direct-loop-counterfactual-red.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/direct-loop-counterfactual-red.log
+new file mode 100644
+index 0000000..c6a28ec
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/direct-loop-counterfactual-red.log
+@@ -0,0 +1,55 @@
++F                                                                        [100%]
++=================================== FAILURES ===================================
++_________ test_lifecycle_executor_preserves_calling_task_context__b102 _________
++
++monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7447218c1190>
++tmp_path = PosixPath('/tmp/pytest-of-jwwel/pytest-1037/test_lifecycle_executor_preser0')
++
++    @pytest.mark.asyncio
++    async def test_lifecycle_executor_preserves_calling_task_context__b102(
++        monkeypatch, tmp_path: Path
++    ):
++        """DI installation and cache startup see the calling task's exact context."""
++        lifecycle_context = ContextVar("b102_lifecycle_context")
++        sentinel = object()
++        observed = {}
++        event_loop_thread = get_ident()
++        installed = runtime_container(tmp_path)
++
++        def initialize_di(config_file):
++            observed["initialize"] = (lifecycle_context.get(), get_ident())
++            return installed
++
++        def is_cache_initialized(value):
++            observed.setdefault("startup", (lifecycle_context.get(), get_ident()))
++            return value.ready
++
++        def refresh_cache(value):
++            observed["cache"] = (lifecycle_context.get(), get_ident())
++            value.ready = True
++
++        monkeypatch.setattr("agentmap.runtime.runtime_manager.initialize_di", initialize_di)
++        monkeypatch.setattr(
++            "agentmap.runtime.init_ops._is_cache_initialized", is_cache_initialized
++        )
++        monkeypatch.setattr("agentmap.runtime.init_ops._refresh_cache", refresh_cache)
++
++        RuntimeManager.reset()
++        token = lifecycle_context.set(sentinel)
++        try:
++            await ensure_initialized_async()
++            assert {name: value for name, (value, _) in observed.items()} == {
++                "initialize": sentinel,
++                "startup": sentinel,
++                "cache": sentinel,
++            }
++>           assert all(
++                callback_thread != event_loop_thread
++                for _, callback_thread in observed.values()
++            )
++E           assert False
++E            +  where False = all(<generator object test_lifecycle_executor_preserves_calling_task_context__b102.<locals>.<genexpr> at 0x74472188f920>)
++
++tests/unit/runtime/test_b102_public_facade_starvation.py:151: AssertionError
++=========================== short test summary info ============================
++FAILED tests/unit/runtime/test_b102_public_facade_starvation.py::test_lifecycle_executor_preserves_calling_task_context__b102
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/focused-collect.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/focused-collect.log
+new file mode 100644
+index 0000000..f03581a
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/focused-collect.log
+@@ -0,0 +1,27 @@
++tests/fresh_suite/unit/services/llm/test_attempt_lifecycle.py
++tests/fresh_suite/unit/services/llm/test_attempt_lifecycle_boundaries.py
++tests/fresh_suite/unit/services/llm/test_b102_cleanup_lifecycle.py
++tests/fresh_suite/unit/services/llm/test_b102_client_ownership.py
++tests/fresh_suite/unit/services/llm/test_b102_cost_trust.py
++tests/fresh_suite/unit/services/llm/test_b102_credential_wire.py
++tests/fresh_suite/unit/services/llm/test_b102_response_cleanup.py
++tests/fresh_suite/unit/services/llm/test_governed_clients.py
++tests/fresh_suite/unit/services/llm/test_response_evidence.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_controls.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_proxy.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_routing.py
++tests/fresh_suite/unit/services/llm/test_response_evidence_security.py
++tests/fresh_suite/unit/services/llm/test_response_review_rework.py
++tests/unit/deployment/http/api/test_b102_admin_async_initialization.py
++tests/unit/deployment/http/api/test_b102_lifespan_shutdown.py
++tests/unit/runtime/test_b102_async_lifecycle.py
++tests/unit/runtime/test_b102_public_facade_starvation.py
++tests/unit/runtime/test_b102_runtime_coordination.py
++tests/unit/runtime/test_b102_runtime_shutdown.py
++tests/unit/services/llm/test_b102_credential_cache_identity.py
++tests/unit/services/llm/test_b102_factory_lifecycle_boundaries.py
++tests/unit/services/llm/test_b102_governed_barriers.py
++tests/unit/services/llm/test_b102_review_size.py
++tests/unit/services/llm/test_b102_terminal_outcomes.py
++additional: tests/unit/runtime/test_init_ops.py
++additional: tests/unit/runtime/test_runtime_state.py
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/focused-command.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/focused-command.log
+new file mode 100644
+index 0000000..1427bf6
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/focused-command.log
+@@ -0,0 +1,2 @@
++command: rg -l __b102 tests | sort, plus tests/unit/runtime/test_init_ops.py and tests/unit/runtime/test_runtime_state.py
++result: 25 B102-tagged modules plus 2 runtime modules; see focused-collect.log
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/focused.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/focused.log
+new file mode 100644
+index 0000000..05d4bbc
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/focused.log
+@@ -0,0 +1,6 @@
++........................................................................ [ 21%]
++........................................................................ [ 43%]
++........................................................................ [ 65%]
++........................................................................ [ 87%]
++..........................................                               [100%]
++330 passed in 4.28s
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/git-diff-check.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/git-diff-check.log
+new file mode 100644
+index 0000000..c4fb693
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/git-diff-check.log
+@@ -0,0 +1,2 @@
++command: git diff --check 7938579e30f71c9c207693845d18c52df7a27649..2c253384f74e066c1086a79614fa2ddfb600c935
++result: PASS
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/isort.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/isort.log
+new file mode 100644
+index 0000000..58d9fb2
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/isort.log
+@@ -0,0 +1,2 @@
++command: uv run isort --check-only --sp pyproject.toml tests/unit/runtime/test_b102_public_facade_starvation.py
++result: PASS
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/lint.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/lint.log
+new file mode 100644
+index 0000000..bfaf58c
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/lint.log
+@@ -0,0 +1,3 @@
++Running flake8 linter...
++uv run flake8 src/ tests/
++✓ Linting complete
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/make-test.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/make-test.log
+new file mode 100644
+index 0000000..72ab224
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/make-test.log
+@@ -0,0 +1,122 @@
++Running pytest...
++uv run pytest tests/
++.............................s.......................................... [  1%]
++........................................................................ [  2%]
++............................................s...s.........s.s..ssssssss. [  3%]
++........................................................................................... [  5%]
++................................................................ [  6%]
++........................................................................ [  7%]
++........................................................................ [  8%]
++........................................................................ [ 10%]
++........................................................................ [ 11%]
++................................................................................................................................. [ 13%]
++............................................................................................................. [ 15%]
++....................................................... [ 16%]
++............................................................. [ 17%]
++.................................................................... [ 18%]
++........................................................................ [ 19%]
++........................................................................ [ 21%]
++........................................................................ [ 22%]
++........................................................................ [ 23%]
++..........................................................s............. [ 24%]
++.........s.............................................................. [ 26%]
++........................................................................ [ 27%]
++........................................................................ [ 28%]
++........................................................................ [ 29%]
++........................................................................ [ 31%]
++........................................................................ [ 32%]
++................................................................ [ 33%]
++........................................................................ [ 34%]
++........................................................................ [ 36%]
++............................s....s.....................s................ [ 37%]
++s....................................................................... [ 38%]
++........................................................................ [ 39%]
++....................s......s.....s..........s........................... [ 41%]
++..................................................................... [ 42%]
++........................................................................ [ 43%]
++........................................................................ [ 44%]
++........................................................................ [ 45%]
++........................................................................ [ 47%]
++............................................................... [ 48%]
++........................................................................ [ 49%]
++.......................................s.........ss......................................................................... [ 51%]
++.........................................................s.............. [ 52%]
++........................................................................ [ 54%]
++.........ss.....s.s........s............................................ [ 55%]
++.................................................ssss..sss........ [ 56%]
++........................................................................ [ 57%]
++........................................................................ [ 59%]
++........................................................................ [ 60%]
++........................................................................ [ 61%]
++....................................s....s.............................. [ 62%]
++........................................................................ [ 64%]
++........................................................................ [ 65%]
++........................................................................ [ 66%]
++.......................................................... [ 67%]
++........................................................................ [ 68%]
++........................................................................ [ 70%]
++........................................................................ [ 71%]
++...s....................................s............................... [ 72%]
++........................................................................ [ 73%]
++........................................................................ [ 75%]
++........................................................................ [ 76%]
++........................................................................ [ 77%]
++........................................................................ [ 78%]
++.................................................................... [ 79%]
++........................................................................ [ 81%]
++................................................... [ 82%]
++.............................................................ss......... [ 83%]
++........................................................................ [ 84%]
++.............................................s.......................... [ 85%]
++........................................................................ [ 87%]
++........................................................................ [ 88%]
++........................................................................ [ 89%]
++........................................................................ [ 90%]
++........................................................................ [ 92%]
++........................................................................ [ 93%]
++........................................................................ [ 94%]
++..............................ss........................................ [ 95%]
++........................................................................ [ 97%]
++........................................................................ [ 98%]
++.....................s.................................................. [ 99%]
++..........................                                               [100%]
++=============================== warnings summary ===============================
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_graph_message_raises_when_service_not_configured
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:475: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    _safe_super(NonCallableMock, self).__init__(
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_resume_message_includes_duration
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/src/agentmap/agents/builtins/suspend_agent.py:300: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    self.log_error(f"Failed to publish resume message: {e}")
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_resume_message_uses_custom_topic_and_template
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:1124: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    return self._mock_call(*args, **kwargs)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/agents/test_suspend_agent_messaging.py::TestSuspendAgentMessaging::test_suspend_message_raises_when_service_not_configured
++  /home/jwwel/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/inspect.py:3062: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    arguments = {}
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/integration/api/test_api_minimal.py::TestAPIBasics::test_execution_endpoint_basic
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:354: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    self._config_wrapper_stack = ConfigWrapperStack(config_wrapper)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++tests/fresh_suite/integration/api/test_auth_endpoints.py::BaseAPIIntegrationTest::test_root_endpoint
++  /home/jwwel/projects/agentmap/.worktrees/s010-physical-attempts/.venv/lib/python3.11/site-packages/yaml/constructor.py:178: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
++    return super().construct_scalar(node)
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++5725 passed, 49 skipped, 1 deselected, 6 warnings, 228 subtests passed in 63.66s (0:01:03)
++✓ Tests complete
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/pinned-commits.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/pinned-commits.log
+new file mode 100644
+index 0000000..df97249
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/pinned-commits.log
+@@ -0,0 +1,2 @@
++starting-head: 7938579e30f71c9c207693845d18c52df7a27649
++test-commit: 2c253384f74e066c1086a79614fa2ddfb600c935
+diff --git a/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/production-source-diff.log b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/production-source-diff.log
+new file mode 100644
+index 0000000..6f301a3
+--- /dev/null
++++ b/dev-artifacts/2026-10-04-b102-dependency-review-followup-11/verification/production-source-diff.log
+@@ -0,0 +1,2 @@
++command: git diff 7938579e30f71c9c207693845d18c52df7a27649..2c253384f74e066c1086a79614fa2ddfb600c935 -- src/agentmap
++result: empty production-source diff
