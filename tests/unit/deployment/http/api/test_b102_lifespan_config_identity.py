@@ -84,15 +84,19 @@ async def test_default_config_rejects_discovery_after_cwd_change__b102(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("explicit_first", [False, True])
+@pytest.mark.parametrize("use_symlink", [False, True])
 async def test_default_and_explicit_same_file_share_runtime__b102(
-    tmp_path, monkeypatch, runtime_setup, explicit_first
+    tmp_path, monkeypatch, runtime_setup, explicit_first, use_symlink
 ):
     config = tmp_path / "agentmap_config.yaml"
     config.write_text("shared: true\n")
+    alias = tmp_path / "alias.yml"
+    alias.symlink_to(config)
     monkeypatch.chdir(tmp_path)
     container, service, install = runtime_setup
-    outer = str(config) if explicit_first else None
-    inner = None if explicit_first else str(config)
+    explicit = str(alias if use_symlink else config)
+    outer = explicit if explicit_first else None
+    inner = None if explicit_first else explicit
 
     async with create_lifespan(outer)(FastAPI()):
         async with create_lifespan(inner)(FastAPI()):
