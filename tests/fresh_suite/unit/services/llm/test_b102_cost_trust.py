@@ -11,6 +11,7 @@ from tests.fresh_suite.unit.services.llm.test_attempt_lifecycle import (
     AccountingRefusal,
     Ledger,
     call,
+    observed_response,
     raw_response,
     service_with_client,
 )
@@ -45,7 +46,15 @@ def test_missing_core_count_requires_explicit_free_rate__b102(missing_bucket, ra
 async def test_public_lifecycle_refuses_unknown_core_spend__b102(missing_bucket, rate):
     response = raw_response()
     response.usage_metadata[missing_bucket] = None
-    client = Mock(ainvoke=AsyncMock(return_value=response))
+    client = Mock(
+        ainvoke=AsyncMock(
+            side_effect=lambda _: observed_response(
+                response,
+                input_tokens=response.usage_metadata["input_tokens"],
+                output_tokens=response.usage_metadata["output_tokens"],
+            )
+        )
+    )
     service = service_with_client(client)
     rate_name = "input_per_1m" if missing_bucket == "input_tokens" else "output_per_1m"
     rates = {"input_per_1m": 10000, "output_per_1m": 10000}
@@ -120,12 +129,28 @@ def test_negative_usage_is_diagnostic_not_priced__b102(bucket, rate):
 async def test_negative_usage_refuses_next_physical_call__b102(bucket, rate):
     response = raw_response()
     response.usage_metadata[bucket] = -1
-    client = Mock(ainvoke=AsyncMock(return_value=response))
+    provider = "anthropic" if bucket == "cache_creation_input_tokens" else "openai"
+    client = Mock(
+        ainvoke=AsyncMock(
+            side_effect=lambda _: observed_response(
+                response,
+                provider=provider,
+                input_tokens=response.usage_metadata["input_tokens"],
+                output_tokens=response.usage_metadata["output_tokens"],
+                cache_creation_tokens=response.usage_metadata.get(
+                    "cache_creation_input_tokens"
+                ),
+                cache_read_tokens=response.usage_metadata.get(
+                    "cache_read_input_tokens"
+                ),
+            )
+        )
+    )
     service = service_with_client(client)
     service._cost_calculator = LLMCostCalculator(
         {
             "models": {
-                "openai": {
+                provider: {
                     "test-model": {
                         "input_per_1m": rate,
                         "output_per_1m": rate,
@@ -139,8 +164,8 @@ async def test_negative_usage_refuses_next_physical_call__b102(bucket, rate):
     )
     ledger = Ledger("0.20")
 
-    await call(service, ledger)
-    assert getattr(ledger.rows["1"].usage, bucket) == -1
+    await call(service, ledger, provider=provider)
+    assert getattr(ledger.rows["1"].usage, bucket) is None
     assert ledger.rows["1"].cost_usd is None
     with pytest.raises(AccountingRefusal, match="unresolved charge"):
         await call(service, ledger)

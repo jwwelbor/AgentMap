@@ -7,11 +7,12 @@ provider failures. No host exception message is sent to telemetry.
 
 import asyncio
 from contextvars import ContextVar
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Awaitable, Callable, NoReturn, Optional, Tuple
 
-from agentmap.exceptions import LLMTimeoutError
+from agentmap.exceptions import LLMConfigurationError, LLMTimeoutError
 from agentmap.models.llm_attempt import LLMAttemptDescription, LLMAttemptOutcome
+from agentmap.models.llm_cost import LLMCostBreakdown
 from agentmap.models.llm_execution import LLMResponse
 from agentmap.services.llm.response_observer import (
     ResponseCaptureFailure,
@@ -26,6 +27,20 @@ class AttemptLifecycleRefusal(Exception):
     def __init__(self, original: BaseException) -> None:
         super().__init__("physical attempt lifecycle refused")
         self.original = original
+
+
+@dataclass
+class AttemptAccumulator:
+    outcome: LLMAttemptOutcome = field(
+        default_factory=lambda: LLMAttemptOutcome(classification="provider_error")
+    )
+    cost: Optional[LLMCostBreakdown] = None
+
+
+def accounting_refusal() -> AttemptLifecycleRefusal:
+    return AttemptLifecycleRefusal(
+        LLMConfigurationError("governed attempt accounting unavailable")
+    )
 
 
 attempt_lifecycle: ContextVar[Optional[LLMAttemptLifecycleProtocol]] = ContextVar(
@@ -58,6 +73,8 @@ def collect_evidence(
     extract_usage: Callable,
     calculate_cost: Callable,
     extract_request_id: Callable,
+    *,
+    outcome: LLMAttemptOutcome,
 ) -> Tuple[LLMAttemptOutcome, Optional[Exception]]:
     """Extract fields independently, even if another extraction step fails.
 
@@ -65,7 +82,6 @@ def collect_evidence(
     exceptions only to retain available evidence. The first failure is returned
     and re-raised by the caller after mandatory settlement, never swallowed.
     """
-    outcome = LLMAttemptOutcome(classification="response")
     failure = None
     try:
         outcome = replace(outcome, usage=extract_usage(response))
@@ -73,7 +89,7 @@ def collect_evidence(
         failure = error
     try:
         cost = calculate_cost(outcome.usage)
-        if cost is not None and cost.currency == "USD":
+        if cost is not None and cost.currency.upper() == "USD":
             outcome = replace(outcome, cost_usd=cost.total_cost)
     except Exception as error:
         failure = failure or error
@@ -86,126 +102,150 @@ def collect_evidence(
     return outcome, failure
 
 
-async def settle_cancelled(
-    lifecycle: LLMAttemptLifecycleProtocol,
-    attempt_id: str,
-    outcome: LLMAttemptOutcome,
-    cancellation: asyncio.CancelledError,
-) -> NoReturn:
-    """Attempt settlement, preserving cancellation even when cleanup fails.
+def evaluate_attempt_response(
+    response: Any,
+    duration: float,
+    failure: Optional[BaseException],
+    accumulator: AttemptAccumulator,
+    read_evidence: Callable[[Any, AttemptAccumulator], Optional[Exception]],
+    build_response: Callable[[Any, float], LLMResponse],
+) -> Tuple[LLMAttemptOutcome, Optional[LLMResponse], Optional[BaseException]]:
+    """Read the same accumulator even when downstream accounting raises.
 
-    The host's committed pending intent survives failed or interrupted cleanup.
-    No detached task or automatic retry assumes that reconciliation succeeded.
+    Diagnostic failures stop dispatch after mandatory completion. Accounting
+    errors never enter provider classification based on their exception text.
     """
+    result = None
+    accounting_error: Optional[BaseException] = None
     try:
-        await finish_attempt(lifecycle, attempt_id, outcome)
-    finally:
-        raise cancellation
+        accounting_error = read_evidence(response, accumulator)
+    except (Exception, asyncio.CancelledError) as error:
+        accounting_error = error
+    outcome = accumulator.outcome
+    if accounting_error is not None and not isinstance(failure, asyncio.CancelledError):
+        failure = (
+            accounting_error
+            if isinstance(accounting_error, asyncio.CancelledError)
+            else accounting_refusal()
+        )
+        outcome = replace(outcome, classification="receipt_error")
+    elif failure is not None:
+        outcome = replace(outcome, classification="provider_error")
+    if failure is None:
+        outcome = replace(outcome, classification="normalization_error")
+        try:
+            result = build_response(response, duration)
+            outcome = replace(outcome, classification=result.text_status)
+        except (Exception, asyncio.CancelledError) as error:
+            failure = error
+    return outcome, result, failure
 
 
-async def settle_failed_attempt(
-    lifecycle: LLMAttemptLifecycleProtocol,
-    attempt_id: str,
+def terminal_outcome(
     outcome: LLMAttemptOutcome,
     collector: ResponseCollector,
-    error: Exception,
-    provider: str,
-) -> NoReturn:
-    """Settle one failed dispatch before propagating a sanitized error."""
-    classification = (
-        "timeout" if isinstance(error, LLMTimeoutError) else outcome.classification
-    )
-    if collector.failed:
-        classification = "capture_error"
-    outcome = replace(
+    failure: Optional[BaseException],
+) -> LLMAttemptOutcome:
+    classification, error_type = outcome.classification, None
+    if failure is not None:
+        error_type = type(failure).__name__
+        if isinstance(failure, asyncio.CancelledError):
+            classification = "cancelled"
+        elif isinstance(failure, LLMTimeoutError):
+            classification = "timeout"
+    if collector.failed and not isinstance(failure, asyncio.CancelledError):
+        classification, error_type = "capture_error", "ResponseCaptureFailure"
+    return replace(
         outcome,
         classification=classification,
-        cleanup_failed=collector.cleanup_failed,
-        error_type=(
-            "ResponseCaptureFailure" if collector.failed else type(error).__name__
-        ),
-        response_evidence=collector.seal(),
-    )
-    await finish_attempt(lifecycle, attempt_id, outcome)
-    if collector.failed:
-        raise AttemptLifecycleRefusal(
-            ResponseCaptureFailure(cleanup_failed=collector.cleanup_failed)
-        ) from None
-    # Classify for retry while excluding transport and SDK representations.
-    typed_error = classify_llm_error(error, provider)
-    raise type(typed_error)("governed physical provider attempt failed") from None
-
-
-async def settle_successful_attempt(
-    lifecycle: LLMAttemptLifecycleProtocol,
-    attempt_id: str,
-    outcome: LLMAttemptOutcome,
-    collector: ResponseCollector,
-) -> None:
-    """Settle the observed response even when capture itself failed."""
-    outcome = replace(
-        outcome,
+        error_type=error_type,
         response_evidence=collector.evidence,
         cleanup_failed=collector.cleanup_failed,
     )
-    if collector.failed:
-        outcome = replace(
-            outcome, classification="capture_error", error_type="ResponseCaptureFailure"
-        )
-    await finish_attempt(lifecycle, attempt_id, outcome)
+
+
+def propagate_finalized_failure(
+    failure: Optional[BaseException], collector: ResponseCollector, provider: str
+) -> NoReturn:
+    if isinstance(failure, asyncio.CancelledError):
+        raise failure from None
     if collector.failed:
         raise AttemptLifecycleRefusal(
             ResponseCaptureFailure(cleanup_failed=collector.cleanup_failed)
         ) from None
+    if isinstance(failure, AttemptLifecycleRefusal):
+        raise failure from None
+    assert isinstance(failure, Exception)
+    # Classify for retry while excluding transport and SDK representations.
+    typed_error = classify_llm_error(failure, provider)
+    raise type(typed_error)("governed physical provider attempt failed") from None
+
+
+async def finalize_attempt(
+    lifecycle: LLMAttemptLifecycleProtocol,
+    attempt_id: str,
+    description: LLMAttemptDescription,
+    collector: ResponseCollector,
+    accumulator: AttemptAccumulator,
+    response: Any,
+    duration: float,
+    failure: Optional[BaseException],
+    read_evidence: Callable[[Any, AttemptAccumulator], Optional[Exception]],
+    build_response: Callable[[Any, float], LLMResponse],
+) -> LLMResponse:
+    """Seal, diagnose, and complete every admitted attempt exactly once.
+
+    Completion is outside provider/recovery catches. Failed or interrupted
+    completion leaves the host's pending identity intact; it is never retried.
+    """
+    collector.seal()
+    outcome, result, failure = evaluate_attempt_response(
+        response, duration, failure, accumulator, read_evidence, build_response
+    )
+    outcome = terminal_outcome(outcome, collector, failure)
+    try:
+        await finish_attempt(lifecycle, attempt_id, outcome)
+    except (AttemptLifecycleRefusal, asyncio.CancelledError):
+        if isinstance(failure, asyncio.CancelledError):
+            raise failure from None
+        raise
+    if failure is not None or collector.failed:
+        propagate_finalized_failure(failure, collector, description.resolved_provider)
+    assert result is not None
+    return result
 
 
 async def invoke_governed_attempt(
     lifecycle: LLMAttemptLifecycleProtocol,
     description: LLMAttemptDescription,
     invoke: Callable[[], Awaitable[Tuple[Any, float]]],
-    read_evidence: Callable[[Any], Tuple[LLMAttemptOutcome, Optional[Exception]]],
+    accumulator: AttemptAccumulator,
+    read_evidence: Callable[[Any, AttemptAccumulator], Optional[Exception]],
     build_response: Callable[[Any, float], LLMResponse],
 ) -> LLMResponse:
-    """Settle once, outside the raw provider exception's active context."""
+    """Admit before I/O, then hand all outcomes to the single finalizer."""
     attempt_id = await begin_attempt(lifecycle, description)
     collector = ResponseCollector()
     token = response_collector.set(collector)
-    outcome = LLMAttemptOutcome(classification="provider_error")
-    failure: Optional[Exception] = None
-    cancelled: Optional[asyncio.CancelledError] = None
+    response, duration = None, 0.0
+    failure: Optional[BaseException] = None
     try:
-        response, duration = await invoke()
-        outcome, error = read_evidence(response)
-        if error is not None:
-            outcome = replace(outcome, classification="receipt_error")
-            raise error
-        outcome = replace(outcome, classification="normalization_error")
-        result = build_response(response, duration)
-        outcome = replace(outcome, classification=result.text_status)
-    except asyncio.CancelledError as cancellation:
-        cancelled = cancellation
-        outcome = replace(
-            outcome,
-            classification="cancelled",
-            error_type="CancelledError",
-            response_evidence=collector.seal(),
-            cleanup_failed=collector.cleanup_failed,
+        try:
+            response, duration = await invoke()
+        except (Exception, asyncio.CancelledError) as error:
+            failure = error
+        return await finalize_attempt(
+            lifecycle,
+            attempt_id,
+            description,
+            collector,
+            accumulator,
+            response,
+            duration,
+            failure,
+            read_evidence,
+            build_response,
         )
-    except Exception as error:
-        failure = error
     finally:
         collector.seal()
         response_collector.reset(token)
-    if cancelled is not None:
-        await settle_cancelled(lifecycle, attempt_id, outcome, cancelled)
-    if failure is not None:
-        await settle_failed_attempt(
-            lifecycle,
-            attempt_id,
-            outcome,
-            collector,
-            failure,
-            description.resolved_provider,
-        )
-    await settle_successful_attempt(lifecycle, attempt_id, outcome, collector)
-    return result

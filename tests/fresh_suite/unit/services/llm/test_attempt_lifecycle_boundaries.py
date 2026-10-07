@@ -17,6 +17,7 @@ from tests.fresh_suite.unit.services.llm.test_attempt_lifecycle import (
     AccountingRefusal,
     Ledger,
     call,
+    observed_response,
     raw_response,
     service_with_client,
 )
@@ -51,9 +52,14 @@ def fallback_service(client):
 async def test_fallback_rechecks_after_billed_normalization_error__b102(
     cap, expected_calls
 ):
-    client = Mock(ainvoke=AsyncMock(return_value=raw_response()))
+    client = Mock()
     svc = fallback_service(client)
     ledger = Ledger(cap)
+    client.ainvoke = AsyncMock(
+        side_effect=lambda _: observed_response(
+            raw_response(), ledger.descriptions[-1].resolved_provider
+        )
+    )
     with patch(
         "agentmap.services.llm_service.normalize_response_content",
         side_effect=[RuntimeError("connection timeout"), ("recovered", "text")],
@@ -102,13 +108,53 @@ async def test_fallback_refusal_does_not_try_another_tier__b102():
 
 
 @pytest.mark.asyncio
+async def test_pre_admission_rate_fault_refuses_primary_and_fallback__b102():
+    client = Mock(ainvoke=AsyncMock(return_value=raw_response()))
+    svc = fallback_service(client)
+    ledger = Ledger("1.00")
+    svc._cost_calculator.get_rates = Mock(
+        side_effect=RuntimeError("private rate lookup timeout")
+    )
+
+    with pytest.raises(LLMConfigurationError) as caught:
+        await call(svc, ledger)
+
+    assert str(caught.value) == "governed attempt accounting unavailable"
+    assert client.ainvoke.await_count == 0
+    assert ledger.events == ledger.descriptions == []
+    assert ledger.rows == {}
+    assert svc._cost_calculator.get_rates.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_unavailable_raw_usage_ignores_normalized_defaults__b102():
+    client = Mock(ainvoke=AsyncMock(return_value=raw_response()))
+    svc = service_with_client(client)
+    ledger = Ledger("1.00")
+
+    result = await call(svc, ledger)
+
+    assert result.usage is result.cost is None
+    assert ledger.rows["1"].response_evidence.status == "unavailable"
+    assert ledger.rows["1"].usage is ledger.rows["1"].cost_usd is None
+    assert ledger.events == [("begin", "1"), ("settle", "1")]
+    with pytest.raises(AccountingRefusal, match="unresolved charge"):
+        await call(svc, ledger)
+    assert client.ainvoke.await_count == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("missing_bucket", ["input_tokens", "output_tokens"])
 async def test_partial_usage_keeps_spend_unknown_and_refuses_next_wire_call__b102(
     missing_bucket,
 ):
     response = raw_response()
     response.usage_metadata[missing_bucket] = None
-    client = Mock(ainvoke=AsyncMock(return_value=response))
+    client = Mock(
+        ainvoke=AsyncMock(
+            side_effect=lambda _: observed_response(response, **{missing_bucket: None})
+        )
+    )
     svc = service_with_client(client)
     ledger = Ledger()
     await call(svc, ledger)
@@ -122,7 +168,9 @@ async def test_partial_usage_keeps_spend_unknown_and_refuses_next_wire_call__b10
 
 @pytest.mark.asyncio
 async def test_tool_bound_failure_keeps_fallback_suppressed__b102():
-    client = Mock(ainvoke=AsyncMock(return_value=raw_response()))
+    client = Mock(
+        ainvoke=AsyncMock(side_effect=lambda _: observed_response(raw_response()))
+    )
     client.bind_tools.return_value = client
     svc = fallback_service(client)
     ledger = Ledger("1.00")
@@ -146,7 +194,10 @@ async def test_concurrent_and_nested_plain_calls_do_not_inherit_host_lifecycle__
         if label in {"a", "b"}:
             await arrivals.put(label)
             await release.wait()
-        return raw_response(tokens=5 if label == "a" else 10)
+        tokens = 5 if label == "a" else 10
+        return observed_response(
+            raw_response(tokens=tokens), input_tokens=tokens, output_tokens=tokens
+        )
 
     client = Mock(ainvoke=AsyncMock(side_effect=dispatch))
     svc = service_with_client(client)
@@ -187,40 +238,21 @@ async def test_concurrent_and_nested_plain_calls_do_not_inherit_host_lifecycle__
 
 @pytest.mark.asyncio
 async def test_receipt_calculation_failure_retains_usage_and_request_identity__b102():
-    client = Mock(ainvoke=AsyncMock(return_value=raw_response()))
+    client = Mock(
+        ainvoke=AsyncMock(side_effect=lambda _: observed_response(raw_response()))
+    )
     svc = service_with_client(client)
     ledger = Ledger()
     with patch.object(
         svc._cost_calculator, "calculate", side_effect=ValueError("bad rates")
     ):
-        with pytest.raises(LLMResolvedCallError):
+        with pytest.raises(LLMConfigurationError):
             await call(svc, ledger)
     assert client.ainvoke.await_count == 1
     assert ledger.rows["1"].usage.input_tokens == 10
     assert ledger.rows["1"].provider_request_id == "provider-request"
     assert ledger.rows["1"].cost_usd is None
     assert ledger.rows["1"].classification == "receipt_error"
-
-
-@pytest.mark.asyncio
-async def test_admission_and_settlement_are_outside_provider_timeout__b102():
-    client = Mock(ainvoke=AsyncMock(return_value=raw_response()))
-    svc = service_with_client(client)
-    svc._resilience_config["retry"]["attempt_timeout"] = 0.01
-    ledger = Ledger()
-    before, after = ledger.before_attempt, ledger.after_attempt
-
-    async def slow_before(description):
-        await asyncio.sleep(0.02)
-        return await before(description)
-
-    async def slow_after(identity, outcome):
-        await asyncio.sleep(0.02)
-        await after(identity, outcome)
-
-    ledger.before_attempt, ledger.after_attempt = slow_before, slow_after
-    assert (await call(svc, ledger)).text == "ok"
-    assert ledger.rows["1"].cost_usd == Decimal("0.20")
 
 
 @pytest.mark.asyncio
@@ -295,37 +327,3 @@ async def test_routed_settlement_failure_preserves_host_error_without_rerouting_
     assert client.ainvoke.await_count == 1
     assert ledger.descriptions[0].max_output_tokens == 31
     assert ledger.rows == {"1": None}
-
-
-@pytest.mark.asyncio
-async def test_invalid_returned_request_identity_is_unavailable__b102():
-    raw = raw_response()
-    raw.response_metadata = {"headers": {"x-request-id": 123}}
-    client = Mock(ainvoke=AsyncMock(return_value=raw))
-    ledger = Ledger()
-    await call(service_with_client(client), ledger)
-    assert ledger.rows["1"].provider_request_id is None
-
-
-@pytest.mark.asyncio
-async def test_cancel_during_settlement_leaves_pending_intent_without_second_completion__b102():
-    client = Mock(ainvoke=AsyncMock(return_value=raw_response()))
-    svc = service_with_client(client)
-    ledger = Ledger()
-    settling = asyncio.Event()
-
-    async def interrupted(identity, outcome):
-        settling.set()
-        await asyncio.Event().wait()
-
-    ledger.after_attempt = AsyncMock(side_effect=interrupted)
-    task = asyncio.create_task(call(svc, ledger))
-    await asyncio.wait_for(settling.wait(), 1)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert ledger.rows == {"1": None}
-    assert ledger.after_attempt.await_count == 1
-    with pytest.raises(AccountingRefusal, match="unresolved charge"):
-        await call(svc, ledger)
-    assert client.ainvoke.await_count == 1

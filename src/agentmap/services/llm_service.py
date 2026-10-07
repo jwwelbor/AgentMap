@@ -68,16 +68,20 @@ from agentmap.services.llm._budget_guard_refusal import (
     telemetry_safe_marker,
 )
 from agentmap.services.llm.attempt_lifecycle import (
+    AttemptAccumulator,
     AttemptLifecycleRefusal,
 )
 from agentmap.services.llm.attempt_lifecycle import (
     attempt_lifecycle as _attempt_lifecycle,
 )
 from agentmap.services.llm.attempt_lifecycle import (
-    collect_evidence,
     invoke_governed_attempt,
 )
 from agentmap.services.llm.cost_calculator import LLMCostCalculator
+from agentmap.services.llm.governed_accounting import (
+    governed_accounting_callbacks,
+    governed_rates,
+)
 from agentmap.services.llm.stream_seam import stream_provider
 from agentmap.services.llm.tool_call_extraction import (
     extract_tool_calls,
@@ -1628,7 +1632,11 @@ class LLMService:
         Carries only measured or configured values (REQ-F-003, REQ-F-009,
         Out of Scope 5) -- no fabricated token estimates.
         """
-        rates = self._cost_calculator.get_rates(provider, model)
+        rates = (
+            governed_rates(self._cost_calculator, provider, model)
+            if _attempt_lifecycle.get() is not None
+            else self._cost_calculator.get_rates(provider, model)
+        )
         max_possible_output_cost: Optional[Decimal] = None
         if (
             max_output_tokens is not None
@@ -1650,6 +1658,7 @@ class LLMService:
                 len(str(getattr(m, "content", ""))) for m in langchain_messages
             ),
             attempt_kind=attempt_kind,
+            attempt_lifecycle_active=_attempt_lifecycle.get() is not None,
         )
 
     async def _check_budget_before_dispatch(
@@ -1901,9 +1910,22 @@ class LLMService:
             model,
             attempt_kind,
             retry_ordinal,
-            self._cost_calculator.get_rates(provider, model),
+            governed_rates(self._cost_calculator, provider, model),
             self._cost_calculator.catalog_version,
             max_output_tokens,
+        )
+        accumulator = AttemptAccumulator()
+        read_evidence, build_response = governed_accounting_callbacks(
+            self._cost_calculator,
+            provider,
+            model,
+            accumulator,
+            lambda response: self._extract_provider_request_id(
+                getattr(response, "response_metadata", {}) or {}, provider
+            ),
+            lambda raw, duration, accounting: self._build_success_llm_response(
+                raw, provider, model, duration, accounting=accounting
+            ),
         )
         return await invoke_governed_attempt(
             lifecycle,
@@ -1911,17 +1933,9 @@ class LLMService:
             lambda: self._invoke_timed_provider(
                 client, langchain_messages, provider, model, attempt_timeout
             ),
-            lambda raw: collect_evidence(
-                raw,
-                self._extract_llm_usage,
-                lambda usage: self._cost_calculator.calculate(usage, provider, model),
-                lambda response: self._extract_provider_request_id(
-                    getattr(response, "response_metadata", {}) or {}, provider
-                ),
-            ),
-            lambda raw, duration: self._build_success_llm_response(
-                raw, provider, model, duration
-            ),
+            accumulator,
+            read_evidence,
+            build_response,
         )
 
     async def _invoke_timed_provider(
@@ -1950,6 +1964,9 @@ class LLMService:
         provider: str,
         model: str,
         duration: float,
+        accounting: Optional[
+            Tuple[Optional[LLMUsage], Optional[LLMCostBreakdown]]
+        ] = None,
     ) -> LLMResponse:
         """Record a successful raw response and construct its safe receipt."""
         text, text_status = normalize_response_content(response)
@@ -1967,21 +1984,19 @@ class LLMService:
             else None
         )
         finish_reason = self._extract_finish_reason(response)
-        usage = self._extract_llm_usage(response)
-        if text_status == "non_text":
-            self._log_non_text_response_diagnostic(
-                response,
-                provider=provider,
-                model=model,
-                request_id=req_id,
-                finish_reason=finish_reason,
-                usage_present=usage is not None,
-            )
-        self._logger.debug(
-            f"LLM call successful, response length: {len(text)}"
-            + (f", request_id: {req_id}" if req_id else "")
+        usage = (
+            accounting[0]
+            if accounting is not None
+            else self._extract_llm_usage(response)
         )
-        cost = self._cost_calculator.calculate(usage, provider, model)
+        self._observe_successful_receipt(
+            response, text, text_status, provider, model, req_id, finish_reason, usage
+        )
+        cost = (
+            accounting[1]
+            if accounting is not None
+            else self._cost_calculator.calculate(usage, provider, model)
+        )
         self._record_cost_span_attribute(cost)
         return LLMResponse(
             text=text,
@@ -1992,6 +2007,31 @@ class LLMService:
             cost=cost,
             tool_calls=extract_tool_calls(response),
             text_status=text_status,
+        )
+
+    def _observe_successful_receipt(
+        self,
+        response: Any,
+        text: str,
+        text_status: str,
+        provider: str,
+        model: str,
+        request_id: Optional[str],
+        finish_reason: Optional[str],
+        usage: Optional[LLMUsage],
+    ) -> None:
+        if text_status == "non_text":
+            self._log_non_text_response_diagnostic(
+                response,
+                provider=provider,
+                model=model,
+                request_id=request_id,
+                finish_reason=finish_reason,
+                usage_present=usage is not None,
+            )
+        self._logger.debug(
+            f"LLM call successful, response length: {len(text)}"
+            + (f", request_id: {request_id}" if request_id else "")
         )
 
     def _log_non_text_response_diagnostic(

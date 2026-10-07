@@ -1,0 +1,5 @@
+Running flake8 linter...
+uv run flake8 src/ tests/
+✓ Linting complete
+All done! ✨ 🍰 ✨
+810 files would be left unchanged.

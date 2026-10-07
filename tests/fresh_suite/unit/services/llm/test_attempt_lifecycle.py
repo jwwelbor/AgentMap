@@ -1,13 +1,16 @@
 """B102: govern physical attempts through the public service entrypoint."""
 
 import asyncio
+import json
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from agentmap.models.llm_attempt import LLMResponseEvidence
 from agentmap.services.llm.cost_calculator import LLMCostCalculator
+from agentmap.services.llm.response_observer import response_collector
 from tests.fresh_suite.unit.services.test_llm_resilience import _make_service
 
 
@@ -52,6 +55,37 @@ def raw_response(text="ok", tokens=10):
     )
 
 
+def observed_response(
+    response,
+    provider="openai",
+    input_tokens=10,
+    output_tokens=10,
+    cache_creation_tokens=None,
+    cache_read_tokens=None,
+):
+    """Give mocked clients explicit provider bytes for billed-attempt tests."""
+    collector = response_collector.get()
+    if collector is not None:
+        if provider == "openai":
+            usage = {"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+            if cache_read_tokens is not None:
+                usage["prompt_tokens_details"] = {"cached_tokens": cache_read_tokens}
+        else:
+            usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
+            if cache_creation_tokens is not None:
+                usage["cache_creation_input_tokens"] = cache_creation_tokens
+            if cache_read_tokens is not None:
+                usage["cache_read_input_tokens"] = cache_read_tokens
+        collector.record(
+            LLMResponseEvidence(
+                status="available",
+                body=json.dumps({"usage": usage}).encode(),
+                unavailable_reason=None,
+            )
+        )
+    return response
+
+
 def service_with_client(client, **kwargs):
     svc = _make_service(**kwargs)
     svc._resilience_config["retry"].update(backoff_base=0, backoff_max=0)
@@ -75,10 +109,10 @@ def service_with_client(client, **kwargs):
     return svc
 
 
-async def call(svc, ledger, **kwargs):
+async def call(svc, ledger, provider="openai", **kwargs):
     return await svc.call_llm_async(
         messages=[{"role": "user", "content": "synthetic"}],
-        provider="openai",
+        provider=provider,
         model="test-model",
         max_tokens=77,
         attempt_lifecycle=ledger,
@@ -90,7 +124,9 @@ async def call(svc, ledger, **kwargs):
 @pytest.mark.parametrize("tools", [None, [{"name": "extract", "parameters": {}}]])
 async def test_billed_non_text_response_prevents_another_dispatch_at_cap__b102(tools):
     client = Mock()
-    client.ainvoke = AsyncMock(return_value=raw_response([{"type": "thinking"}]))
+    client.ainvoke = AsyncMock(
+        side_effect=lambda _: observed_response(raw_response([{"type": "thinking"}]))
+    )
     client.bind_tools.return_value = client
     svc = service_with_client(client)
     ledger = Ledger()
@@ -125,7 +161,9 @@ async def test_unknown_provider_failure_settles_before_retry_admission__b102():
 async def test_billed_normalization_failure_settles_before_inner_retry__b102(
     cap, calls
 ):
-    client = Mock(ainvoke=AsyncMock(return_value=raw_response()))
+    client = Mock(
+        ainvoke=AsyncMock(side_effect=lambda _: observed_response(raw_response()))
+    )
     svc = service_with_client(client)
     ledger = Ledger(cap)
     with patch(

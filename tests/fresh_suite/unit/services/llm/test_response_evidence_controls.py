@@ -54,8 +54,10 @@ def inject_timeout_after_worker_state(service, ready):
 
 @pytest.mark.asyncio
 async def test_multiple_http_responses_fail_loud_after_known_settlement__b102():
+    first_body = body_for("openai", "first")
+
     async def dispatch(messages):
-        await observe_async_response(httpx.Response(200, content=b"first"))
+        await observe_async_response(httpx.Response(200, content=first_body))
         await observe_async_response(httpx.Response(200, content=b"second"))
         return raw_response()
 
@@ -65,7 +67,7 @@ async def test_multiple_http_responses_fail_loud_after_known_settlement__b102():
             service_with_client(Mock(ainvoke=AsyncMock(side_effect=dispatch))), ledger
         )
     assert ledger.rows["1"].cost_usd == Decimal("0.20")
-    assert ledger.rows["1"].response_evidence.body == b"first"
+    assert ledger.rows["1"].response_evidence.body == first_body
     assert ledger.events == [("begin", "1"), ("settle", "1")]
 
 
