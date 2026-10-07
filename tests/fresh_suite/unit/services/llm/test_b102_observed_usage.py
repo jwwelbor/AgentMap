@@ -210,6 +210,16 @@ def test_zero_rate_unavailable_measurements_are_not_negative_evidence__b102(valu
     assert pricing_usage(usage, values, "anthropic", rates) == usage
 
 
+def test_pricing_usage_declared_optional_measurement_fails_closed__b102():
+    from agentmap.models.llm_cost import LLMModelRates
+    from agentmap.services.llm.usage_presence import pricing_usage
+
+    rates = LLMModelRates(
+        currency="USD", input_per_1m=Decimal(1), output_per_1m=Decimal(1)
+    )
+    assert pricing_usage(None, {"input_tokens": 10}, "anthropic", rates) is None
+
+
 def composite_body(candidate, thoughts):
     payload = json.loads(body_for("google"))
     for key, value in (

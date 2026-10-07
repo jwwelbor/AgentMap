@@ -180,13 +180,12 @@ def pricing_usage(
     rates: Optional[LLMModelRates],
 ) -> Optional[LLMUsage]:
     """Determine priceability only after measurements have been published."""
-    if values is None or not isinstance(values, Mapping):
+    if usage is None or values is None or not isinstance(values, Mapping):
         return None
     if rates is None:
         return None
     if any(_negative_measurement(value) for value in values.values()):
         return None
-    assert usage is not None
     if not _required_buckets_are_priceable(usage, values, rates):
         return None
     return _inclusive_cache_pricing_usage(usage, values, provider)
