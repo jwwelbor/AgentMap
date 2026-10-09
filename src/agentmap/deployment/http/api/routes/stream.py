@@ -24,6 +24,7 @@ from typing import Any, AsyncGenerator, Optional
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from agentmap.async_lifecycle import create_task_or_close
 from agentmap.deployment.http.api.dependencies import (
     get_app_config_service,
     requires_auth,
@@ -84,6 +85,10 @@ _EVENT_POLL_INTERVAL_SECONDS = 1.0
 _MIN_WAIT_BUDGET_SECONDS = 0.01
 
 
+async def _pull_next_event(upstream: AsyncGenerator[Any, None]) -> Any:
+    return await upstream.__anext__()
+
+
 async def _sse_generator(
     upstream: AsyncGenerator[Any, None],
     primed_first_event: Optional[Any],
@@ -136,6 +141,7 @@ async def _sse_generator(
     # (not stream start); last_heartbeat_time paces the keepalive cadence.
     last_event_time = start
     last_heartbeat_time = start
+    primary_error: Optional[BaseException] = None
 
     try:
         while True:
@@ -175,7 +181,7 @@ async def _sse_generator(
             # (3b) Await the next event, bounded so we wake to re-check (1)/(2) and
             #     pace heartbeats.  ``pending`` is shielded so it survives a wake.
             if pending is None:
-                pending = asyncio.ensure_future(upstream.__anext__())
+                pending = create_task_or_close(_pull_next_event(upstream))
 
             # Wake at the soonest of the deadline, the poll interval, and the next
             # heartbeat tick (clamped to a positive floor when heartbeat_interval=0).
@@ -213,15 +219,17 @@ async def _sse_generator(
             if event.is_terminal:
                 return  # exactly-one-terminal: never loop past an F04 terminal
 
-    except asyncio.CancelledError:
-        # Task cancellation (e.g. client disconnect surfaced by the ASGI server).
-        # Do NOT swallow — re-raise after the finally closes the upstream so F04
-        # finalizes the tracker (F04-lesson / REQ-F-003).
+    except BaseException as error:
+        primary_error = error
+        # Task cancellation (e.g. client disconnect surfaced by the ASGI server)
+        # and generator closure must propagate after upstream finalization.
         raise
     finally:
         # Finalize the upstream (DEC-5) and release the concurrency slot (DEC-6) on
         # every exit path — see ``_aclose_upstream_and_release``.
-        await _aclose_upstream_and_release(pending, upstream, semaphore)
+        await _aclose_upstream_and_release(
+            pending, upstream, semaphore, primary_error=primary_error
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +336,7 @@ async def stream_workflow(
             # Pre-open JSON error (404/400/503) — _pre_open_error_response maps it
             # exactly like the non-streaming endpoint; the stream never opens.
             return _pre_open_error_response(exc)
-        except Exception:
+        except Exception as prelude_error:
             # Non-mapped prelude error (TD-037): e.g. workflow_ops normalizes a
             # stray prelude exception to RuntimeError, which isn't one of the
             # three mapped types above.  _sse_generator was never constructed, so
@@ -339,15 +347,9 @@ async def stream_workflow(
             # aclose() failure so it never masks the original exception; re-raise
             # that exception unchanged (no re-mapping — only the mapped tuple
             # above becomes pre-open JSON).
-            try:
-                await upstream.aclose()
-            except Exception:
-                logger.warning(
-                    "SSE upstream.aclose() failed while handling a non-mapped "
-                    "prelude error for graph: %s",
-                    graph_name,
-                    exc_info=True,
-                )
+            await _aclose_upstream_and_release(
+                None, upstream, None, primary_error=prelude_error
+            )
             raise
 
         response = StreamingResponse(

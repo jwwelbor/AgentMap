@@ -20,19 +20,21 @@ these (private-aliased) so existing call sites and tests that reference them via
 route module continue to resolve unchanged.
 """
 
-import asyncio
 import json
 from typing import Any, AsyncGenerator, Dict, Iterable, Optional, Tuple
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
+import agentmap.deployment.http.api.sse_lifecycle as _sse_lifecycle
 from agentmap.deployment.http.api.routes._shared import to_serializable
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
     GraphNotFound,
     InvalidInputs,
 )
+
+aclose_upstream_and_release = _sse_lifecycle.aclose_upstream_and_release
 
 # ---------------------------------------------------------------------------
 # Pre-open priming (spec.md §A.3 — pre-open error contract; CR BLOCKER-2)
@@ -81,35 +83,6 @@ async def prime_upstream(
     except StopAsyncIteration:
         return None, True
     return first_event, False
-
-
-async def aclose_upstream_and_release(
-    pending: "Optional[asyncio.Future[Any]]",
-    upstream: AsyncGenerator[Any, None],
-    semaphore: Optional[asyncio.Semaphore],
-) -> None:
-    """Finalize the stream's upstream and release its concurrency slot (DEC-5/DEC-6).
-
-    Closes ``upstream`` via ``aclose()`` so F04's finalizer runs (DEC-5 — no third
-    finalize), then releases the ``semaphore`` slot exactly once.  An in-flight
-    ``__anext__`` (e.g. the duration cap fired mid-await) is cancelled AND awaited
-    first: ``aclose()`` raises "generator is already running" while a ``__anext__``
-    for the same generator is still executing.  The release lives in its own
-    ``finally`` so an ``aclose()`` failure can never leak the slot.  Intended to be
-    called from the route generator's ``finally`` (every exit path: normal,
-    disconnect, duration-cap, error).
-    """
-    try:
-        if pending is not None and not pending.done():
-            pending.cancel()
-            try:
-                await pending
-            except (asyncio.CancelledError, StopAsyncIteration):
-                pass
-        await upstream.aclose()
-    finally:
-        if semaphore is not None:
-            semaphore.release()
 
 
 # Pre-open exception → HTTP status (spec §A.3; mirrors execute.py:270-277).

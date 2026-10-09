@@ -12,6 +12,7 @@ from pathlib import Path
 from tests.fresh_suite.integration.api.base_api_integration_test import (
     BaseAPIIntegrationTest,
 )
+from tests.runtime_manager_test_support import cleanup_runtime_manager_sync_for_test
 
 
 class TestWorkflowEndpoints(BaseAPIIntegrationTest):
@@ -32,10 +33,7 @@ class TestWorkflowEndpoints(BaseAPIIntegrationTest):
         # Create admin API key for testing
         self.admin_api_key = "test_admin_key_12345"
 
-        # Reset runtime manager to ensure clean state for each test
-        from agentmap.runtime.runtime_manager import RuntimeManager
-
-        RuntimeManager.reset()
+        cleanup_runtime_manager_sync_for_test()
 
         # Set up temp directory and basic infrastructure (from BaseIntegrationTest)
         import tempfile
@@ -72,7 +70,12 @@ class TestWorkflowEndpoints(BaseAPIIntegrationTest):
         """Clean up test fixtures."""
         import shutil
 
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        try:
+            self.client.close()
+            cleanup_runtime_manager_sync_for_test()
+        finally:
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+            super().tearDown()
 
     def _create_test_config_with_auth(self) -> Path:
         """
@@ -415,9 +418,7 @@ edge_graph,node-with-dashes,default,Test dashes in names,Node with dashes,output
         empty_repo_path.mkdir(exist_ok=True)
 
         # Reset runtime and configure it to use empty repository
-        from agentmap.runtime.runtime_manager import RuntimeManager
-
-        RuntimeManager.reset()
+        cleanup_runtime_manager_sync_for_test()
 
         # Create temporary config with empty repository path
         empty_config_path = self._create_empty_repo_test_config(empty_repo_path)

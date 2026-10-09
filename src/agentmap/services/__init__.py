@@ -130,6 +130,10 @@ _LAZY_IMPORTS = {
         "StorageServiceManager",
     ),
     # Service Protocols
+    "LLMServiceLifecycleProtocol": (
+        "agentmap.services.protocols",
+        "LLMServiceLifecycleProtocol",
+    ),
     "LLMServiceProtocol": ("agentmap.services.protocols", "LLMServiceProtocol"),
     "StorageServiceProtocol": ("agentmap.services.protocols", "StorageServiceProtocol"),
     "StateAdapterServiceProtocol": (
@@ -205,6 +209,7 @@ __all__ = [
     # Storage Services
     "StorageServiceManager",
     # Service Protocols
+    "LLMServiceLifecycleProtocol",
     "LLMServiceProtocol",
     "StorageServiceProtocol",
     "StateAdapterServiceProtocol",

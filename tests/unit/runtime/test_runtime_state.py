@@ -6,25 +6,57 @@ for test isolation, and error handling scenarios. Ensures proper test fixtures
 use RuntimeManager.reset() for test isolation.
 """
 
-import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
 from agentmap.runtime.runtime_manager import RuntimeManager
+from tests.runtime_manager_test_support import (
+    assert_owned_runtime_container,
+    cleanup_owned_runtime_test_state,
+)
 
 
 class TestRuntimeManager(unittest.TestCase):
     """Test RuntimeManager class functionality."""
 
     def setUp(self):
-        """Set up test environment - reset RuntimeManager before each test."""
-        RuntimeManager.reset()
+        """Start clean and track each runtime installed by this test module."""
+        self._owned_containers = []
+        self._installed_by_test = False
+        cleanup_owned_runtime_test_state(self._owned_containers, False)
+        original_install = RuntimeManager._install
+
+        def track_install(cls, config_file):
+            original_install(config_file)
+            container = cls._initializing_container
+            if container is not None:
+                self._owned_containers.append(container)
+                self._installed_by_test = True
+                service = container.llm_service()
+                if isinstance(service, Mock) and not isinstance(
+                    service.shutdown, AsyncMock
+                ):
+                    service.shutdown = AsyncMock()
+
+        self._install_patch = patch.object(
+            RuntimeManager, "_install", classmethod(track_install)
+        )
+        self._install_patch.start()
 
     def tearDown(self):
-        """Clean up test environment - reset RuntimeManager after each test."""
-        RuntimeManager.reset()
+        """Release this module's runtime without clearing another owner's state."""
+        try:
+            cleanup_owned_runtime_test_state(
+                self._owned_containers, self._installed_by_test
+            )
+        finally:
+            self._install_patch.stop()
+
+    def test_fixture_rejects_a_runtime_owned_by_another_test(self):
+        with self.assertRaisesRegex(AssertionError, "did not create"):
+            assert_owned_runtime_container(MagicMock(), self._owned_containers)
 
     def test_initial_state(self):
         """Test RuntimeManager initial state before initialization."""
@@ -98,6 +130,10 @@ class TestRuntimeManager(unittest.TestCase):
         """Test initialization with refresh=True forces reinitialization."""
         mock_container1 = MagicMock(name="container1")
         mock_container2 = MagicMock(name="container2")
+        mock_container1.llm_service.return_value.shutdown = AsyncMock()
+        mock_container1.llm_service.return_value.prepare_sync_shutdown.return_value = (
+            True
+        )
         mock_initialize_di.side_effect = [mock_container1, mock_container2]
 
         # First initialization
@@ -114,6 +150,7 @@ class TestRuntimeManager(unittest.TestCase):
 
         # initialize_di should be called twice
         self.assertEqual(mock_initialize_di.call_count, 2)
+        mock_container1.llm_service.return_value.shutdown.assert_awaited_once_with()
 
     @patch("agentmap.runtime.runtime_manager.initialize_di")
     def test_initialization_failure(self, mock_initialize_di):
@@ -137,6 +174,10 @@ class TestRuntimeManager(unittest.TestCase):
     def test_initialization_failure_with_refresh(self, mock_initialize_di):
         """Test error handling when refresh initialization fails."""
         mock_container = MagicMock()
+        mock_container.llm_service.return_value.shutdown = AsyncMock()
+        mock_container.llm_service.return_value.prepare_sync_shutdown.return_value = (
+            True
+        )
         mock_initialize_di.side_effect = [mock_container, Exception("Refresh failed")]
 
         # First successful initialization
@@ -149,6 +190,7 @@ class TestRuntimeManager(unittest.TestCase):
 
         self.assertIn("Initialization failed", str(context.exception))
         self.assertIn("Refresh failed", str(context.exception))
+        mock_container.llm_service.return_value.shutdown.assert_awaited_once_with()
 
         # State should be reset to uninitialized
         self.assertFalse(RuntimeManager.is_initialized())
@@ -158,7 +200,7 @@ class TestRuntimeManager(unittest.TestCase):
 
     @patch("agentmap.runtime.runtime_manager.initialize_di")
     def test_reset_functionality(self, mock_initialize_di):
-        """Test reset() clears state and allows reinitialization."""
+        """Test reset refuses an installed container without changing ownership."""
         mock_container1 = MagicMock(name="container1")
         mock_container2 = MagicMock(name="container2")
         mock_initialize_di.side_effect = [mock_container1, mock_container2]
@@ -168,14 +210,14 @@ class TestRuntimeManager(unittest.TestCase):
         self.assertTrue(RuntimeManager.is_initialized())
         first_container = RuntimeManager.get_container()
 
-        # Reset
-        RuntimeManager.reset()
-        self.assertFalse(RuntimeManager.is_initialized())
+        with self.assertRaisesRegex(AgentMapNotInitialized, "release lifespans"):
+            RuntimeManager.reset()
+        self.assertTrue(RuntimeManager.is_initialized())
+        self.assertIs(RuntimeManager.get_container(), first_container)
 
-        with self.assertRaises(AgentMapNotInitialized):
-            RuntimeManager.get_container()
-
-        # Initialize again
+        cleanup_owned_runtime_test_state(
+            self._owned_containers, self._installed_by_test
+        )
         RuntimeManager.initialize()
         self.assertTrue(RuntimeManager.is_initialized())
         second_container = RuntimeManager.get_container()
@@ -281,7 +323,7 @@ class TestRuntimeManager(unittest.TestCase):
                 self.assertEqual(container, mock_container)
 
     def test_thread_safety_concurrent_reset(self):
-        """Test thread-safety with concurrent reset operations."""
+        """Test concurrent reset requests preserve an installed runtime."""
         with patch(
             "agentmap.runtime.runtime_manager.initialize_di"
         ) as mock_initialize_di:
@@ -293,11 +335,14 @@ class TestRuntimeManager(unittest.TestCase):
             self.assertTrue(RuntimeManager.is_initialized())
 
             num_threads = 5
-            results = []
+            errors = []
 
             def reset_worker():
-                RuntimeManager.reset()
-                return RuntimeManager.is_initialized()
+                try:
+                    RuntimeManager.reset()
+                except AgentMapNotInitialized as error:
+                    return error
+                return None
 
             # Run concurrent resets
             with ThreadPoolExecutor(max_workers=num_threads) as executor:
@@ -305,17 +350,17 @@ class TestRuntimeManager(unittest.TestCase):
 
                 # Collect results
                 for future in as_completed(futures):
-                    results.append(future.result())
+                    errors.append(future.result())
 
-            # After reset operations, should be uninitialized
-            self.assertFalse(RuntimeManager.is_initialized())
-
-            # All reset operations should have seen uninitialized state
-            for result in results:
-                self.assertFalse(result)
+            self.assertEqual(len(errors), num_threads)
+            self.assertTrue(
+                all(isinstance(error, AgentMapNotInitialized) for error in errors)
+            )
+            self.assertTrue(RuntimeManager.is_initialized())
+            self.assertIs(RuntimeManager.get_container(), mock_container)
 
     def test_thread_safety_mixed_operations(self):
-        """Test thread-safety with mixed initialize/reset/access operations."""
+        """Test thread-safety with concurrent initialize, refusal, and access."""
         with patch(
             "agentmap.runtime.runtime_manager.initialize_di"
         ) as mock_initialize_di:
@@ -356,7 +401,7 @@ class TestRuntimeManager(unittest.TestCase):
                 for future in as_completed(futures):
                     future.result()
 
-            # Should not have any exceptions from thread safety issues
+            # Active-runtime reset refusals are expected; no other errors are.
             if exceptions:
                 # Filter out expected AgentMapNotInitialized exceptions from access operations
                 unexpected_exceptions = [
@@ -394,6 +439,10 @@ class TestRuntimeManager(unittest.TestCase):
         ) as mock_initialize_di:
             mock_container1 = MagicMock(name="container1")
             mock_container2 = MagicMock(name="container2")
+            mock_container1.llm_service.return_value.shutdown = AsyncMock()
+            mock_container1.llm_service.return_value.prepare_sync_shutdown.return_value = (
+                True
+            )
             mock_initialize_di.side_effect = [mock_container1, mock_container2]
 
             # Initialize with first config
@@ -410,11 +459,12 @@ class TestRuntimeManager(unittest.TestCase):
 
             # Verify second initialization
             self.assertEqual(mock_initialize_di.call_count, 2)
+            mock_container1.llm_service.return_value.shutdown.assert_awaited_once_with()
             mock_initialize_di.assert_called_with(config_file2)
             self.assertEqual(RuntimeManager.get_container(), mock_container2)
 
     def test_stress_test_rapid_operations(self):
-        """Stress test with rapid operations to verify thread safety."""
+        """Stress concurrent initialization and access without discarding owners."""
         with patch(
             "agentmap.runtime.runtime_manager.initialize_di"
         ) as mock_initialize_di:
@@ -430,23 +480,14 @@ class TestRuntimeManager(unittest.TestCase):
                         except AgentMapNotInitialized:
                             pass  # Expected if reset happened concurrently
 
-                    # Occasional reset
-                    if _ % 10 == 0:
-                        RuntimeManager.reset()
-
             # Run rapid operations in multiple threads
-            threads = []
-            for _ in range(5):
-                thread = threading.Thread(target=rapid_operations)
-                threads.append(thread)
-                thread.start()
-
-            # Wait for all threads to complete
-            for thread in threads:
-                thread.join()
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = [executor.submit(rapid_operations) for _ in range(5)]
+                for future in as_completed(futures):
+                    future.result()
 
             # Should complete without deadlocks or crashes
-            # Final state may be initialized or not, depending on timing
+            self.assertTrue(RuntimeManager.is_initialized())
 
 
 if __name__ == "__main__":

@@ -17,6 +17,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from fresh_suite.integration.base_integration_test import (  # noqa: E402
     BaseIntegrationTest,
 )
+from runtime_manager_test_support import (  # noqa: E402
+    cleanup_runtime_manager_sync_for_test,
+)
 
 
 class TestHTTPExecuteSuspendResume(BaseIntegrationTest):
@@ -27,10 +30,7 @@ class TestHTTPExecuteSuspendResume(BaseIntegrationTest):
         # DO NOT call super().setUp() - it initializes a container with wrong config
         # Instead, manually set up only what we need
 
-        # Reset runtime manager to ensure clean state
-        from agentmap.runtime.runtime_manager import RuntimeManager
-
-        RuntimeManager.reset()
+        cleanup_runtime_manager_sync_for_test()
 
         # Create temp directory for test artifacts
         import tempfile
@@ -63,7 +63,12 @@ class TestHTTPExecuteSuspendResume(BaseIntegrationTest):
         """Clean up test fixtures."""
         import shutil
 
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        try:
+            self.client.close()
+            cleanup_runtime_manager_sync_for_test()
+        finally:
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+            super().tearDown()
 
     def _create_test_config(self) -> Path:
         """Create test configuration file with authentication disabled."""

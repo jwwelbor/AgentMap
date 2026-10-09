@@ -58,17 +58,20 @@ test_graph,End,EndAgent,Final node,ProcessAgent"""
             mock_cache_service.is_initialized.return_value = True
             mock_container.availability_cache_service.return_value = mock_cache_service
 
-            mock_runtime_manager.initialize.return_value = None
-            mock_runtime_manager.get_container.return_value = mock_container
+            mock_runtime_manager.initialize.side_effect = lambda **kwargs: kwargs[
+                "startup"
+            ](mock_container, kwargs["refresh"])
 
             # Test initialization
             ensure_initialized()
 
             # Verify consistent behavior
-            mock_runtime_manager.initialize.assert_called_once_with(
-                refresh=False, config_file=None
-            )
-            mock_runtime_manager.get_container.assert_called_once()
+            mock_runtime_manager.initialize.assert_called_once()
+            call = mock_runtime_manager.initialize.call_args
+            assert call.kwargs["refresh"] is False
+            assert call.kwargs["config_file"] is None
+            assert callable(call.kwargs["startup"])
+            mock_runtime_manager.get_container.assert_not_called()
 
     def test_workflow_execution_consistent_responses(self):
         """Test that workflow execution returns consistent response formats."""

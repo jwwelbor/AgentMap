@@ -28,6 +28,14 @@ from agentmap.runtime.init_ops import _is_cache_initialized, _refresh_cache
 from agentmap.runtime.workflow_ops import _resolve_csv_path
 
 
+def _run_startup_callback_in_mock(mock_runtime_manager, container):
+    def initialize(*, refresh=False, startup=None, **_kwargs):
+        if startup is not None:
+            startup(container, refresh)
+
+    mock_runtime_manager.initialize.side_effect = initialize
+
+
 class TestEnsureInitialized:
     """Test the ensure_initialized facade function."""
 
@@ -40,17 +48,18 @@ class TestEnsureInitialized:
         mock_cache_service.is_initialized.return_value = True
         mock_container.availability_cache_service.return_value = mock_cache_service
 
-        mock_runtime_manager.initialize.return_value = None
-        mock_runtime_manager.get_container.return_value = mock_container
+        _run_startup_callback_in_mock(mock_runtime_manager, mock_container)
 
         # Test
         ensure_initialized()
 
         # Verify
-        mock_runtime_manager.initialize.assert_called_once_with(
-            refresh=False, config_file=None
-        )
-        mock_runtime_manager.get_container.assert_called_once()
+        mock_runtime_manager.initialize.assert_called_once()
+        call = mock_runtime_manager.initialize.call_args
+        assert call.kwargs["refresh"] is False
+        assert call.kwargs["config_file"] is None
+        assert callable(call.kwargs["startup"])
+        mock_runtime_manager.get_container.assert_not_called()
         # The function calls is_initialized twice - once to check if refresh needed, once to verify after
         assert mock_cache_service.is_initialized.call_count >= 1
 
@@ -64,16 +73,17 @@ class TestEnsureInitialized:
         mock_cache_service.refresh_cache.return_value = None
         mock_container.availability_cache_service.return_value = mock_cache_service
 
-        mock_runtime_manager.initialize.return_value = None
-        mock_runtime_manager.get_container.return_value = mock_container
+        _run_startup_callback_in_mock(mock_runtime_manager, mock_container)
 
         # Test
         ensure_initialized(refresh=True, config_file="test.yaml")
 
         # Verify
-        mock_runtime_manager.initialize.assert_called_once_with(
-            refresh=True, config_file="test.yaml"
-        )
+        mock_runtime_manager.initialize.assert_called_once()
+        call = mock_runtime_manager.initialize.call_args
+        assert call.kwargs["refresh"] is True
+        assert call.kwargs["config_file"] == "test.yaml"
+        assert callable(call.kwargs["startup"])
         mock_cache_service.refresh_cache.assert_called_once_with(mock_container)
 
     @patch("agentmap.runtime.init_ops.RuntimeManager")
@@ -89,8 +99,7 @@ class TestEnsureInitialized:
         mock_cache_service.refresh_cache.return_value = None
         mock_container.availability_cache_service.return_value = mock_cache_service
 
-        mock_runtime_manager.initialize.return_value = None
-        mock_runtime_manager.get_container.return_value = mock_container
+        _run_startup_callback_in_mock(mock_runtime_manager, mock_container)
 
         # Test
         ensure_initialized()
@@ -109,8 +118,7 @@ class TestEnsureInitialized:
         mock_cache_service.refresh_cache.side_effect = Exception("Cache refresh failed")
         mock_container.availability_cache_service.return_value = mock_cache_service
 
-        mock_runtime_manager.initialize.return_value = None
-        mock_runtime_manager.get_container.return_value = mock_container
+        _run_startup_callback_in_mock(mock_runtime_manager, mock_container)
 
         # Test
         with pytest.raises(
@@ -762,7 +770,7 @@ class TestAsyncFacadeExports:
 
         result = await run_workflow_async("test_graph", {"input": "data"})
 
-        mock_ensure_init.assert_called_once_with(config_file=None)
+        mock_ensure_init.assert_awaited_once_with(config_file=None)
         assert result["success"] is True
         assert result["outputs"] == {"output": "async_result"}
         assert result["execution_id"] == "exec_async_001"
@@ -770,7 +778,7 @@ class TestAsyncFacadeExports:
 
     @pytest.mark.asyncio
     @patch("agentmap.runtime.workflow_ops.RuntimeManager")
-    @patch("agentmap.runtime.workflow_ops.ensure_initialized")
+    @patch("agentmap.runtime.workflow_ops.ensure_initialized_async")
     async def test_run_workflow_async_propagates_graph_not_found(
         self, mock_ensure_init, mock_runtime_manager
     ):
@@ -1196,7 +1204,7 @@ class TestAsyncWrapperNonBlocking:
             mock_container.logging_service.return_value = mock_logging_service
 
             with (
-                patch("agentmap.runtime.workflow_ops.ensure_initialized"),
+                patch("agentmap.runtime.workflow_ops.ensure_initialized_async"),
                 patch("agentmap.runtime.workflow_ops.RuntimeManager") as mock_rm,
             ):
                 mock_rm.get_container.return_value = mock_container

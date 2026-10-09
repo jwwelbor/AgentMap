@@ -66,17 +66,12 @@ class LLMBudgetCheck:
     Carries only measured or configured values — no fabricated token
     estimates (REQ-F-003, REQ-F-009, Out of Scope 5).
 
-    ``max_output_tokens`` / ``max_possible_output_cost`` fallback-tier
-    limitation (accepted, v1): ``LLMFallbackHandler`` builds each fallback
-    tier's config itself and dispatches through a callable that never
-    carries the primary tier's resolved ``max_tokens``. So on fallback tiers
-    — exactly where a cheaper primary may be replaced by a pricier model —
-    both fields are ``None`` rather than a value borrowed from a different
-    tier. A budget guard must branch on ``attempt_kind`` and price from
-    ``rates`` when this bound is absent; it must not assume the bound is
-    always populated. See spec.md Architecture Component Change 2 for the
-    full rationale and the deferred alternative (widening the fallback
-    callable's signature).
+    ``max_output_tokens`` / ``max_possible_output_cost`` describe the current
+    tier's configured output bound. A lifecycle-governed fallback check can
+    carry that fallback tier's own ``max_tokens`` when configured; it never
+    borrows the primary tier's bound. Ordinary calls and tiers without a
+    configured bound carry ``None``, so a budget guard must branch on
+    ``attempt_kind`` and handle an absent bound.
     """
 
     resolved_provider: str
@@ -88,3 +83,4 @@ class LLMBudgetCheck:
     message_count: int
     input_chars: int
     attempt_kind: str  # "primary" | "fallback"
+    attempt_lifecycle_active: bool = False

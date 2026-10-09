@@ -80,6 +80,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         langchain_messages: List[Any],
         provider: str,
         model: str,
+        **limits: Any,
     ) -> LLMResponse:
         """Invoke client through the async resilience layer.
 
@@ -91,7 +92,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         """
         if self._invoke_async_fn is not None:
             return await self._invoke_async_fn(
-                client, langchain_messages, provider, model
+                client, langchain_messages, provider, model, **limits
             )
         if self._invoke_fn is not None:
             raw_content = self._invoke_fn(client, langchain_messages, provider, model)

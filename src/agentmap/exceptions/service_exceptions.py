@@ -22,6 +22,42 @@ class LLMConfigurationError(LLMServiceError):
     """Exception raised when there's a configuration error."""
 
 
+class LLMLifecycleCleanupError(LLMServiceError):
+    """A governed client cleanup obligation did not complete successfully."""
+
+    def __init__(self, stage: str, failures: tuple[BaseException, ...]) -> None:
+        safe_stages = {
+            "resource_close",
+            "factory_shutdown",
+            "construction_rollback",
+        }
+        self.stage = stage if stage in safe_stages else "lifecycle_cleanup"
+        self.failures = tuple(failures)
+        self.failure_count = sum(
+            getattr(failure, "failure_count", 1) for failure in self.failures
+        )
+        super().__init__(
+            "LLM lifecycle cleanup failed at "
+            f"{self.stage} ({self.failure_count} failure(s))"
+        )
+
+
+class AttemptLifecycleRefusal(Exception):
+    """Internal control flow for mandatory physical-attempt accounting."""
+
+    def __init__(self, original: BaseException) -> None:
+        super().__init__("physical attempt lifecycle refused")
+        self.original = original
+
+
+class ResponseCaptureFailure(RuntimeError):
+    """The observed HTTP response could not be captured safely."""
+
+    def __init__(self, *, cleanup_failed: bool = False) -> None:
+        super().__init__("physical attempt response capture failed")
+        self.cleanup_failed = cleanup_failed
+
+
 class LLMDependencyError(LLMServiceError):
     """Exception raised when required dependencies are missing."""
 

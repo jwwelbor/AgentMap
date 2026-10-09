@@ -8,6 +8,7 @@ interface for reading and writing JSON files in Google Cloud Storage buckets.
 import os
 from typing import Any, Dict, Tuple
 
+from agentmap.async_lifecycle import raise_cleanup_error_or_note
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
 from agentmap.services.storage.base_connector import BlobStorageConnector
 
@@ -71,37 +72,37 @@ class GCPStorageConnector(BlobStorageConnector):
 
             # Set credentials environment variable if provided
             original_credential_env = None
+            credential_environment_changed = False
             if self.credentials_file and os.path.exists(self.credentials_file):
                 original_credential_env = os.environ.get(
                     "GOOGLE_APPLICATION_CREDENTIALS"
                 )
                 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.credentials_file
+                credential_environment_changed = True
 
             # Create client
+            primary_error = None
             try:
-                client_kwargs = {}
-                if self.project_id:
-                    client_kwargs["project"] = self.project_id
-
-                self._client = storage.Client(**client_kwargs)
-                self.log_debug("Google Cloud Storage client initialized successfully")
-            except DefaultCredentialsError:
-                raise StorageConnectionError(
-                    "GCP credentials not found. Please configure credentials via "
-                    "environment variables, service account key file, or GCE metadata server."
-                )
+                self._create_gcp_client(storage, DefaultCredentialsError)
+            except BaseException as error:
+                primary_error = error
+                raise
             finally:
-                # Restore original environment variable if it was changed
-                if original_credential_env is not None:
-                    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
-                        original_credential_env
+                try:
+                    # Restore original environment variable if it was changed
+                    if credential_environment_changed:
+                        if original_credential_env is not None:
+                            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
+                                original_credential_env
+                            )
+                        else:
+                            os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+                except BaseException as cleanup_error:
+                    raise_cleanup_error_or_note(
+                        primary_error,
+                        cleanup_error,
+                        operation="GCP credential environment restore",
                     )
-                elif (
-                    self.credentials_file
-                    and "GOOGLE_APPLICATION_CREDENTIALS" in os.environ
-                ):
-                    # Remove the environment variable if it wasn't present before
-                    del os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
 
         except Exception as e:
             self.log_error(
@@ -109,6 +110,20 @@ class GCPStorageConnector(BlobStorageConnector):
             )
             raise StorageConnectionError(
                 f"Failed to initialize Google Cloud Storage client: {str(e)}"
+            )
+
+    def _create_gcp_client(self, storage, credentials_error) -> None:
+        try:
+            client_kwargs = {}
+            if self.project_id:
+                client_kwargs["project"] = self.project_id
+
+            self._client = storage.Client(**client_kwargs)
+            self.log_debug("Google Cloud Storage client initialized successfully")
+        except credentials_error:
+            raise StorageConnectionError(
+                "GCP credentials not found. Please configure credentials via "
+                "environment variables, service account key file, or GCE metadata server."
             )
 
     def read_blob(self, uri: str) -> bytes:

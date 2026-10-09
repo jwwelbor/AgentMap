@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from agentmap.async_lifecycle import raise_cleanup_error_or_note
 from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.exceptions.runtime_exceptions import (
     AgentMapNotInitialized,
@@ -23,7 +24,10 @@ from agentmap.exceptions.runtime_exceptions import (
 )
 
 # ✅ FACADE PATTERN: Only import from runtime facade
-from agentmap.runtime_api import ensure_initialized, get_container
+from agentmap.runtime_api import (
+    acquire_runtime_lifespan,
+    release_runtime_lifespan,
+)
 
 
 # Legacy Response Models (for backward compatibility)
@@ -44,16 +48,17 @@ def create_lifespan(config_file: Optional[str] = None):
         """
         FastAPI lifespan hook following SPEC-RUN-002.
 
-        Calls ensure_initialized() once at startup and stores the container
+        Awaits runtime initialization once at startup and stores the container
         in app.state for use by dependencies.
         """
+        lease = None
+        primary_error = None
         try:
             # ✅ FACADE PATTERN: Use only runtime facade for initialization
-            # ✅ FIX: Pass config_file to ensure_initialized
-            ensure_initialized(config_file=config_file)
+            # ✅ FIX: Pass config_file to the async initialization transaction
+            lease, container = await acquire_runtime_lifespan(config_file=config_file)
 
             # ✅ CRITICAL FIX: Store container in app.state for dependencies.py
-            container = get_container()
             app.state.container = container
 
             # ✅ FIX: Pre-warm critical services to prevent race conditions
@@ -67,11 +72,22 @@ def create_lifespan(config_file: Optional[str] = None):
 
             print("AgentMap runtime initialized successfully")
             yield
-        except Exception as e:
-            print(f"Failed to initialize AgentMap runtime: {e}")
+        except BaseException as error:
+            primary_error = error
+            if isinstance(error, Exception):
+                print(f"Failed to initialize AgentMap runtime: {error}")
             raise
         finally:
-            print("AgentMap runtime shutting down")
+            try:
+                if lease is not None:
+                    await release_runtime_lifespan(lease)
+                print("AgentMap runtime shutting down")
+            except BaseException as cleanup_error:
+                raise_cleanup_error_or_note(
+                    primary_error,
+                    cleanup_error,
+                    operation="HTTP lifespan cleanup",
+                )
 
     return lifespan
 

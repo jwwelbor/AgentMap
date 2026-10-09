@@ -11,7 +11,7 @@ from agentmap.deployment.http.api.dependencies import requires_auth
 from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
 from agentmap.runtime_api import (
     diagnose_system,
-    ensure_initialized,
+    ensure_initialized_async,
     get_config,
     validate_cache,
 )
@@ -73,7 +73,7 @@ router = APIRouter(prefix="/admin", tags=["Administration"])
 async def get_diagnostics(request: Request):
     """Get comprehensive system diagnostics."""
     try:
-        ensure_initialized()
+        await ensure_initialized_async()
 
         result = diagnose_system()
         if not result.get("success"):
@@ -103,7 +103,7 @@ async def get_diagnostics(request: Request):
 async def get_configuration(request: Request):
     """Get current system configuration."""
     try:
-        ensure_initialized()
+        await ensure_initialized_async()
 
         result = get_config()
         if not result.get("success"):
@@ -122,7 +122,7 @@ async def get_configuration(request: Request):
 async def get_cache_stats(request: Request):
     """Get cache statistics."""
     try:
-        ensure_initialized()
+        await ensure_initialized_async()
 
         result = validate_cache(stats=True)
         if not result.get("success"):
@@ -145,7 +145,7 @@ async def clear_cache(
 ):
     """Clear validation cache."""
     try:
-        ensure_initialized()
+        await ensure_initialized_async()
 
         if file_path:
             result = validate_cache(clear=True, file_path=file_path)
@@ -186,7 +186,7 @@ async def health_check():
     try:
         # TODO: Add get_health() to runtime_api
         # For now, just check if initialized
-        ensure_initialized()
+        await ensure_initialized_async()
         return HealthResponse(status="healthy", initialized=True)
     except AgentMapNotInitialized:
         return HealthResponse(status="not_initialized", initialized=False)
@@ -199,7 +199,7 @@ async def health_check():
 async def get_system_paths(request: Request):
     """Get system directory paths."""
     try:
-        ensure_initialized()
+        await ensure_initialized_async()
 
         # TODO: Add get_system_paths() to runtime_api
         # For now, get from config

@@ -8,7 +8,6 @@ and resilience (retry with backoff + circuit breaker).
 
 import asyncio
 import base64
-import inspect
 import math
 import mimetypes
 import random
@@ -31,6 +30,7 @@ from typing import (
 from uuid import uuid4
 
 from agentmap.exceptions import (
+    AttemptLifecycleRefusal,
     LLMConfigurationError,
     LLMDependencyError,
     LLMProviderError,
@@ -66,8 +66,35 @@ from agentmap.services.llm._budget_guard_refusal import (
     mark_budget_guard_refusal_context,
     telemetry_safe_marker,
 )
+from agentmap.services.llm.attempt_lifecycle import (
+    attempt_lifecycle as _attempt_lifecycle,
+)
+from agentmap.services.llm.attempt_lifecycle import (
+    get_async_client,
+    run_governed_invocation,
+)
+from agentmap.services.llm.batch_lifecycle import reject_batch_lifecycle_options
 from agentmap.services.llm.cost_calculator import LLMCostCalculator
+from agentmap.services.llm.governed_accounting import (
+    governed_rates,
+    invoke_accounted_attempt,
+)
+from agentmap.services.llm.invocation_lease import (
+    dispatch_plain_sync_call,
+    invoke_provider_async,
+)
+from agentmap.services.llm.response_observer import observe_successful_receipt
+from agentmap.services.llm.stream_lifecycle import (
+    close_async_stream_preserving_primary,
+    create_llm_stream_async,
+    isolated_llm_stream,
+)
 from agentmap.services.llm.stream_seam import stream_provider
+from agentmap.services.llm.telemetry_lifecycle import (
+    call_with_telemetry,
+    call_with_telemetry_async,
+    close_span_preserving_primary,
+)
 from agentmap.services.llm.tool_call_extraction import (
     extract_tool_calls,
     normalize_response_content,
@@ -88,7 +115,10 @@ from agentmap.services.llm_fallback_handler import LLMFallbackHandler
 from agentmap.services.llm_message_service import LLMMessageService
 from agentmap.services.llm_provider_utils import LLMProviderUtils
 from agentmap.services.logging_service import LoggingService
-from agentmap.services.protocols.service_protocols import LLMBudgetGuardProtocol
+from agentmap.services.protocols.service_protocols import (
+    LLMAttemptLifecycleProtocol,
+    LLMBudgetGuardProtocol,
+)
 from agentmap.services.routing.circuit_breaker import CircuitBreaker
 from agentmap.services.routing.routing_service import LLMRoutingService
 from agentmap.services.routing.types import RoutingContext
@@ -158,6 +188,7 @@ _RESERVED_KEYS: frozenset = frozenset(
         "temperature",
         "routing_context",
         "cache_system_prompt",
+        "attempt_lifecycle",
     }
 )
 
@@ -234,18 +265,23 @@ class LLMService:
         # tests that patch the method after construction). attempt_kind is
         # pinned to "fallback" here -- every tier the fallback handler drives
         # re-enters this seam, which is what gives the budget guard per-tier
-        # coverage "for free" (Decision 3) without any change to
-        # LLMFallbackHandler's own signature. Its four-positional-argument
-        # shape can't carry the primary's resolved max_tokens, which is why
-        # max_output_tokens is None on every fallback-tier LLMBudgetCheck
-        # (spec.md Component Change 2, "Fallback-tier limitation (accepted, v1)").
+        # coverage "for free" (Decision 3). Governed calls additionally carry
+        # each fallback tier's own configured output limit. Ungoverned budget
+        # guards retain their existing None limit on fallback tiers.
         self._fallback_handler = LLMFallbackHandler(
             logging_service,
             routing_config_service,
             features_registry_service,
             invoke_fn=self._invoke_with_resilience,
-            invoke_async_fn=lambda client, msgs, provider, model: self._invoke_with_resilience_async(
-                client, msgs, provider, model, attempt_kind="fallback"
+            invoke_async_fn=lambda client, msgs, provider, model, **limits: (
+                self._invoke_with_resilience_async(
+                    client,
+                    msgs,
+                    provider,
+                    model,
+                    attempt_kind="fallback",
+                    **limits,
+                )
             ),
         )
         self._message_utils = LLMMessageService()
@@ -504,13 +540,16 @@ class LLMService:
         Raises:
             LLMServiceError: On various error conditions
         """
-        kwargs["cache_system_prompt"] = cache_system_prompt
-        if self._telemetry_service is not None:
-            return self._call_llm_with_telemetry(
-                messages, provider, model, temperature, routing_context, **kwargs
-            )
-        return self._call_llm_core(
-            messages, provider, model, temperature, routing_context, **kwargs
+        return dispatch_plain_sync_call(
+            (messages, provider, model, temperature, routing_context),
+            cache_system_prompt,
+            kwargs,
+            (
+                self._call_llm_with_telemetry
+                if self._telemetry_service is not None
+                else None
+            ),
+            self._call_llm_core,
         )
 
     async def call_llm_async(
@@ -522,15 +561,16 @@ class LLMService:
         routing_context: Optional[Dict[str, Any]] = None,
         cache_system_prompt: bool = False,
         tools: Optional[List[Dict[str, Any]]] = None,
+        *,
+        attempt_lifecycle: Optional[LLMAttemptLifecycleProtocol] = None,
         **kwargs,
     ) -> LLMResponse:
         """
         Make an async LLM call and return a rich ``LLMResponse``.
 
-        ``LLMResponse.text`` carries the response text; ``.resolved_provider``
-        and ``.resolved_model`` reflect the provider and model that **actually
-        handled** the request (after routing or fallback); ``.usage`` carries
-        normalized token counts when the provider returned usage metadata.
+        ``LLMResponse.text`` carries response text; ``.resolved_provider`` and
+        ``.resolved_model`` report the provider and model that handled the
+        request after routing or fallback. ``.usage`` carries returned token counts.
 
         When routing_context is provided, routing owns all provider and model
         selection. Explicit provider and model inputs are ignored with the same
@@ -547,11 +587,18 @@ class LLMService:
                    call raises ``LLMResolvedCallError`` without attempting
                    the fallback ladder (REQ-F-008) -- a fallback tier is a
                    different model that may not honor the same tool schema.
+            attempt_lifecycle: Optional mandatory admission/settlement hooks for
+                each physical attempt. Isolated per invocation, including nested
+                plain calls. SDK retries are disabled only for governed clients.
         """
         kwargs["cache_system_prompt"] = cache_system_prompt
         kwargs["tools"] = tools
-        return await self._dispatch_call_llm_async(
-            messages, provider, model, temperature, routing_context, **kwargs
+        return await run_governed_invocation(
+            attempt_lifecycle,
+            self._client_factory,
+            lambda: self._dispatch_call_llm_async(
+                messages, provider, model, temperature, routing_context, **kwargs
+            ),
         )
 
     async def _dispatch_call_llm_async(
@@ -569,9 +616,8 @@ class LLMService:
         the single outermost boundary that unwraps a primary-tier
         budget-guard refusal back to the guard's own exception (typed or
         not) -- covers both the telemetry-wrapped and plain dispatch paths,
-        including the telemetry wrapper's own "retry without instrumentation
-        on unrecognized exception" branch, which would otherwise re-dispatch
-        (and re-check the guard) a second time for an untyped refusal.
+        including a telemetry setup failure before dispatch. Once core
+        dispatch begins, telemetry failures cannot trigger a second call.
         """
         try:
             if self._telemetry_service is not None:
@@ -581,7 +627,7 @@ class LLMService:
             return await self._call_llm_async_core(
                 messages, provider, model, temperature, routing_context, **kwargs
             )
-        except BudgetGuardRefusal as refusal:
+        except (BudgetGuardRefusal, AttemptLifecycleRefusal) as refusal:
             raise refusal.original
 
     async def _call_llm_async_with_telemetry(
@@ -593,65 +639,33 @@ class LLMService:
         routing_context: Optional[Dict[str, Any]],
         **kwargs,
     ) -> LLMResponse:
-        """Async telemetry wrapper mirroring the sync LLM span behavior.
-
-        NFR-F-006 waiver (TD-043, permanent): >50 lines by design -- dual
-        exception handling (inner LLM/guard, outer telemetry-isolation
-        fallback) required by REQ-F-009. Rationale/precedent:
-        TD-043.research-report.md Decision 3.
-        """
+        """Call the async core with retry-safe telemetry isolation."""
         assert self._telemetry_service is not None
-        initial_attributes = self._build_llm_span_initial_attributes(provider, model)
 
-        try:
-            with self._telemetry_service.start_span(
-                LLM_CALL_SPAN,
-                attributes=initial_attributes,
-            ) as span:
-                try:
-                    result = await self._call_llm_async_core(
-                        messages,
-                        provider,
-                        model,
-                        temperature,
-                        routing_context,
-                        **kwargs,
-                    )
-                    self._capture_llm_content(span, messages, result.text)
-                    self._set_span_status_ok(span)
-                    return result
-                except Exception as e:
-                    # T-E05-F06-008 round-4 UAT: a BudgetGuardRefusal caught
-                    # here still carries the host guard's raw exception as
-                    # __cause__ (unwrapped one frame up, in
-                    # _dispatch_call_llm_async) -- record a class-name-only
-                    # marker instead of the real chain so span telemetry
-                    # never exports host budget/business data. See
-                    # _record_llm_call_exception_safe (TD-043).
-                    self._record_llm_call_exception_safe(span, e)
-                    raise
-        except Exception as outer_error:
-            if isinstance(
-                outer_error,
-                (
-                    LLMServiceError,
-                    LLMProviderError,
-                    LLMConfigurationError,
-                    LLMDependencyError,
-                    # REQ-F-003 / NFR-F-003: a budget-guard refusal must not
-                    # be treated as a telemetry-infrastructure failure and
-                    # silently re-dispatched (re-checking the guard a second
-                    # time) without instrumentation.
-                    BudgetGuardRefusal,
-                ),
-            ):
-                raise
-            self._logger.warning(
-                f"Telemetry error, executing without instrumentation: {outer_error}"
-            )
+        async def call_core() -> LLMResponse:
             return await self._call_llm_async_core(
                 messages, provider, model, temperature, routing_context, **kwargs
             )
+
+        return await call_with_telemetry_async(
+            self._telemetry_service,
+            LLM_CALL_SPAN,
+            self._build_llm_span_initial_attributes(provider, model),
+            call_core,
+            lambda span, result: self._capture_llm_content(span, messages, result.text),
+            self._set_span_status_ok,
+            self._record_llm_call_exception_safe,
+            self._logger,
+            (
+                LLMServiceError,
+                LLMProviderError,
+                LLMConfigurationError,
+                LLMDependencyError,
+                BudgetGuardRefusal,
+                AttemptLifecycleRefusal,
+            ),
+            call_core,
+        )
 
     def _call_llm_with_telemetry(
         self,
@@ -662,68 +676,31 @@ class LLMService:
         routing_context: Optional[Dict[str, Any]],
         **kwargs,
     ) -> str:
-        """Execute call_llm wrapped in a gen_ai.chat telemetry span.
-
-        Falls back to ``_call_llm_core`` if span creation fails (Layer 1
-        isolation).  LLM errors are re-raised directly -- only telemetry
-        infrastructure failures trigger the fallback.
-
-        NFR-F-006 waiver (TD-043, permanent): >50 lines by design -- same
-        dual exception handling as the async sibling above (REQ-F-009).
-        Rationale/precedent: TD-043.research-report.md Decision 1/3.
-        """
+        """Call the sync core with retry-safe telemetry isolation."""
         assert self._telemetry_service is not None
-        # Build initial attributes from known values
-        initial_attributes = self._build_llm_span_initial_attributes(provider, model)
 
-        try:
-            with self._telemetry_service.start_span(
-                LLM_CALL_SPAN,
-                attributes=initial_attributes,
-            ) as span:
-                try:
-                    result = self._call_llm_core(
-                        messages,
-                        provider,
-                        model,
-                        temperature,
-                        routing_context,
-                        **kwargs,
-                    )
-
-                    # Capture optional content on the span
-                    self._capture_llm_content(span, messages, result)
-
-                    # Set span status to OK on success
-                    self._set_span_status_ok(span)
-
-                    return result
-
-                except Exception as e:
-                    # Record exception and set ERROR status on span. See
-                    # _record_llm_call_exception_safe (TD-043).
-                    self._record_llm_call_exception_safe(span, e)
-                    raise
-
-        except Exception as outer_error:
-            # Distinguish LLM errors (re-raise) from telemetry errors (fallback)
-            if isinstance(
-                outer_error,
-                (
-                    LLMServiceError,
-                    LLMProviderError,
-                    LLMConfigurationError,
-                    LLMDependencyError,
-                ),
-            ):
-                raise
-            # Telemetry setup failure -- fall back to uninstrumented path
-            self._logger.warning(
-                f"Telemetry error, executing without instrumentation: " f"{outer_error}"
-            )
+        def call_core() -> str:
             return self._call_llm_core(
                 messages, provider, model, temperature, routing_context, **kwargs
             )
+
+        return call_with_telemetry(
+            self._telemetry_service,
+            LLM_CALL_SPAN,
+            self._build_llm_span_initial_attributes(provider, model),
+            call_core,
+            lambda span, result: self._capture_llm_content(span, messages, result),
+            self._set_span_status_ok,
+            self._record_llm_call_exception_safe,
+            self._logger,
+            (
+                LLMServiceError,
+                LLMProviderError,
+                LLMConfigurationError,
+                LLMDependencyError,
+            ),
+            call_core,
+        )
 
     def _call_llm_core(
         self,
@@ -1195,7 +1172,7 @@ class LLMService:
             # silently rewrite the resolved identity with the fallback provider.
             # Mirrors the identical guard in _call_llm_async_direct:842.
             raise
-        except BudgetGuardRefusal:
+        except (BudgetGuardRefusal, AttemptLifecycleRefusal):
             # REQ-F-003 / NFR-F-003: same pass-through as the direct path --
             # a budget-guard refusal must not be treated as a pre-selection
             # routing failure and silently retried against fallback_provider.
@@ -1359,6 +1336,9 @@ class LLMService:
             provider, current_model, typed_error
         ) from typed_error
 
+    async def _get_async_client(self, provider: str, config: Dict[str, Any]) -> Any:
+        return await get_async_client(self._client_factory, provider, config)
+
     async def _dispatch_fallback_ladder(
         self,
         provider: str,
@@ -1378,7 +1358,7 @@ class LLMService:
                 original_messages,
                 typed_error,
                 self._provider_utils.get_provider_config,
-                self._client_factory.get_or_create_client,
+                self._get_async_client,
                 self._message_utils.convert_messages_to_langchain,
                 **kwargs,
             )
@@ -1421,7 +1401,7 @@ class LLMService:
             max_tokens = kwargs.pop("max_tokens", None)
             config = self._resolve_config(provider, model, temperature, max_tokens)
             current_model = config.get("model", "unknown")
-            client = self._client_factory.get_or_create_client(provider, config)
+            client = await self._get_async_client(provider, config)
             return await self._bind_and_invoke_direct(
                 client,
                 messages,
@@ -1433,7 +1413,7 @@ class LLMService:
             )
         except LLMResolvedCallError:
             raise  # Already wrapped by the fallback handler — tier identity intact.
-        except BudgetGuardRefusal:
+        except (BudgetGuardRefusal, AttemptLifecycleRefusal):
             # REQ-F-003/NFR-F-003 policy decision, not a transient failure --
             # propagate unconditionally; call_llm_async unwraps at the top.
             raise
@@ -1594,7 +1574,11 @@ class LLMService:
         Carries only measured or configured values (REQ-F-003, REQ-F-009,
         Out of Scope 5) -- no fabricated token estimates.
         """
-        rates = self._cost_calculator.get_rates(provider, model)
+        rates = (
+            governed_rates(self._cost_calculator, provider, model)
+            if _attempt_lifecycle.get() is not None
+            else self._cost_calculator.get_rates(provider, model)
+        )
         max_possible_output_cost: Optional[Decimal] = None
         if (
             max_output_tokens is not None
@@ -1616,6 +1600,7 @@ class LLMService:
                 len(str(getattr(m, "content", ""))) for m in langchain_messages
             ),
             attempt_kind=attempt_kind,
+            attempt_lifecycle_active=_attempt_lifecycle.get() is not None,
         )
 
     async def _check_budget_before_dispatch(
@@ -1701,7 +1686,12 @@ class LLMService:
         )
 
         return await self._run_resilient_retry_loop(
-            client, langchain_messages, provider, model
+            client,
+            langchain_messages,
+            provider,
+            model,
+            attempt_kind=attempt_kind,
+            max_output_tokens=max_output_tokens,
         )
 
     @staticmethod
@@ -1759,15 +1749,11 @@ class LLMService:
         langchain_messages: List[Any],
         provider: str,
         model: str,
+        *,
+        attempt_kind: str = "primary",
+        max_output_tokens: Optional[int] = None,
     ) -> LLMResponse:
-        """Retry loop: attempt the call, retry retryable failures with backoff.
-
-        Extracted from ``_invoke_with_resilience_async`` (NFR-F-006). Owns
-        only the per-attempt try/except and the final exhaustion exit;
-        success construction lives in ``_attempt_llm_call_async``, per-attempt
-        failure classification/backoff-or-raise in
-        ``_handle_retry_attempt_failure``.
-        """
+        """Retry each admitted call, delegating failure handling and backoff."""
         max_attempts, backoff_base, backoff_max, jitter, attempt_timeout = (
             self._resolve_retry_config()
         )
@@ -1780,8 +1766,17 @@ class LLMService:
                     f"(attempt {attempt}/{max_attempts})"
                 )
                 return await self._attempt_llm_call_async(
-                    client, langchain_messages, provider, model, attempt_timeout
+                    client,
+                    langchain_messages,
+                    provider,
+                    model,
+                    attempt_timeout,
+                    attempt_kind=attempt_kind,
+                    retry_ordinal=attempt,
+                    max_output_tokens=max_output_tokens,
                 )
+            except (BudgetGuardRefusal, AttemptLifecycleRefusal):
+                raise
             except Exception as e:
                 last_error = await self._handle_retry_attempt_failure(
                     e,
@@ -1840,33 +1835,29 @@ class LLMService:
         provider: str,
         model: str,
         attempt_timeout: float,
+        *,
+        attempt_kind: str = "primary",
+        retry_ordinal: int = 1,
+        max_output_tokens: Optional[int] = None,
     ) -> LLMResponse:
-        """Single provider invocation plus success-path ``LLMResponse`` construction.
-
-        Extracted from ``_invoke_with_resilience_async``'s retry loop
-        (NFR-F-006). Raises on any provider failure -- classification and the
-        retry-vs-terminal decision are the caller's
-        (``_run_resilient_retry_loop``'s) responsibility.
-
-        TD-028: the provider invocation is bounded by ``attempt_timeout`` (a
-        fresh per-attempt idle-timeout budget, seconds) so a provider that
-        connects but never returns cannot hang the retry loop indefinitely.
-        A resulting ``TimeoutError`` is converted to ``LLMTimeoutError`` --
-        already a typed, retryable ``LLMServiceError`` -- so it flows through
-        the caller's existing classify/retry/circuit-breaker handling
-        unchanged (``classify_llm_error`` passes already-typed errors through).
-        """
-        start_time = time.monotonic()
-        try:
-            async with asyncio.timeout(attempt_timeout):
-                response = await self._invoke_provider_async(client, langchain_messages)
-        except TimeoutError as e:
-            raise LLMTimeoutError(
-                f"LLM call to {provider}:{model} timed out after "
-                f"{attempt_timeout}s with no response (idle timeout)"
-            ) from e
-        duration = time.monotonic() - start_time
-        return self._build_success_llm_response(response, provider, model, duration)
+        """Admit after preparation, settle before any return, retry or fallback."""
+        return await invoke_accounted_attempt(
+            _attempt_lifecycle.get(),
+            self._cost_calculator,
+            provider,
+            model,
+            attempt_kind,
+            retry_ordinal,
+            max_output_tokens,
+            lambda: self._invoke_provider_async(client, langchain_messages),
+            attempt_timeout,
+            lambda response: self._extract_provider_request_id(
+                getattr(response, "response_metadata", {}) or {}, provider
+            ),
+            lambda raw, duration, accounting: self._build_success_llm_response(
+                raw, provider, model, duration, accounting=accounting
+            ),
+        )
 
     def _build_success_llm_response(
         self,
@@ -1874,6 +1865,9 @@ class LLMService:
         provider: str,
         model: str,
         duration: float,
+        accounting: Optional[
+            Tuple[Optional[LLMUsage], Optional[LLMCostBreakdown]]
+        ] = None,
     ) -> LLMResponse:
         """Record a successful raw response and construct its safe receipt."""
         text, text_status = normalize_response_content(response)
@@ -1891,21 +1885,19 @@ class LLMService:
             else None
         )
         finish_reason = self._extract_finish_reason(response)
-        usage = self._extract_llm_usage(response)
-        if text_status == "non_text":
-            self._log_non_text_response_diagnostic(
-                response,
-                provider=provider,
-                model=model,
-                request_id=req_id,
-                finish_reason=finish_reason,
-                usage_present=usage is not None,
-            )
-        self._logger.debug(
-            f"LLM call successful, response length: {len(text)}"
-            + (f", request_id: {req_id}" if req_id else "")
+        usage = (
+            accounting[0]
+            if accounting is not None
+            else self._extract_llm_usage(response)
         )
-        cost = self._cost_calculator.calculate(usage, provider, model)
+        self._observe_successful_receipt(
+            response, text, text_status, provider, model, req_id, finish_reason, usage
+        )
+        cost = (
+            accounting[1]
+            if accounting is not None
+            else self._cost_calculator.calculate(usage, provider, model)
+        )
         self._record_cost_span_attribute(cost)
         return LLMResponse(
             text=text,
@@ -1916,6 +1908,13 @@ class LLMService:
             cost=cost,
             tool_calls=extract_tool_calls(response),
             text_status=text_status,
+        )
+
+    def _observe_successful_receipt(self, *receipt: Any) -> None:
+        observe_successful_receipt(
+            self._logger,
+            self._log_non_text_response_diagnostic,
+            *receipt,
         )
 
     def _log_non_text_response_diagnostic(
@@ -2150,13 +2149,12 @@ class LLMService:
         self, client: Any, langchain_messages: List[Any]
     ) -> Any:
         """Invoke the provider client with native async or worker-thread fallback."""
-        async_invoke = getattr(client, "ainvoke", None)
-        if callable(async_invoke):
-            response = async_invoke(langchain_messages)
-            if inspect.isawaitable(response):
-                return await response
-            return response
-        return await asyncio.to_thread(client.invoke, langchain_messages)
+        return await invoke_provider_async(
+            client,
+            langchain_messages,
+            self._client_factory,
+            governed=_attempt_lifecycle.get() is not None,
+        )
 
     # ------------------------------------------------------------------
     # Routing telemetry helpers (error-isolated, silent no-op when disabled)
@@ -2250,6 +2248,26 @@ class LLMService:
         """Clear the client cache."""
         self._client_factory.clear_cache()
         self._logger.debug("[LLMService] Client cache cleared")
+
+    async def shutdown(self) -> None:
+        """Release governed client resources through the owning factory."""
+        await self._client_factory.shutdown()
+
+    def retire(self) -> None:
+        """Reject new calls while already-admitted governed calls finish."""
+        self._client_factory.retire()
+
+    def assert_runtime_owner_loop(self) -> None:
+        """Validate lifespan loop affinity when governed clients already own one."""
+        self._client_factory.assert_owner_loop()
+
+    def prepare_shutdown(self) -> None:
+        """Reserve idle runtime shutdown before its container is detached."""
+        self._client_factory.prepare_shutdown()
+
+    def prepare_sync_shutdown(self) -> bool:
+        """Reserve synchronous shutdown when no governed owner is active."""
+        return self._client_factory.prepare_sync_shutdown()
 
     def get_routing_stats(self) -> Dict[str, Any]:
         """
@@ -2876,6 +2894,8 @@ class LLMService:
             LLMBatchUnsupportedProviderError: For unregistered providers.
         """
         from agentmap.services.llm._param_resolution import build_resolved_params_list
+
+        reject_batch_lifecycle_options(request)
 
         if not request.requests:
             raise LLMServiceError(
@@ -3605,7 +3625,9 @@ class LLMService:
         on ``isinstance(e, BudgetGuardRefusal)``, identical to the pre-TD-043
         inline checks.
         """
-        if isinstance(exception, BudgetGuardRefusal):
+        if isinstance(exception, AttemptLifecycleRefusal):
+            self._record_span_exception_safe(span, Exception(str(exception)))
+        elif isinstance(exception, BudgetGuardRefusal):
             self._record_span_exception_safe(span, telemetry_safe_marker(exception))
         else:
             self._record_span_exception_safe(span, exception)
@@ -3926,20 +3948,22 @@ class LLMService:
         fallback tier). Without this unwrap, the internal marker type would
         leak to a stream caller instead of the guard's own exception.
         """
-        kwargs["cache_system_prompt"] = cache_system_prompt
-        try:
-            if self._telemetry_service is not None:
-                async for chunk in self._call_llm_stream_async_with_telemetry(
-                    messages, provider, model, temperature, routing_context, **kwargs
-                ):
-                    yield chunk
-            else:
-                async for chunk in self._call_llm_stream_async_core(
-                    messages, provider, model, temperature, routing_context, **kwargs
-                ):
-                    yield chunk
-        except BudgetGuardRefusal as refusal:
-            raise refusal.original
+        async for chunk in isolated_llm_stream(
+            lambda: create_llm_stream_async(
+                (messages, provider, model, temperature, routing_context),
+                cache_system_prompt,
+                kwargs,
+                self._call_llm_stream_async_with_telemetry,
+                self._call_llm_stream_async_core,
+                self._telemetry_service is not None,
+            )
+        ):
+            yield chunk
+
+    async def _close_async_stream_preserving_primary(
+        self, stream: Any, primary_error: Optional[BaseException]
+    ) -> None:
+        await close_async_stream_preserving_primary(stream, primary_error)
 
     async def _call_llm_stream_async_with_telemetry(
         self,
@@ -3985,6 +4009,7 @@ class LLMService:
         resolved_provider = provider
         resolved_model = model
         accumulated_text: List[str] = []
+        primary_error: Optional[BaseException] = None
 
         try:
             async for chunk in self._call_llm_stream_async_core(
@@ -4010,7 +4035,7 @@ class LLMService:
             self._record_duration_metric(
                 time.monotonic() - t0, resolved_provider or "", resolved_model or ""
             )
-        except Exception as e:
+        except BaseException as error:
             # T-E05-F06-008 round-4 UAT: same fix as the non-streaming
             # telemetry wrapper -- a BudgetGuardRefusal reaching here (from a
             # fallback tier's pre-first-chunk materialization, see
@@ -4018,10 +4043,16 @@ class LLMService:
             # guard's raw exception via __cause__; substitute a class-name
             # -only marker so span telemetry never exports host budget data.
             # See _record_llm_call_exception_safe (TD-043).
-            self._record_llm_call_exception_safe(span, e)
+            primary_error = error
+            if isinstance(error, Exception):
+                self._record_llm_call_exception_safe(span, error)
             raise
         finally:
-            span_cm.__exit__(None, None, None)
+            close_span_preserving_primary(
+                span_cm,
+                primary_error,
+                operation="LLM stream telemetry span close",
+            )
 
     async def _call_llm_stream_async_core(
         self,
