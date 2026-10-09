@@ -93,9 +93,9 @@ class LLMCostCalculator:
 
         Returns ``None`` in every REQ-F-002 case: ``usage is None``, no
         catalog entry for the resolved pair, or any token bucket present in
-        ``usage`` with a value greater than zero has no configured rate. A
-        bucket whose value is ``None`` or ``0`` contributes nothing and does
-        not require a configured rate.
+        ``usage`` with a value greater than zero has no configured rate.
+        Missing core counts require an explicit zero rate. Optional cache
+        counts may be absent. Zero counts do not require a rate.
         """
         if usage is None:
             return None
@@ -110,7 +110,7 @@ class LLMCostCalculator:
             (usage.cache_creation_input_tokens, rates.cache_write_per_1m),
             (usage.cache_read_input_tokens, rates.cache_read_per_1m),
         )
-        if any(tokens and rate is None for tokens, rate in buckets):
+        if not self._buckets_are_trustworthy(buckets):
             return None
 
         input_cost = self._bucket_cost(usage.input_tokens, rates.input_per_1m)
@@ -134,6 +134,16 @@ class LLMCostCalculator:
             cache_write_cost=self._quantize(cache_write_cost),
             cache_read_cost=self._quantize(cache_read_cost),
         )
+
+    @staticmethod
+    def _buckets_are_trustworthy(
+        buckets: Tuple[Tuple[Optional[int], Optional[Decimal]], ...],
+    ) -> bool:
+        if any(tokens is not None and tokens < 0 for tokens, _ in buckets):
+            return False
+        if any(tokens is None and rate != Decimal(0) for tokens, rate in buckets[:2]):
+            return False
+        return not any(tokens and rate is None for tokens, rate in buckets)
 
     @staticmethod
     def _bucket_cost(tokens: Optional[int], rate: Optional[Decimal]) -> Decimal:

@@ -29,11 +29,14 @@ import cycle to dodge (verified with a direct import smoke test; see
 T-E05-F06-008 rework notes).
 """
 
+from inspect import isawaitable
 from typing import Any, List, NoReturn, Optional, Tuple
 
+from agentmap.exceptions import AttemptLifecycleRefusal
 from agentmap.exceptions.service_exceptions import LLMResolvedCallError
 from agentmap.models.llm_execution import LLMMessage, LLMResponse
 from agentmap.services.llm._budget_guard_refusal import BudgetGuardRefusal
+from agentmap.services.llm.attempt_lifecycle import attempt_lifecycle
 from agentmap.services.llm_message_service import LLMMessageService
 
 
@@ -62,9 +65,8 @@ class LLMFallbackAsyncLadderMixin:
         ``response``/``tier_error`` is set. ``client_resolved`` is True once
         ``get_or_create_client_fn`` succeeded -- preserves the MEDIUM-2 fix's
         "identity reflects only an attempted network call" semantics without
-        a callback. ``BudgetGuardRefusal`` is deliberately **not** caught --
-        it propagates so the ladder stops instead of treating a fail-closed
-        refusal as an ordinary tier failure (E05-F06 REQ-F-003 / NFR-F-003).
+        a callback. ``BudgetGuardRefusal`` is not caught -- it stops the ladder
+        instead of becoming a tier failure (E05-F06 REQ-F-003 / NFR-F-003).
         Extracted from ``try_with_fallback_async`` (NFR-F-006).
         """
         client_resolved = False
@@ -76,15 +78,22 @@ class LLMFallbackAsyncLadderMixin:
             config = dict(config)  # defensive copy — avoid mutating shared config
             config["model"] = fallback_model
             client = get_or_create_client_fn(fallback_provider, config)
+            if isawaitable(client):
+                client = await client
             client_resolved = True
+            limits = (
+                {"max_output_tokens": config.get("max_tokens")}
+                if attempt_lifecycle.get() is not None
+                else {}
+            )
             result = await self._invoke_client_async(
-                client, langchain_msgs, fallback_provider, fallback_model
+                client, langchain_msgs, fallback_provider, fallback_model, **limits
             )
             self._logger.info(
                 f"Fallback tier '{fallback_provider}:{fallback_model}' successful"
             )
             return result, None, client_resolved
-        except BudgetGuardRefusal:
+        except (BudgetGuardRefusal, AttemptLifecycleRefusal):
             raise
         except Exception as tier_error:
             self._logger.warning(

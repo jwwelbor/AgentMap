@@ -26,15 +26,18 @@ from agentmap.exceptions.runtime_exceptions import (
     InvalidInputs,
 )
 from agentmap.exceptions.service_exceptions import (
+    AttemptLifecycleRefusal,
     FunctionResolutionException,
     LLMBudgetExceededError,
     LLMConfigurationError,
     LLMDependencyError,
+    LLMLifecycleCleanupError,
     LLMProviderError,
     LLMRateLimitError,
     LLMResolvedCallError,
     LLMServiceError,
     LLMTimeoutError,
+    ResponseCaptureFailure,
 )
 from agentmap.exceptions.storage_exceptions import (
     CollectionNotFoundError,
@@ -64,6 +67,7 @@ __all__ = [
     "ConfigurationException",
     "DocumentNotFoundError",
     "FunctionResolutionException",
+    "AttemptLifecycleRefusal",
     "GraphBuildingError",
     "MessagingConnectionError",
     "MessagingOperationError",
@@ -74,6 +78,8 @@ __all__ = [
     "LLMProviderError",
     "LLMConfigurationError",
     "LLMDependencyError",
+    "LLMLifecycleCleanupError",
+    "ResponseCaptureFailure",
     "LLMTimeoutError",
     "LLMRateLimitError",
     "LLMResolvedCallError",

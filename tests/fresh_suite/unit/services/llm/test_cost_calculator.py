@@ -145,7 +145,7 @@ class TestCostCalculatorQuantizationAndMalformedRates(unittest.TestCase):
             "models": {"anthropic": {"m": {"input_per_1m": "3.33"}}},
         }
         calculator = _make_calculator(catalog)
-        usage = LLMUsage(input_tokens=333)
+        usage = LLMUsage(input_tokens=333, output_tokens=0)
 
         result_1 = calculator.calculate(usage, "anthropic", "m")
         result_2 = calculator.calculate(usage, "anthropic", "m")
@@ -276,6 +276,7 @@ class TestCostCalculatorNoPricingConfigured(unittest.TestCase):
         result = calculator.calculate(usage, "openai", "gpt-4")
 
         self.assertIsNone(result)
+        self.assertIsNone(calculator.catalog_version)
 
     def test_tc_003_no_entry_for_resolved_pair_yields_none(self):
         """No pricing at all also means get_rates() itself returns None, not
@@ -344,24 +345,3 @@ class TestCostCalculatorCaseInsensitiveLookup(unittest.TestCase):
 
         self.assertIsNone(calculator.get_rates("anthropic", "claude-sonnet-4"))
         self.assertIsNone(calculator.get_rates("anthropic", "claude-sonnet-4-5-extra"))
-
-
-class TestCostCalculatorZeroCostWhenUnconfigured(unittest.TestCase):
-    """TC-NFR2-01 (calculator-level slice): zero-config catalog returns None
-    cheaply, with no exception and no partial computation. The full
-    LLMService-level "no LLMBudgetCheck constructed" assertion is out of
-    scope here -- see module docstring."""
-
-    def test_tc_nfr2_01_empty_catalog_calculate_returns_none(self):
-        calculator = _make_calculator({})
-
-        result = calculator.calculate(
-            LLMUsage(input_tokens=1, output_tokens=1), "openai", "gpt-4"
-        )
-
-        self.assertIsNone(result)
-        self.assertIsNone(calculator.catalog_version)
-
-
-if __name__ == "__main__":
-    unittest.main()

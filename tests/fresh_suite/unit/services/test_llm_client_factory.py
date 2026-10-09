@@ -311,62 +311,15 @@ class TestLLMClientFactoryStreamingCacheKey(unittest.TestCase):
         false_key = next(k for k in keys if k.endswith("_False"))
         true_key = next(k for k in keys if k.endswith("_True"))
 
-        self.assertEqual(
-            false_key,
-            "openai_gpt-4_testkey1_256_0.4_False",
-            "Non-streaming key must match exact shape: provider_model_apikey8_max_tokens_temp!r_False",
-        )
-        self.assertEqual(
-            true_key,
-            "openai_gpt-4_testkey1_256_0.4_True",
-            "Streaming key must match exact shape: provider_model_apikey8_max_tokens_temp!r_True",
-        )
+        identity = self.factory._api_key_tokens[config["api_key"]]
+        self.assertEqual(len(identity), 64)
+        self.assertEqual(false_key, f"openai_gpt-4_{identity}_256_0.4_False")
+        self.assertEqual(true_key, f"openai_gpt-4_{identity}_256_0.4_True")
+        self.assertNotIn(config["api_key"], repr(keys))
 
-    def test_api_key_truncation_equality_preservation(self):
-        """TC-F02-KEY-6: api_key[:8] equality-preservation / truncation pin.
-
-        Two keys sharing the same first 8 chars but differing afterward produce
-        one construction (cache hit). A key differing in first 8 chars is a miss.
-        REQ-NF-001, REQ-NF-003, AC-2.
-        """
-        # Two api_keys with same first 8 chars — should produce a cache hit
-        config1 = dict(self._base_config)
-        config1["api_key"] = "abcdefgh_LONGER1"
-        config2 = dict(self._base_config)
-        config2["api_key"] = "abcdefgh_LONGER2"
-
-        # An api_key that differs in the first 8 chars — should be a cache miss
-        config3 = dict(self._base_config)
-        config3["api_key"] = "XXXXXXXX_anything"
-
-        first_client = Mock(name="first_client")
-        second_client = Mock(name="second_client")
-
-        with patch.object(
-            self.factory,
-            "_create_langchain_client",
-            side_effect=[first_client, second_client],
-        ) as mock_create:
-            # Same first 8 chars — second call should hit cache
-            got1 = self.factory.get_or_create_client("openai", config1, streaming=False)
-            got2 = self.factory.get_or_create_client("openai", config2, streaming=False)
-            # Different first 8 chars — should be a cache miss
-            got3 = self.factory.get_or_create_client("openai", config3, streaming=False)
-
-        self.assertIs(got1, first_client)
-        self.assertIs(
-            got2,
-            first_client,
-            "Keys sharing same api_key[:8] must be a cache hit — extra material must NOT be in key",
-        )
-        self.assertIs(
-            got3, second_client, "Keys with different api_key[:8] must be a cache miss"
-        )
-        self.assertEqual(
-            mock_create.call_count,
-            2,
-            "Exactly 2 constructions: one for same-first-8 pair, one for distinct-prefix key",
-        )
+        other_factory = LLMClientFactory(self.logging_service)
+        other_factory._cache_key("openai", config, False, False)
+        self.assertNotEqual(identity, other_factory._api_key_tokens[config["api_key"]])
 
     def test_default_streaming_arg_behaves_as_non_streaming(self):
         """TC-F02-REG-3: calling with no streaming arg behaves as non-streaming.
