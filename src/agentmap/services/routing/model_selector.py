@@ -5,13 +5,26 @@ This module provides helper functions for selecting optimal models based on
 provider preferences, cost optimization, and availability constraints.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
+from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.routing.types import (
     RoutingDecision,
     TaskComplexity,
 )
+
+
+def filter_excluded_providers(
+    available_providers: Sequence[str], excluded_providers: Sequence[str]
+) -> List[str]:
+    """Apply exclusions by provider identity while preserving availability order."""
+    excluded = {canonicalize_provider(provider) for provider in excluded_providers}
+    return [
+        provider
+        for provider in available_providers
+        if canonicalize_provider(provider) not in excluded
+    ]
 
 
 class ModelSelector:
@@ -59,7 +72,7 @@ class ModelSelector:
         # Try to find the provider for this model
         for provider in available_providers:
             provider_matrix = self.routing_config.routing_matrix.get(
-                provider.lower(), {}
+                canonicalize_provider(provider), {}
             )
             if model_override in provider_matrix.values():
                 return RoutingDecision(
@@ -83,7 +96,7 @@ class ModelSelector:
         self,
         preferred_providers: List[str],
         available_providers: List[str],
-        excluded_providers: List[str],
+        excluded_providers: Sequence[str] = (),
     ) -> List[str]:
         """
         Filter providers by availability and exclusions.
@@ -96,16 +109,17 @@ class ModelSelector:
         Returns:
             Filtered list of available preferred providers
         """
-        available_set = set(p.lower() for p in available_providers)
-        excluded_set = set(p.lower() for p in excluded_providers)
-
-        filtered = []
-        for provider in preferred_providers:
-            provider_lower = provider.lower()
-            if provider_lower in available_set and provider_lower not in excluded_set:
-                filtered.append(provider_lower)
-
-        return filtered
+        available_set = {
+            canonicalize_provider(provider)
+            for provider in filter_excluded_providers(
+                available_providers, excluded_providers
+            )
+        }
+        return [
+            provider
+            for provider in map(canonicalize_provider, preferred_providers)
+            if provider in available_set
+        ]
 
     def apply_cost_optimization(
         self,
@@ -146,7 +160,7 @@ class ModelSelector:
 
         for provider in preferred_providers:
             model = self.routing_config.get_model_for_complexity(
-                provider, complexity_str
+                canonicalize_provider(provider), complexity_str
             )
             if model:
                 return RoutingDecision(

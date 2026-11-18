@@ -8,6 +8,8 @@ availability status in the routing system.
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from agentmap.services.llm.provider_names import canonicalize_provider
+
 
 def get_cached_availability(
     availability_cache_service, provider: str, logger
@@ -28,7 +30,7 @@ def get_cached_availability(
 
     try:
         return availability_cache_service.get_availability(
-            "llm_provider", provider.lower()
+            "llm_provider", canonicalize_provider(provider)
         )
     except Exception as e:
         logger.debug(f"Cache lookup failed for llm_provider.{provider}: {e}")
@@ -55,7 +57,7 @@ def set_cached_availability(
 
     try:
         return availability_cache_service.set_availability(
-            "llm_provider", provider.lower(), result
+            "llm_provider", canonicalize_provider(provider), result
         )
     except Exception as e:
         logger.debug(f"Cache set failed for llm_provider.{provider}: {e}")
@@ -90,7 +92,7 @@ async def get_provider_availability(
 
     # Fallback to basic availability check without actual validation
     # (Real validation should be done by LLM services and cached)
-    is_configured = provider.lower() in routing_matrix
+    is_configured = canonicalize_provider(provider) in routing_matrix
     result = {
         "enabled": is_configured,
         "validation_passed": is_configured,  # Assume configured = working for routing config
@@ -187,7 +189,7 @@ def clear_provider_cache(availability_cache_service, provider: Optional[str], lo
     if availability_cache_service:
         if provider:
             availability_cache_service.invalidate_cache(
-                "llm_provider", provider.lower()
+                "llm_provider", canonicalize_provider(provider)
             )
             logger.info(f"Cleared availability cache for provider: {provider}")
         else:

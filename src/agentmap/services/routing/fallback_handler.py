@@ -7,7 +7,9 @@ providers are unavailable or routing fails.
 
 from typing import List
 
+from agentmap.exceptions.service_exceptions import LLMConfigurationError
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
+from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.routing.types import (
     RoutingContext,
     RoutingDecision,
@@ -57,7 +59,7 @@ class FallbackHandler:
         Apply fallback strategy when preferred providers unavailable.
 
         Args:
-            available_providers: List of available providers
+            available_providers: Available providers after applying request exclusions
             task_type: Type of task being performed
             complexity: Task complexity level
             routing_context: Routing context and preferences
@@ -70,10 +72,6 @@ class FallbackHandler:
             f"Applying fallback strategy for {task_type}({complexity})"
         )
 
-        # Compute lowercase available providers once for efficiency
-        available_providers_lower = [p.lower() for p in available_providers]
-        available_providers_set = set(available_providers_lower)
-
         # Strategy 1: Try lower complexity if enabled
         if (
             routing_context.retry_with_lower_complexity
@@ -81,7 +79,7 @@ class FallbackHandler:
         ):
             lower_complexity = self.get_lower_complexity(complexity)
             decision = select_from_preferred_providers(
-                available_providers_lower, task_type, lower_complexity
+                available_providers, task_type, lower_complexity
             )
             if decision:
                 decision.fallback_used = True
@@ -89,29 +87,54 @@ class FallbackHandler:
                 decision.confidence = 0.6
                 return decision
 
-        # Strategy 2: Use configured fallback provider/model
-        fallback_provider = (
-            routing_context.fallback_provider
-            or self.routing_config.get_fallback_provider()
-        )
-        fallback_model = (
-            routing_context.fallback_model or self.routing_config.get_fallback_model()
+        return self.select_fallback(
+            available_providers,
+            complexity,
+            routing_context,
+            "All fallback strategies exhausted",
         )
 
-        if fallback_provider.lower() in available_providers_set:
-            return RoutingDecision(
-                provider=fallback_provider,
-                model=fallback_model,
-                complexity=complexity,
-                confidence=0.5,
-                reasoning=f"Configured fallback: {fallback_provider}:{fallback_model}",
-                fallback_used=True,
+    def select_fallback(
+        self,
+        available_providers: List[str],
+        complexity: TaskComplexity,
+        routing_context: RoutingContext,
+        reason: str,
+    ) -> RoutingDecision:
+        """Select the configured fallback if eligible, otherwise recover in order."""
+        default_provider = canonicalize_provider(
+            self.routing_config.get_fallback_provider()
+        )
+        provider = canonicalize_provider(
+            routing_context.fallback_provider or default_provider
+        )
+        if provider not in set(map(canonicalize_provider, available_providers)):
+            return self.create_emergency_fallback(available_providers, reason)
+
+        model = routing_context.fallback_model
+        if not model and provider == default_provider:
+            model = self.routing_config.fallback.get("default_model")
+        if not model:
+            try:
+                model = self._require_provider_default(provider)
+            except LLMConfigurationError:
+                return self.create_emergency_fallback(available_providers, reason)
+        return RoutingDecision(
+            provider=provider,
+            model=model,
+            complexity=complexity,
+            confidence=0.5,
+            reasoning=f"Configured fallback: {provider}:{model}",
+            fallback_used=True,
+        )
+
+    def _require_provider_default(self, provider: str) -> str:
+        model = self.routing_config.get_provider_default_model(provider)
+        if not model:
+            raise LLMConfigurationError(
+                f"No fallback model configured for provider '{provider}'"
             )
-
-        # Strategy 3: Emergency fallback to first available provider
-        return self.create_emergency_fallback(
-            available_providers, "All fallback strategies exhausted"
-        )
+        return model
 
     def get_lower_complexity(self, complexity: TaskComplexity) -> TaskComplexity:
         """
@@ -147,30 +170,40 @@ class FallbackHandler:
         if not available_providers:
             raise ValueError("No providers available for emergency fallback")
 
-        # Use first available provider with its lowest complexity model
-        provider = available_providers[0]
-        provider_matrix = self.routing_config.routing_matrix.get(provider.lower(), {})
+        last_model_error = None
+        for provider in available_providers:
+            provider_key = canonicalize_provider(provider)
+            provider_matrix = self.routing_config.routing_matrix.get(provider_key, {})
 
-        # Try to get the lowest complexity model using the enum-based list
-        for complexity_level in VALID_COMPLEXITY_LEVELS:
-            if complexity_level in provider_matrix:
-                model = provider_matrix[complexity_level]
-                return RoutingDecision(
-                    provider=provider,
-                    model=model,
-                    complexity=TaskComplexity.LOW,
-                    confidence=0.3,
-                    reasoning=f"Emergency fallback: {reason}",
-                    fallback_used=True,
-                )
+            for complexity_level in VALID_COMPLEXITY_LEVELS:
+                model = provider_matrix.get(complexity_level)
+                if model:
+                    return RoutingDecision(
+                        provider=provider,
+                        model=model,
+                        complexity=TaskComplexity.LOW,
+                        confidence=0.3,
+                        reasoning=f"Emergency fallback: {reason}",
+                        fallback_used=True,
+                    )
 
-        # Last resort: use system fallback model
-        fallback_model = self.routing_config.get_fallback_model()
-        return RoutingDecision(
-            provider=provider,
-            model=fallback_model,
-            complexity=TaskComplexity.LOW,
-            confidence=0.1,
-            reasoning=f"Last resort fallback: {reason}",
-            fallback_used=True,
+            try:
+                model = self._require_provider_default(provider_key)
+            except LLMConfigurationError as error:
+                last_model_error = error
+                continue
+
+            return RoutingDecision(
+                provider=provider,
+                model=model,
+                complexity=TaskComplexity.LOW,
+                confidence=0.1,
+                reasoning=f"Last resort fallback: {reason}",
+                fallback_used=True,
+            )
+
+        if last_model_error:
+            raise last_model_error
+        raise LLMConfigurationError(
+            "No fallback model configured for any eligible provider"
         )

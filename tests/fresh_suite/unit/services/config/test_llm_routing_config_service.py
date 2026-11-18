@@ -12,6 +12,9 @@ from src.agentmap.services.config.app_config_service import AppConfigService
 from src.agentmap.services.config.llm_routing_config_service import (
     LLMRoutingConfigService,
 )
+from src.agentmap.services.config.llm_routing_validators import (
+    validate_provider_routing,
+)
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
@@ -184,6 +187,71 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         self.assertTrue(self.llm_routing_service.supports_prompt_caching("anthropic"))
         self.assertFalse(self.llm_routing_service.supports_prompt_caching("openai"))
         self.assertFalse(self.llm_routing_service.supports_prompt_caching("google"))
+
+    def test_alias_keyed_provider_config_is_normalized_to_canonical_identity(self):
+        openai_models = self.routing_config["routing_matrix"].pop("openai")
+        self.routing_config["routing_matrix"]["gpt"] = openai_models
+        self.routing_config["provider_capabilities"].pop("openai")
+        self.routing_config["provider_capabilities"]["gpt"] = {"prompt_caching": True}
+        self.routing_config["task_types"]["general"]["provider_preference"] = [
+            "anthropic",
+            "gpt",
+        ]
+
+        service = LLMRoutingConfigService(
+            app_config_service=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+        )
+
+        self.assertIn("openai", service.routing_matrix)
+        self.assertNotIn("gpt", service.routing_matrix)
+        self.assertEqual(service.get_model_for_complexity("GPT", "low"), "gpt-4o-mini")
+        self.assertTrue(service.supports_prompt_caching("openai"))
+        self.assertFalse(
+            any(
+                "unknown provider 'gpt'" in error
+                for error in service.validate_AppConfigService()
+            )
+        )
+
+    def test_provider_routing_validation_prefers_canonical_config_independent_of_order(
+        self,
+    ):
+        provider_configs = [
+            {
+                "openai": {"api_key": "canonical-key"},
+                "gpt": {},
+            },
+            {
+                "gpt": {},
+                "openai": {"api_key": "canonical-key"},
+            },
+        ]
+
+        for providers in provider_configs:
+            app_config = Mock(spec=AppConfigService)
+            app_config.get_section.return_value = {"providers": providers}
+            errors = validate_provider_routing(
+                {"openai": {"low": "gpt-4o-mini"}},
+                app_config,
+                self.mock_logging_service.get_class_logger(self),
+            )
+
+            self.assertEqual(errors, [])
+
+    def test_non_mapping_provider_capabilities_is_reported(self):
+        self.routing_config["provider_capabilities"] = "invalid"
+        service = LLMRoutingConfigService(
+            app_config_service=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+        )
+
+        self.assertIn(
+            "provider_capabilities must be a dictionary",
+            service.validate_AppConfigService(),
+        )
 
     def test_get_prompt_cache_capable_providers(self):
         """Test listing prompt-cache-capable providers."""

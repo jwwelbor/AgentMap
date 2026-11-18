@@ -7,6 +7,7 @@ including the routing matrix, task types, and provider settings.
 
 from typing import Any, Dict, List
 
+from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.routing.types import get_valid_complexity_levels
 
 
@@ -61,7 +62,7 @@ def validate_routing_config(
         # Check provider preferences reference valid providers
         provider_preference = task_config.get("provider_preference", [])
         for provider in provider_preference:
-            if provider.lower() not in routing_matrix:
+            if canonicalize_provider(provider) not in routing_matrix:
                 errors.append(
                     f"Task type '{task_name}' references unknown provider '{provider}'"
                 )
@@ -77,13 +78,12 @@ def validate_routing_config(
 
     if provider_capabilities is None:
         provider_capabilities = {}
-
-    if provider_capabilities and not isinstance(provider_capabilities, dict):
+    elif not isinstance(provider_capabilities, dict):
         errors.append("provider_capabilities must be a dictionary")
         return errors
 
     for provider, capability_config in provider_capabilities.items():
-        provider_name = provider.lower()
+        provider_name = canonicalize_provider(provider)
         if provider_name not in routing_matrix:
             errors.append(
                 f"provider_capabilities references unknown provider '{provider}'"
@@ -199,15 +199,23 @@ def validate_provider_routing(
         # Get provider configurations
         llm_config = app_config_service.get_section("llm", {})
         providers_config = llm_config.get("providers", {})
+        providers_by_identity = {}
+        for provider, config in providers_config.items():
+            provider_key = canonicalize_provider(provider)
+            if (
+                provider_key not in providers_by_identity
+                or provider.lower() == provider_key
+            ):
+                providers_by_identity[provider_key] = config
 
         # Validate each provider in routing matrix has configuration
         for provider in available_providers:
-            if provider not in providers_config:
+            if provider not in providers_by_identity:
                 errors.append(
                     f"Provider '{provider}' in routing matrix but missing from LLM configuration"
                 )
             else:
-                provider_config = providers_config[provider]
+                provider_config = providers_by_identity[provider]
                 if not provider_config.get("api_key"):
                     errors.append(
                         f"Provider '{provider}' missing API key configuration"
@@ -215,7 +223,7 @@ def validate_provider_routing(
 
         # Check for configured providers not in routing matrix
         for provider in providers_config:
-            if provider not in available_providers:
+            if canonicalize_provider(provider) not in available_providers:
                 errors.append(
                     f"Provider '{provider}' configured but not in routing matrix"
                 )

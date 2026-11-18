@@ -66,6 +66,7 @@ from agentmap.services.config.llm_routing_validators import (
     validate_provider_routing,
     validate_routing_config,
 )
+from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.logging_service import LoggingService
 
 
@@ -148,7 +149,9 @@ class LLMRoutingConfigService:
 
         normalized: Dict[str, Dict[str, Any]] = {}
         for provider, provider_capabilities in capabilities.items():
-            normalized[provider.lower()] = provider_capabilities
+            provider_key = canonicalize_provider(provider)
+            if provider_key not in normalized or provider.lower() == provider_key:
+                normalized[provider_key] = provider_capabilities
         return normalized
 
     def get_activities_config(self) -> Dict[str, Any]:
@@ -241,7 +244,9 @@ class LLMRoutingConfigService:
         Returns:
             True when prompt caching is explicitly enabled for the provider
         """
-        capabilities = self.provider_capabilities.get(provider.lower(), {})
+        capabilities = self.provider_capabilities.get(
+            canonicalize_provider(provider), {}
+        )
         if not isinstance(capabilities, dict):
             return False
         return capabilities.get("prompt_caching", False) is True
@@ -303,6 +308,12 @@ class LLMRoutingConfigService:
 
         # Fall back to llm_models_config_service
         return self._llm_models_config_service.get_fallback_model()
+
+    def get_provider_default_model(self, provider: str) -> Optional[str]:
+        """Return a default belonging to the selected provider."""
+        key = canonicalize_provider(provider)
+        model = self._llm_models_config_service.get_default_model(key)
+        return model if isinstance(model, str) and model else None
 
     def is_cost_optimization_enabled(self) -> bool:
         """

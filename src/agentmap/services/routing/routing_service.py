@@ -8,13 +8,18 @@ matrix lookups, provider selection, and fallback strategies for optimal LLM rout
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+from agentmap.exceptions.service_exceptions import LLMConfigurationError
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
+from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.routing.activity_routing import ActivityRoutingTable
 from agentmap.services.routing.cache import RoutingCache
 from agentmap.services.routing.complexity_analyzer import PromptComplexityAnalyzer
 from agentmap.services.routing.fallback_handler import FallbackHandler
-from agentmap.services.routing.model_selector import ModelSelector
+from agentmap.services.routing.model_selector import (
+    ModelSelector,
+    filter_excluded_providers,
+)
 from agentmap.services.routing.types import (
     RoutingContext,
     RoutingDecision,
@@ -107,6 +112,9 @@ class LLMRoutingService:
         """
         start_time = time.time()
         self._routing_stats["total_requests"] += 1
+        eligible_providers = self._eligible_providers(
+            available_providers, routing_context
+        )
 
         try:
             self._logger.debug(
@@ -119,7 +127,7 @@ class LLMRoutingService:
             # 2. Check cache if enabled
             if self.cache:
                 cached_decision = self._check_cache(
-                    task_type, complexity, prompt, available_providers, routing_context
+                    task_type, complexity, prompt, eligible_providers, routing_context
                 )
                 if cached_decision:
                     self._routing_stats["cache_hits"] += 1
@@ -128,24 +136,24 @@ class LLMRoutingService:
 
             # 3. Build candidate list (activity-first) and choose if available
             decision = None
-            candidates = self.select_candidates(
+            candidates = self._select_candidates(
                 routing_context,
-                available_providers=available_providers,
+                available_providers=eligible_providers,
                 complexity=complexity,
             )
 
             if candidates:
                 decision = self._choose_candidate_decision(
                     candidates,
-                    available_providers,
+                    eligible_providers,
                     routing_context,
                     complexity,
                 )
 
             # 4. Fall back to matrix-based selection when needed
             if decision is None:
-                decision = self.select_optimal_model(
-                    task_type, complexity, available_providers, routing_context
+                decision = self._select_optimal_model(
+                    task_type, complexity, eligible_providers, routing_context
                 )
 
             # 5. Cache the decision if caching is enabled
@@ -154,7 +162,7 @@ class LLMRoutingService:
                     task_type,
                     complexity,
                     prompt,
-                    available_providers,
+                    eligible_providers,
                     routing_context,
                     decision,
                 )
@@ -175,10 +183,27 @@ class LLMRoutingService:
 
             return decision
 
+        except LLMConfigurationError:
+            raise
         except Exception as e:
             self._logger.error(f"Error in route_request: {e}")
-            # Return emergency fallback
-            return self._create_emergency_fallback(available_providers, str(e))
+            if routing_context.fallback_provider or routing_context.fallback_model:
+                return self.recover_route(eligible_providers, routing_context, str(e))
+            return self.create_emergency_fallback(eligible_providers, str(e))
+
+    @staticmethod
+    def _eligible_providers(
+        available_providers: List[str], routing_context: RoutingContext
+    ) -> List[str]:
+        """Apply request exclusions before selection or recovery."""
+        eligible = filter_excluded_providers(
+            available_providers, routing_context.excluded_providers
+        )
+        if available_providers and not eligible:
+            raise LLMConfigurationError(
+                "No eligible providers remain after routing exclusions"
+            )
+        return eligible
 
     def determine_complexity(
         self, task_type: str, prompt: str, routing_context: RoutingContext
@@ -217,8 +242,22 @@ class LLMRoutingService:
         Returns:
             Routing decision with selected provider and model
         """
+        eligible_providers = self._eligible_providers(
+            available_providers, routing_context
+        )
+        return self._select_optimal_model(
+            task_type, complexity, eligible_providers, routing_context
+        )
+
+    def _select_optimal_model(
+        self,
+        task_type: str,
+        complexity: TaskComplexity,
+        eligible_providers: List[str],
+        routing_context: RoutingContext,
+    ) -> RoutingDecision:
         self._logger.debug(
-            f"Selecting model for {task_type}({complexity}) from {available_providers}"
+            f"Selecting model for {task_type}({complexity}) from {eligible_providers}"
         )
 
         # 1. Check for model override first
@@ -226,8 +265,8 @@ class LLMRoutingService:
             return self.model_selector.handle_model_override(
                 routing_context.model_override,
                 complexity,
-                available_providers,
-                self._create_emergency_fallback,
+                eligible_providers,
+                self.create_emergency_fallback,
             )
 
         # 2. Get provider preferences for this task type
@@ -240,9 +279,9 @@ class LLMRoutingService:
         else:
             preferred_providers = task_preferences
 
-        # 3. Filter by available providers and exclusions
+        # 3. Keep eligible providers in preference order
         available_preferred = self.model_selector.filter_available_providers(
-            preferred_providers, available_providers, routing_context.excluded_providers
+            preferred_providers, eligible_providers
         )
 
         # 4. Apply cost optimization if enabled
@@ -267,7 +306,7 @@ class LLMRoutingService:
         # 6. Fallback to any available provider
         self._logger.warning("No preferred providers available, using fallback")
         return self.fallback_handler.apply_fallback_strategy(
-            available_providers,
+            eligible_providers,
             task_type,
             complexity,
             routing_context,
@@ -301,12 +340,26 @@ class LLMRoutingService:
             else RoutingContext.from_dict(routing_context)
         )
 
-        available = available_providers or list(
-            self.routing_config.routing_matrix.keys()
+        available = (
+            list(self.routing_config.routing_matrix)
+            if available_providers is None
+            else available_providers
         )
-        available_lower = [provider.lower() for provider in available]
-        excluded = {provider.lower() for provider in ctx.excluded_providers}
+        return self._select_candidates(
+            ctx,
+            available_providers=filter_excluded_providers(
+                available, ctx.excluded_providers
+            ),
+            complexity=complexity,
+        )
 
+    def _select_candidates(
+        self,
+        ctx: RoutingContext,
+        *,
+        available_providers: List[str],
+        complexity: Optional[TaskComplexity],
+    ) -> List[Dict[str, Any]]:
         if complexity is None:
             # Analyse prompt from context to infer complexity when not provided
             prompt = ctx.prompt or ctx.input_context.get("user_input", "")
@@ -325,6 +378,7 @@ class LLMRoutingService:
         activity_table = ActivityRoutingTable(self.routing_config, self._logger)
         ordered: List[Dict[str, Any]] = []
         seen_pairs: Set[Tuple[str, str]] = set()
+        available_keys = set(map(canonicalize_provider, available_providers))
 
         # 1) Activity-driven plan (primary + fallbacks)
         for entry in activity_table.plan(ctx.activity, complexity_key):
@@ -332,10 +386,10 @@ class LLMRoutingService:
             model = entry.get("model")
             if not provider or not model:
                 continue
-            provider_lower = provider.lower()
-            if provider_lower not in available_lower or provider_lower in excluded:
+            provider_key = canonicalize_provider(provider)
+            if provider_key not in available_keys:
                 continue
-            pair = (provider_lower, model)
+            pair = (provider_key, model)
             if pair in seen_pairs:
                 continue
             candidate: Dict[str, Any] = {"provider": provider, "model": model}
@@ -345,16 +399,14 @@ class LLMRoutingService:
             seen_pairs.add(pair)
 
         # 2) Matrix-based backstops for remaining providers
-        for provider in available:
-            provider_lower = provider.lower()
-            if provider_lower in excluded:
-                continue
+        for provider in available_providers:
+            provider_key = canonicalize_provider(provider)
             model = self.routing_config.get_model_for_complexity(
-                provider_lower, complexity_key
+                provider_key, complexity_key
             )
             if not model:
                 continue
-            pair = (provider_lower, model)
+            pair = (provider_key, model)
             if pair in seen_pairs:
                 continue
             ordered.append({"provider": provider, "model": model})
@@ -370,18 +422,18 @@ class LLMRoutingService:
                 candidate
                 for candidate in ordered
                 if self.routing_config.supports_prompt_caching(
-                    candidate["provider"].lower()
+                    canonicalize_provider(candidate["provider"])
                 )
             ]
 
         # 5) Apply provider preference ordering when supplied
         if ctx.provider_preference:
-            preference_index = {
-                p.lower(): i for i, p in enumerate(ctx.provider_preference)
-            }
+            preference_index: Dict[str, int] = {}
+            for index, provider in enumerate(ctx.provider_preference):
+                preference_index.setdefault(canonicalize_provider(provider), index)
             ordered.sort(
                 key=lambda item: preference_index.get(
-                    item["provider"].lower(), 1_000_000
+                    canonicalize_provider(item["provider"]), 1_000_000
                 )
             )
 
@@ -396,8 +448,7 @@ class LLMRoutingService:
     ) -> Optional[RoutingDecision]:
         """Select the first viable candidate and convert to a decision."""
 
-        available_set = {provider.lower() for provider in available_providers}
-        excluded = {provider.lower() for provider in routing_context.excluded_providers}
+        available_set = set(map(canonicalize_provider, available_providers))
         activity = routing_context.activity
 
         for index, candidate in enumerate(candidates):
@@ -406,8 +457,7 @@ class LLMRoutingService:
             if not provider or not model:
                 continue
 
-            provider_lower = provider.lower()
-            if provider_lower not in available_set or provider_lower in excluded:
+            if canonicalize_provider(provider) not in available_set:
                 continue
 
             reasoning = (
@@ -473,10 +523,18 @@ class LLMRoutingService:
             cost_optimization=routing_context.cost_optimization,
         )
 
-    def _create_emergency_fallback(
+    def recover_route(
+        self, eligible_providers: List[str], context: RoutingContext, reason: str
+    ) -> RoutingDecision:
+        """Resolve a configured or emergency fallback after a routing error."""
+        return self.fallback_handler.select_fallback(
+            eligible_providers, TaskComplexity.LOW, context, reason
+        )
+
+    def create_emergency_fallback(
         self, available_providers: List[str], reason: str
     ) -> RoutingDecision:
-        """Create an emergency fallback decision."""
+        """Create an emergency decision from the ordered eligible providers."""
         return self.fallback_handler.create_emergency_fallback(
             available_providers, reason
         )

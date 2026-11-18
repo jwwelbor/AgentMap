@@ -9,6 +9,7 @@ from typing import List
 
 from agentmap.models.features_registry import FeaturesRegistry
 from agentmap.services.config.availability_cache_service import AvailabilityCacheService
+from agentmap.services.llm.provider_names import canonicalize_provider
 
 
 class ProviderManager:
@@ -21,13 +22,6 @@ class ProviderManager:
     - Resolving provider aliases
     - Caching provider status
     """
-
-    # Provider alias mappings
-    LLM_ALIASES = {
-        "gpt": "openai",
-        "claude": "anthropic",
-        "gemini": "google",
-    }
 
     # Known providers by category
     KNOWN_PROVIDERS = {
@@ -244,13 +238,9 @@ class ProviderManager:
         Returns:
             Canonical provider name
         """
-        provider = provider.lower()
-
-        # Handle aliases for LLM providers
-        if category == "llm" and provider in self.LLM_ALIASES:
-            return self.LLM_ALIASES[provider]
-
-        return provider
+        if category == "llm":
+            return canonicalize_provider(provider)
+        return provider.lower()
 
     def get_known_providers_for_category(self, category: str) -> List[str]:
         """
