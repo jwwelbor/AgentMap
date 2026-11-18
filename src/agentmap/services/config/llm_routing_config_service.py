@@ -136,7 +136,7 @@ class LLMRoutingConfigService:
             self.routing_matrix,
             self.task_types,
             self.complexity_analysis,
-            self.config_dict.get("provider_capabilities", {}),
+            self.provider_capabilities,
         )
         errors.extend(validate_activities_config(self.get_activities_config()))
         return errors
@@ -149,7 +149,7 @@ class LLMRoutingConfigService:
 
         normalized: Dict[str, Dict[str, Any]] = {}
         for provider, provider_capabilities in capabilities.items():
-            normalized[provider.lower()] = provider_capabilities
+            normalized[canonicalize_provider(provider)] = provider_capabilities
         return normalized
 
     def get_activities_config(self) -> Dict[str, Any]:
@@ -242,7 +242,9 @@ class LLMRoutingConfigService:
         Returns:
             True when prompt caching is explicitly enabled for the provider
         """
-        capabilities = self.provider_capabilities.get(provider.lower(), {})
+        capabilities = self.provider_capabilities.get(
+            canonicalize_provider(provider), {}
+        )
         if not isinstance(capabilities, dict):
             return False
         return capabilities.get("prompt_caching", False) is True

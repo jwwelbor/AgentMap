@@ -185,6 +185,33 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         self.assertFalse(self.llm_routing_service.supports_prompt_caching("openai"))
         self.assertFalse(self.llm_routing_service.supports_prompt_caching("google"))
 
+    def test_alias_keyed_provider_config_is_normalized_to_canonical_identity(self):
+        openai_models = self.routing_config["routing_matrix"].pop("openai")
+        self.routing_config["routing_matrix"]["gpt"] = openai_models
+        self.routing_config["provider_capabilities"].pop("openai")
+        self.routing_config["provider_capabilities"]["gpt"] = {"prompt_caching": True}
+        self.routing_config["task_types"]["general"]["provider_preference"] = [
+            "anthropic",
+            "gpt",
+        ]
+
+        service = LLMRoutingConfigService(
+            app_config_service=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+        )
+
+        self.assertIn("openai", service.routing_matrix)
+        self.assertNotIn("gpt", service.routing_matrix)
+        self.assertEqual(service.get_model_for_complexity("GPT", "low"), "gpt-4o-mini")
+        self.assertTrue(service.supports_prompt_caching("openai"))
+        self.assertFalse(
+            any(
+                "unknown provider 'gpt'" in error
+                for error in service.validate_AppConfigService()
+            )
+        )
+
     def test_get_prompt_cache_capable_providers(self):
         """Test listing prompt-cache-capable providers."""
         result = self.llm_routing_service.get_prompt_cache_capable_providers()

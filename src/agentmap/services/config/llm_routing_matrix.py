@@ -8,6 +8,8 @@ provider x complexity routing matrix.
 import logging
 from typing import Any, Dict, Optional
 
+from agentmap.services.llm.provider_names import canonicalize_provider
+
 
 def load_routing_matrix(
     config: Dict[str, Any], logger: logging.Logger
@@ -31,7 +33,9 @@ def load_routing_matrix(
             normalized_complexity_map = {}
             for complexity, model in complexity_map.items():
                 normalized_complexity_map[complexity.lower()] = model
-            normalized_matrix[provider.lower()] = normalized_complexity_map
+            normalized_matrix[canonicalize_provider(provider)] = (
+                normalized_complexity_map
+            )
         else:
             logger.warning(f"Invalid routing matrix entry for provider {provider}")
 
@@ -52,7 +56,7 @@ def get_model_for_complexity(
     Returns:
         Model name or None if not found
     """
-    provider_matrix = routing_matrix.get(provider.lower(), {})
+    provider_matrix = routing_matrix.get(canonicalize_provider(provider), {})
     return provider_matrix.get(complexity.lower())
 
 
@@ -82,4 +86,4 @@ def is_provider_available(
     Returns:
         True if provider is available
     """
-    return provider.lower() in routing_matrix
+    return canonicalize_provider(provider) in routing_matrix

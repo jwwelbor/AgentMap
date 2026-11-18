@@ -8,6 +8,7 @@ from agentmap.exceptions.service_exceptions import (
     LLMConfigurationError,
     LLMServiceError,
 )
+from agentmap.services.config.llm_routing_matrix import load_routing_matrix
 from agentmap.services.routing.types import RoutingContext, TaskComplexity
 
 
@@ -180,6 +181,104 @@ class TestRoutingProviderExclusions:
     def test_emergency_fallback_refuses_provider_without_own_model(self, router):
         with pytest.raises(LLMConfigurationError, match="no-model-provider"):
             router.create_emergency_fallback(["no-model-provider"], "matrix exhausted")
+
+    def test_alias_keyed_matrix_rows_are_available_to_candidate_selection(self, router):
+        router.routing_config.config_dict["routing_matrix"] = {
+            "gpt": {"low": "alias-openai-low"}
+        }
+        router.routing_config.routing_matrix = load_routing_matrix(
+            router.routing_config.config_dict, router._logger
+        )
+
+        implicit = router.select_candidates(
+            RoutingContext(), complexity=TaskComplexity.LOW
+        )
+        explicit = router.select_candidates(
+            RoutingContext(),
+            complexity=TaskComplexity.LOW,
+            available_providers=["gpt"],
+        )
+
+        assert router.routing_config.routing_matrix == {
+            "openai": {"low": "alias-openai-low"}
+        }
+        assert router.routing_config.get_model_for_complexity("gpt", "low") == (
+            "alias-openai-low"
+        )
+        assert router.routing_config.is_provider_available("GPT")
+        assert implicit == [{"provider": "openai", "model": "alias-openai-low"}]
+        assert explicit == [{"provider": "gpt", "model": "alias-openai-low"}]
+
+    def test_alias_keyed_capabilities_match_canonical_provider_candidates(self, router):
+        router.routing_config.config_dict["routing_matrix"] = {
+            "gpt": {"low": "alias-openai-low"}
+        }
+        router.routing_config.routing_matrix = load_routing_matrix(
+            router.routing_config.config_dict, router._logger
+        )
+        router.routing_config.config_dict["provider_capabilities"] = {
+            "gpt": {"prompt_caching": True}
+        }
+        router.routing_config.provider_capabilities = (
+            router.routing_config._load_provider_capabilities()
+        )
+
+        assert router.routing_config.provider_capabilities == {
+            "openai": {"prompt_caching": True}
+        }
+        candidates = router.select_candidates(
+            RoutingContext(requires_prompt_caching=True),
+            complexity=TaskComplexity.LOW,
+            available_providers=["gpt"],
+        )
+
+        assert candidates == [{"provider": "gpt", "model": "alias-openai-low"}]
+
+    @pytest.mark.asyncio
+    async def test_alias_keyed_matrix_is_async_available(self, router):
+        router.routing_config.config_dict["routing_matrix"] = {
+            "gpt": {"low": "alias-openai-low"}
+        }
+        router.routing_config.routing_matrix = load_routing_matrix(
+            router.routing_config.config_dict, router._logger
+        )
+
+        assert await router.routing_config.is_provider_available_async("gpt")
+
+    def test_emergency_fallback_skips_model_less_provider_for_later_eligible_model(
+        self, router
+    ):
+        decision = router.create_emergency_fallback(
+            ["no-model-provider", "google"], "matrix exhausted"
+        )
+
+        assert (decision.provider, decision.model) == ("google", "gemini-low")
+
+    def test_configured_fallback_without_model_continues_to_later_eligible_provider(
+        self, router
+    ):
+        decision = router.recover_route(
+            ["no-model-provider", "google"],
+            RoutingContext(fallback_provider="no-model-provider"),
+            "matrix exhausted",
+        )
+
+        assert (decision.provider, decision.model) == ("google", "gemini-low")
+
+    def test_route_request_emergency_uses_later_eligible_provider_with_model(
+        self, router
+    ):
+        decision = router.route_request(
+            "test",
+            "general",
+            ["anthropic", "no-model-provider", "google"],
+            RoutingContext(
+                excluded_providers=["anthropic"],
+                retry_with_lower_complexity=False,
+            ),
+        )
+
+        assert (decision.provider, decision.model) == ("google", "gemini-low")
 
 
 async def call_routed(service, mode, *, provider=None, model=None, **routing_context):

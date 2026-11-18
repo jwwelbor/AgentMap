@@ -168,12 +168,6 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         configured = (
             canonicalize_provider(configured_provider) if configured_provider else None
         )
-        allowed = (
-            {canonicalize_provider(provider) for provider in eligible_providers}
-            if eligible_providers is not None
-            else None
-        )
-
         # Keep the fallback tiers stable: same provider, configured provider,
         # then the remaining eligible providers in request/registry order.
         if eligible_providers is not None:
@@ -195,14 +189,12 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
                 candidates.append(configured_provider)
             candidates.extend(registered)
 
-        # Compute the request/registry intersection once using the registry's
-        # availability contract, then reuse canonical identities for tier
-        # membership and deduplication.
+        # Canonicalize provider identities for tier membership and deduplication.
         available: List[str] = []
         seen: set[str] = set()
         for candidate in candidates:
             provider = canonicalize_provider(candidate)
-            if provider in seen or (allowed is not None and provider not in allowed):
+            if provider in seen:
                 continue
             seen.add(provider)
             if self.features_registry and self.features_registry.is_provider_available(
