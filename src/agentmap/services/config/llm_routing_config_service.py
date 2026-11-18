@@ -149,7 +149,9 @@ class LLMRoutingConfigService:
 
         normalized: Dict[str, Dict[str, Any]] = {}
         for provider, provider_capabilities in capabilities.items():
-            normalized[canonicalize_provider(provider)] = provider_capabilities
+            provider_key = canonicalize_provider(provider)
+            if provider_key not in normalized or provider.lower() == provider_key:
+                normalized[provider_key] = provider_capabilities
         return normalized
 
     def get_activities_config(self) -> Dict[str, Any]:

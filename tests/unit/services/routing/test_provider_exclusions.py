@@ -234,6 +234,56 @@ class TestRoutingProviderExclusions:
 
         assert candidates == [{"provider": "gpt", "model": "alias-openai-low"}]
 
+    @pytest.mark.parametrize(
+        "matrix",
+        [
+            {
+                "openai": {"low": "canonical-low"},
+                "gpt": {"low": "alias-low", "medium": "alias-medium"},
+            },
+            {
+                "gpt": {"low": "alias-low", "medium": "alias-medium"},
+                "openai": {"low": "canonical-low"},
+            },
+        ],
+        ids=["canonical-row-first", "alias-row-first"],
+    )
+    def test_canonical_matrix_row_wins_alias_collision_independent_of_order(
+        self, router, matrix
+    ):
+        router.routing_config.config_dict["routing_matrix"] = matrix
+        router.routing_config.routing_matrix = load_routing_matrix(
+            router.routing_config.config_dict, router._logger
+        )
+
+        assert router.routing_config.routing_matrix == {
+            "openai": {"low": "canonical-low", "medium": "alias-medium"}
+        }
+
+    @pytest.mark.parametrize(
+        "capabilities",
+        [
+            {
+                "openai": {"prompt_caching": False},
+                "gpt": {"prompt_caching": True},
+            },
+            {
+                "gpt": {"prompt_caching": True},
+                "openai": {"prompt_caching": False},
+            },
+        ],
+        ids=["canonical-capability-first", "alias-capability-first"],
+    )
+    def test_canonical_capabilities_win_alias_collision_independent_of_order(
+        self, router, capabilities
+    ):
+        router.routing_config.config_dict["provider_capabilities"] = capabilities
+        router.routing_config.provider_capabilities = (
+            router.routing_config._load_provider_capabilities()
+        )
+
+        assert not router.routing_config.supports_prompt_caching("gpt")
+
     @pytest.mark.asyncio
     async def test_alias_keyed_matrix_is_async_available(self, router):
         router.routing_config.config_dict["routing_matrix"] = {

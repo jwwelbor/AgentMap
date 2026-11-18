@@ -33,9 +33,17 @@ def load_routing_matrix(
             normalized_complexity_map = {}
             for complexity, model in complexity_map.items():
                 normalized_complexity_map[complexity.lower()] = model
-            normalized_matrix[canonicalize_provider(provider)] = (
-                normalized_complexity_map
-            )
+            provider_key = canonicalize_provider(provider)
+            existing = normalized_matrix.setdefault(provider_key, {})
+            if provider.lower() == provider_key:
+                # The canonical spelling remains authoritative when aliases
+                # and canonical rows define the same provider.
+                existing.update(normalized_complexity_map)
+            else:
+                # Alias rows can supply missing tiers without replacing values
+                # from a canonical row, regardless of config order.
+                for complexity, model in normalized_complexity_map.items():
+                    existing.setdefault(complexity, model)
         else:
             logger.warning(f"Invalid routing matrix entry for provider {provider}")
 
