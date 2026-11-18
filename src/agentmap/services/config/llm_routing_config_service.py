@@ -136,7 +136,7 @@ class LLMRoutingConfigService:
             self.routing_matrix,
             self.task_types,
             self.complexity_analysis,
-            self.provider_capabilities,
+            self.config_dict.get("provider_capabilities", {}),
         )
         errors.extend(validate_activities_config(self.get_activities_config()))
         return errors

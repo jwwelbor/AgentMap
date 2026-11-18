@@ -78,8 +78,7 @@ def validate_routing_config(
 
     if provider_capabilities is None:
         provider_capabilities = {}
-
-    if provider_capabilities and not isinstance(provider_capabilities, dict):
+    elif not isinstance(provider_capabilities, dict):
         errors.append("provider_capabilities must be a dictionary")
         return errors
 

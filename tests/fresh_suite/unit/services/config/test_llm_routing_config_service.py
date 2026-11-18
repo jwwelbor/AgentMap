@@ -240,6 +240,19 @@ class TestLlmRoutingConfigService(unittest.TestCase):
 
             self.assertEqual(errors, [])
 
+    def test_non_mapping_provider_capabilities_is_reported(self):
+        self.routing_config["provider_capabilities"] = "invalid"
+        service = LLMRoutingConfigService(
+            app_config_service=self.mock_app_config_service,
+            logging_service=self.mock_logging_service,
+            llm_models_config_service=self.mock_llm_models_config_service,
+        )
+
+        self.assertIn(
+            "provider_capabilities must be a dictionary",
+            service.validate_AppConfigService(),
+        )
+
     def test_get_prompt_cache_capable_providers(self):
         """Test listing prompt-cache-capable providers."""
         result = self.llm_routing_service.get_prompt_cache_capable_providers()

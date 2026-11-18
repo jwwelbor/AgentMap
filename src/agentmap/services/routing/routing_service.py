@@ -428,10 +428,9 @@ class LLMRoutingService:
 
         # 5) Apply provider preference ordering when supplied
         if ctx.provider_preference:
-            preference_index = {
-                canonicalize_provider(provider): index
-                for index, provider in enumerate(ctx.provider_preference)
-            }
+            preference_index: Dict[str, int] = {}
+            for index, provider in enumerate(ctx.provider_preference):
+                preference_index.setdefault(canonicalize_provider(provider), index)
             ordered.sort(
                 key=lambda item: preference_index.get(
                     canonicalize_provider(item["provider"]), 1_000_000
