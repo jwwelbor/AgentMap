@@ -175,8 +175,8 @@ class TestLLMRoutingService(unittest.TestCase):
         # Execute test
         # Mock select_candidates to return empty so select_optimal_model is called
         with (
-            patch.object(self.service, "select_candidates", return_value=[]),
-            patch.object(self.service, "select_optimal_model") as mock_select,
+            patch.object(self.service, "_select_candidates", return_value=[]),
+            patch.object(self.service, "_select_optimal_model") as mock_select,
         ):
             mock_decision = RoutingDecision(
                 provider="anthropic",
@@ -275,8 +275,8 @@ class TestLLMRoutingService(unittest.TestCase):
 
         # Mock select_candidates to ensure select_optimal_model is called
         with (
-            patch.object(self.service, "select_candidates", return_value=[]),
-            patch.object(self.service, "select_optimal_model", return_value=decision),
+            patch.object(self.service, "_select_candidates", return_value=[]),
+            patch.object(self.service, "_select_optimal_model", return_value=decision),
         ):
             result = self.service.route_request(
                 prompt=prompt,
@@ -305,8 +305,8 @@ class TestLLMRoutingService(unittest.TestCase):
 
         # Mock to trigger fallback - need to mock select_candidates too
         with (
-            patch.object(self.service, "select_candidates", return_value=[]),
-            patch.object(self.service, "select_optimal_model") as mock_select,
+            patch.object(self.service, "_select_candidates", return_value=[]),
+            patch.object(self.service, "_select_optimal_model") as mock_select,
         ):
             fallback_decision = RoutingDecision(
                 provider="openai",
@@ -828,7 +828,7 @@ class TestLLMRoutingService(unittest.TestCase):
         }
 
         # Execute test
-        result = self.service._create_emergency_fallback(available_providers, reason)
+        result = self.service.create_emergency_fallback(available_providers, reason)
 
         # Verify emergency fallback
         self.assertEqual(result.provider, "test_provider")
@@ -845,7 +845,7 @@ class TestLLMRoutingService(unittest.TestCase):
 
         # Execute test and verify error
         with self.assertRaises(ValueError) as context:
-            self.service._create_emergency_fallback(available_providers, reason)
+            self.service.create_emergency_fallback(available_providers, reason)
 
         self.assertIn("No providers available", str(context.exception))
 
@@ -861,7 +861,7 @@ class TestLLMRoutingService(unittest.TestCase):
         )
 
         # Execute test
-        result = self.service._create_emergency_fallback(available_providers, reason)
+        result = self.service.create_emergency_fallback(available_providers, reason)
 
         # Verify last resort fallback - now uses config's fallback model
         self.assertEqual(result.provider, "unknown_provider")

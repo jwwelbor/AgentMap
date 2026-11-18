@@ -139,7 +139,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         self,
         original_provider: str,
         original_model: str,
-        excluded_providers: Sequence[str] = (),
+        eligible_providers: Optional[Sequence[str]] = None,
     ) -> List[tuple]:
         """Build the ordered list of (provider, model) pairs to attempt as fallbacks.
 
@@ -158,13 +158,24 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         """
         plan: List[tuple] = []
         seen: set = set()
-        excluded = {provider.lower() for provider in excluded_providers}
+        allowed = (
+            {provider.lower() for provider in eligible_providers}
+            if eligible_providers is not None
+            else None
+        )
 
         def _add(provider: str, model: str) -> None:
             key = (provider, model)
-            if provider.lower() not in excluded and key not in seen:
+            if key not in seen:
                 seen.add(key)
                 plan.append(key)
+
+        def _is_available(provider: str) -> bool:
+            return bool(
+                self.features_registry
+                and (allowed is None or provider.lower() in allowed)
+                and self.features_registry.is_provider_available("llm", provider)
+            )
 
         configured_fallback_provider = (
             self.routing_config.fallback.get("default_provider")
@@ -173,9 +184,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         )
 
         # Tier 1: same provider, low-complexity fallback model
-        if self.features_registry and self.features_registry.is_provider_available(
-            "llm", original_provider
-        ):
+        if _is_available(original_provider):
             tier1_model = self.get_fallback_model(original_provider, "low")
             if tier1_model and tier1_model != original_model:
                 _add(original_provider, tier1_model)
@@ -184,10 +193,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         if (
             configured_fallback_provider
             and configured_fallback_provider != original_provider
-            and self.features_registry
-            and self.features_registry.is_provider_available(
-                "llm", configured_fallback_provider
-            )
+            and _is_available(configured_fallback_provider)
         ):
             tier2_model = self.get_fallback_model(configured_fallback_provider, "low")
             if tier2_model:
@@ -195,9 +201,17 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
 
         # Tier 3: emergency — first available provider not already in the plan
         if self.features_registry:
-            available = self.features_registry.get_available_providers("llm")
-            if not isinstance(available, (list, tuple)):
-                available = []
+            registered = self.features_registry.get_available_providers("llm")
+            available: Sequence[str] = (
+                registered if isinstance(registered, (list, tuple)) else ()
+            )
+            if eligible_providers is not None:
+                registered_names = {provider.lower() for provider in available}
+                available = [
+                    provider
+                    for provider in eligible_providers
+                    if provider.lower() in registered_names
+                ]
             for provider in available:
                 if provider in [original_provider, configured_fallback_provider]:
                     continue
@@ -217,7 +231,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
         *,
-        excluded_providers: Sequence[str] = (),
+        eligible_providers: Optional[Sequence[str]] = None,
         **kwargs,
     ) -> str:
         """
@@ -236,7 +250,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
             get_provider_config_fn: Function to get provider config
             get_or_create_client_fn: Function to get or create client
             convert_messages_fn: Function to convert messages to LangChain format
-            excluded_providers: Providers excluded by the routing request
+            eligible_providers: Ordered provider allowlist from the routing request
             **kwargs: Additional parameters
 
         Returns:
@@ -257,7 +271,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
 
         # Use shared tier plan — keeps sync/async ladders in sync (DRY).
         for fallback_provider, fallback_model in self._build_tier_plan(
-            original_provider, original_model, excluded_providers
+            original_provider, original_model, eligible_providers
         ):
             try:
                 self._logger.warning(

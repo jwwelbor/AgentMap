@@ -884,11 +884,6 @@ class TestCallLLMStreamAsyncWithRouting(unittest.IsolatedAsyncioTestCase):
         mock_message_utils.extract_prompt_from_messages.return_value = "hi"
         svc._message_utils = mock_message_utils
 
-        # Script _create_routing_context to return a mock context
-        svc._create_routing_context = lambda routing_context, messages: type(
-            "RoutingContext", (), {"task_type": "qa"}
-        )()
-
         # _record_routing_attributes is a real method; patch to no-op
         svc._record_routing_attributes = lambda decision: None
 

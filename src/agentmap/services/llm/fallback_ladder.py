@@ -111,7 +111,7 @@ class LLMFallbackAsyncLadderMixin:
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
         *,
-        excluded_providers: Sequence[str] = (),
+        eligible_providers: Optional[Sequence[str]] = None,
         **kwargs,
     ) -> LLMResponse:
         """Async variant of tiered fallback preserving the sync fallback order.
@@ -140,7 +140,7 @@ class LLMFallbackAsyncLadderMixin:
             error,
             get_provider_config_fn,
             get_or_create_client_fn,
-            excluded_providers,
+            eligible_providers,
         )
 
     async def _run_fallback_ladder_async(
@@ -151,7 +151,7 @@ class LLMFallbackAsyncLadderMixin:
         error: Exception,
         get_provider_config_fn: Any,
         get_or_create_client_fn: Any,
-        excluded_providers: Sequence[str],
+        eligible_providers: Optional[Sequence[str]],
     ) -> LLMResponse:
         """Walk the shared tier plan; return the first success or raise via
         ``_raise_fallback_exhausted``.
@@ -165,7 +165,7 @@ class LLMFallbackAsyncLadderMixin:
         last_error: Exception = error
 
         for fallback_provider, fallback_model in self._build_tier_plan(
-            original_provider, original_model, excluded_providers
+            original_provider, original_model, eligible_providers
         ):
             attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
             response, tier_error, client_resolved = await self._try_fallback_tier(

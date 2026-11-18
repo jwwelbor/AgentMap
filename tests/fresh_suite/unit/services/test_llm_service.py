@@ -214,6 +214,7 @@ class TestLLMService(unittest.TestCase):
                 model="claude-3-7-sonnet-20250219",
                 temperature=0.3,
                 routing_context=routing_context,
+                eligible_providers=["openai", "anthropic", "google"],
                 cache_system_prompt=False,
             )
 
@@ -309,6 +310,7 @@ class TestLLMService(unittest.TestCase):
                 model="custom-model",
                 temperature=0.5,
                 routing_context=routing_context,
+                eligible_providers=["openai", "anthropic", "google"],
                 cache_system_prompt=False,
             )
 

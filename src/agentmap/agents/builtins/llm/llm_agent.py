@@ -253,7 +253,9 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
             "complexity_override": self.context.get("complexity_override"),
             "auto_detect_complexity": self.context.get("auto_detect_complexity", True),
             "provider_preference": self.context.get("provider_preference", []),
-            "exclude_providers": self.context.get("exclude_providers", []),
+            "excluded_providers": self.context.get(
+                "excluded_providers", self.context.get("exclude_providers", [])
+            ),
             "fallback_provider": self.context.get("fallback_provider"),
             "fallback_model": self.context.get("fallback_model"),
             "max_cost_tier": self.context.get("max_cost_tier"),

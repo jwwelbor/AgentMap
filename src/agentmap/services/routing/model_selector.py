@@ -5,13 +5,23 @@ This module provides helper functions for selecting optimal models based on
 provider preferences, cost optimization, and availability constraints.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.routing.types import (
     RoutingDecision,
     TaskComplexity,
 )
+
+
+def filter_excluded_providers(
+    available_providers: Sequence[str], excluded_providers: Sequence[str]
+) -> List[str]:
+    """Keep available providers in input order after case-insensitive exclusions."""
+    excluded = {provider.lower() for provider in excluded_providers}
+    return [
+        provider for provider in available_providers if provider.lower() not in excluded
+    ]
 
 
 class ModelSelector:
@@ -83,7 +93,7 @@ class ModelSelector:
         self,
         preferred_providers: List[str],
         available_providers: List[str],
-        excluded_providers: List[str],
+        excluded_providers: Sequence[str] = (),
     ) -> List[str]:
         """
         Filter providers by availability and exclusions.
@@ -96,16 +106,17 @@ class ModelSelector:
         Returns:
             Filtered list of available preferred providers
         """
-        available_set = set(p.lower() for p in available_providers)
-        excluded_set = set(p.lower() for p in excluded_providers)
-
-        filtered = []
-        for provider in preferred_providers:
-            provider_lower = provider.lower()
-            if provider_lower in available_set and provider_lower not in excluded_set:
-                filtered.append(provider_lower)
-
-        return filtered
+        available_set = {
+            provider.lower()
+            for provider in filter_excluded_providers(
+                available_providers, excluded_providers
+            )
+        }
+        return [
+            provider.lower()
+            for provider in preferred_providers
+            if provider.lower() in available_set
+        ]
 
     def apply_cost_optimization(
         self,

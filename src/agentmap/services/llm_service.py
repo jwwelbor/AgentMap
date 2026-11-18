@@ -120,6 +120,7 @@ from agentmap.services.protocols.service_protocols import (
     LLMBudgetGuardProtocol,
 )
 from agentmap.services.routing.circuit_breaker import CircuitBreaker
+from agentmap.services.routing.model_selector import filter_excluded_providers
 from agentmap.services.routing.routing_service import LLMRoutingService
 from agentmap.services.routing.types import RoutingContext
 from agentmap.services.telemetry.constants import (
@@ -849,23 +850,102 @@ class LLMService:
                 "result was not affected."
             )
 
-    def _routing_error_fallback_provider(
-        self, routing_context: Dict[str, Any], available_providers: List[str]
-    ) -> str:
-        """Validate the configured recovery provider against request exclusions."""
-        provider: str = routing_context.get("fallback_provider", "anthropic")
-        exclusions = routing_context.get("excluded_providers", ())
-        if exclusions:
-            normalized = (
-                self._provider_utils.normalize_provider(provider) if provider else None
+    def _resolve_routed_call(
+        self,
+        messages: List[LLMMessage],
+        routing_context: Dict[str, Any],
+        model: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> Tuple[str, Optional[str], List[str]]:
+        """Resolve a provider, model, and retry allowlist before dispatch."""
+        if not self.routing_service:
+            raise LLMServiceError("Routing requested but no routing service available")
+
+        context = self._create_routing_context(routing_context, messages)
+        available_providers = self._provider_utils.get_available_providers()
+        if not available_providers:
+            raise LLMServiceError("No providers configured")
+        eligible_providers = filter_excluded_providers(
+            available_providers, context.excluded_providers
+        )
+        if not eligible_providers:
+            raise LLMConfigurationError(
+                "No eligible providers remain after routing exclusions"
             )
-            available = {name.lower() for name in available_providers}
-            excluded = {name.lower() for name in exclusions}
-            if normalized not in available or normalized in excluded:
-                raise LLMConfigurationError(
-                    f"Routing fallback provider {provider!r} is not eligible"
-                )
-        return provider
+
+        try:
+            decision = self.routing_service.route_request(
+                prompt=context.prompt,
+                task_type=context.task_type,
+                available_providers=available_providers,
+                routing_context=context,
+            )
+        except (LLMServiceError, BudgetGuardRefusal, AttemptLifecycleRefusal):
+            raise
+        except Exception as error:
+            provider, model = self._recover_routed_call(
+                self.routing_service, routing_context, eligible_providers, model, error
+            )
+            fallback_max_tokens = routing_context.get("max_tokens")
+            if fallback_max_tokens is not None:
+                kwargs.setdefault("max_tokens", fallback_max_tokens)
+            return provider, model, eligible_providers
+
+        self._logger.info(
+            f"Routing decision: {decision.provider}:{decision.model} "
+            f"(complexity: {decision.complexity}, "
+            f"confidence: {decision.confidence:.2f})"
+        )
+        self._record_routing_attributes(decision)
+        self._apply_routed_max_tokens(routing_context, decision.max_tokens, kwargs)
+        return decision.provider, decision.model, eligible_providers
+
+    def _recover_routed_call(
+        self,
+        router: LLMRoutingService,
+        routing_context: Dict[str, Any],
+        eligible_providers: List[str],
+        model: Optional[str],
+        error: Exception,
+    ) -> Tuple[str, Optional[str]]:
+        """Recover using the configured provider or the router's emergency decision."""
+        self._logger.error(f"Routing failed: {error}")
+        configured = routing_context.get("fallback_provider", "anthropic")
+        provider = (
+            self._provider_utils.normalize_provider(configured) if configured else None
+        )
+        if provider is None or provider not in eligible_providers:
+            fallback = router.create_emergency_fallback(eligible_providers, str(error))
+            provider, model = fallback.provider, fallback.model
+
+        self._logger.warning(f"Falling back to {provider} due to routing failure")
+        self._record_fallback_metric("routing_fallback")
+        return provider, model
+
+    def _apply_routed_max_tokens(
+        self,
+        routing_context: Dict[str, Any],
+        decision_max_tokens: Optional[int],
+        kwargs: Dict[str, Any],
+    ) -> None:
+        """Apply the node, caller, activity, and provider token-limit precedence."""
+        node_max_tokens = routing_context.get("max_tokens")
+        if node_max_tokens is None:
+            node_max_tokens = kwargs.pop("max_tokens", None)
+        resolved = (
+            node_max_tokens if node_max_tokens is not None else decision_max_tokens
+        )
+
+        if resolved == 0:
+            self._logger.debug("max_tokens=0 resolved to no limit (provider default)")
+            kwargs["max_tokens"] = 0  # The direct delegate strips the sentinel.
+        elif resolved is not None:
+            source = (
+                "node context" if node_max_tokens is not None else "activity config"
+            )
+            self._logger.debug(f"max_tokens={resolved} (source: {source})")
+            kwargs["max_tokens"] = resolved
+            self._set_current_span_attributes({GEN_AI_REQUEST_MAX_TOKENS: resolved})
 
     def _call_llm_with_routing(
         self,
@@ -873,125 +953,21 @@ class LLMService:
         routing_context: Dict[str, Any],
         temperature: Optional[float] = None,
         model: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
-        """
-        Make an LLM call using intelligent routing to select provider/model.
-
-        Args:
-            messages: List of message dictionaries
-            routing_context: Dictionary containing routing parameters
-            temperature: Optional temperature override from caller
-            model: Optional model hint (used as fallback if routing fails)
-            **kwargs: Additional LLM parameters
-
-        Returns:
-            Response text string
-
-        Raises:
-            LLMServiceError: If routing fails or no providers are available
-        """
-        if not self.routing_service:
-            raise LLMServiceError("Routing requested but no routing service available")
-
-        available_providers: List[str] = []
-        # Narrow try to routing decision only — _call_llm_direct errors must propagate
-        # as-is; the broad except was re-labeling downstream errors as routing failures.
-        try:
-            # Convert routing context dict to RoutingContext object
-            context = self._create_routing_context(routing_context, messages)
-
-            # Get available providers from configuration
-            available_providers = self._provider_utils.get_available_providers()
-
-            if not available_providers:
-                raise LLMServiceError("No providers configured")
-
-            # Extract prompt for routing analysis
-            prompt = self._message_utils.extract_prompt_from_messages(messages)
-
-            # Get routing decision
-            decision = self.routing_service.route_request(
-                prompt=prompt,
-                task_type=context.task_type,
-                available_providers=available_providers,
-                routing_context=context,
-            )
-
-            self._logger.info(
-                f"Routing decision: {decision.provider}:{decision.model} "
-                f"(complexity: {decision.complexity}, "
-                f"confidence: {decision.confidence:.2f})"
-            )
-
-            # Record routing attributes on the current span (E02-F03)
-            self._record_routing_attributes(decision)
-
-            # Resolve max_tokens priority: node context > activity config > provider default
-            node_max_tokens = routing_context.get("max_tokens")
-            if node_max_tokens is None:
-                node_max_tokens = kwargs.pop("max_tokens", None)
-
-            resolved_max_tokens = (
-                node_max_tokens if node_max_tokens is not None else decision.max_tokens
-            )
-            # 0 means "no limit" — actively suppress any provider default
-            if resolved_max_tokens == 0:
-                self._logger.debug(
-                    "max_tokens=0 resolved to no limit (provider default)"
-                )
-                kwargs["max_tokens"] = 0  # sentinel: _call_llm_direct strips it
-                resolved_max_tokens = None
-            elif resolved_max_tokens is not None:
-                source = (
-                    "node context" if node_max_tokens is not None else "activity config"
-                )
-                self._logger.debug(
-                    f"max_tokens={resolved_max_tokens} (source: {source})"
-                )
-                kwargs["max_tokens"] = resolved_max_tokens
-
-            # Record resolved max_tokens on telemetry span (post-priority)
-            if resolved_max_tokens is not None:
-                self._set_current_span_attributes(
-                    {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
-                )
-
-            # Make the actual LLM call with the selected provider/model
-            return self._call_llm_direct(
-                provider=decision.provider,
-                messages=messages,
-                model=decision.model,
-                temperature=temperature,
-                routing_context=routing_context,
-                **kwargs,
-            )
-
-        except LLMServiceError:
-            raise
-        except Exception as e:
-            self._logger.error(f"Routing failed: {e}")
-            # Fall back to direct call if routing (pre-selection) fails
-            fallback_provider = self._routing_error_fallback_provider(
-                routing_context, available_providers
-            )
-            self._logger.warning(
-                f"Falling back to {fallback_provider} due to routing failure"
-            )
-            # Record fallback metric
-            self._record_fallback_metric("routing_fallback")
-            # Preserve node-level max_tokens in fallback path
-            fallback_max_tokens = routing_context.get("max_tokens")
-            if fallback_max_tokens is not None and "max_tokens" not in kwargs:
-                kwargs["max_tokens"] = fallback_max_tokens
-            return self._call_llm_direct(
-                provider=fallback_provider,
-                messages=messages,
-                model=model,
-                temperature=temperature,
-                routing_context=routing_context,
-                **kwargs,
-            )
+        """Resolve routing before invoking the selected provider."""
+        provider, model, eligible_providers = self._resolve_routed_call(
+            messages, routing_context, model, kwargs
+        )
+        return self._call_llm_direct(
+            provider=provider,
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            routing_context=routing_context,
+            eligible_providers=eligible_providers,
+            **kwargs,
+        )
 
     def _call_llm_direct(
         self,
@@ -1000,6 +976,8 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
+        *,
+        eligible_providers: Optional[List[str]] = None,
         **kwargs,
     ) -> str:
         """
@@ -1090,9 +1068,6 @@ class LLMService:
 
             # For provider errors, try fallback if services available
             if self.features_registry and self.routing_config:
-                kwargs["excluded_providers"] = (routing_context or {}).get(
-                    "excluded_providers", ()
-                )
                 try:
                     current_model = model or config.get("model", "unknown")
                     return self._fallback_handler.try_with_fallback(
@@ -1103,6 +1078,7 @@ class LLMService:
                         self._provider_utils.get_provider_config,
                         self._client_factory.get_or_create_client,
                         self._message_utils.convert_messages_to_langchain,
+                        eligible_providers=eligible_providers,
                         **kwargs,
                     )
                 except LLMServiceError:
@@ -1117,114 +1093,21 @@ class LLMService:
         routing_context: Dict[str, Any],
         temperature: Optional[float] = None,
         model: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
-        """Async sibling of ``_call_llm_with_routing`` preserving routing rules.
-
-        Delegates to ``_call_llm_async_direct`` which returns ``LLMResponse``
-        carrying the resolved provider, model, and usage from the raw response.
-        """
-        if not self.routing_service:
-            raise LLMServiceError("Routing requested but no routing service available")
-
-        available_providers: List[str] = []
-        # Narrow try to routing decision only — _call_llm_async_direct errors must
-        # propagate as-is; the broad except was re-labeling downstream errors as
-        # routing failures and silently swapping to fallback_provider.
-        try:
-            context = self._create_routing_context(routing_context, messages)
-            available_providers = self._provider_utils.get_available_providers()
-
-            if not available_providers:
-                raise LLMServiceError("No providers configured")
-
-            prompt = self._message_utils.extract_prompt_from_messages(messages)
-            decision = self.routing_service.route_request(
-                prompt=prompt,
-                task_type=context.task_type,
-                available_providers=available_providers,
-                routing_context=context,
-            )
-
-            self._logger.info(
-                f"Routing decision: {decision.provider}:{decision.model} "
-                f"(complexity: {decision.complexity}, "
-                f"confidence: {decision.confidence:.2f})"
-            )
-
-            self._record_routing_attributes(decision)
-
-            node_max_tokens = routing_context.get("max_tokens")
-            if node_max_tokens is None:
-                node_max_tokens = kwargs.pop("max_tokens", None)
-
-            resolved_max_tokens = (
-                node_max_tokens if node_max_tokens is not None else decision.max_tokens
-            )
-            if resolved_max_tokens == 0:
-                self._logger.debug(
-                    "max_tokens=0 resolved to no limit (provider default)"
-                )
-                kwargs["max_tokens"] = 0
-                resolved_max_tokens = None
-            elif resolved_max_tokens is not None:
-                source = (
-                    "node context" if node_max_tokens is not None else "activity config"
-                )
-                self._logger.debug(
-                    f"max_tokens={resolved_max_tokens} (source: {source})"
-                )
-                kwargs["max_tokens"] = resolved_max_tokens
-
-            if resolved_max_tokens is not None:
-                self._set_current_span_attributes(
-                    {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
-                )
-
-            return await self._call_llm_async_direct(
-                provider=decision.provider,
-                messages=messages,
-                model=decision.model,
-                temperature=temperature,
-                routing_context=routing_context,
-                **kwargs,
-            )
-
-        except LLMResolvedCallError:
-            # Post-selection provider failure — routing already resolved a concrete
-            # (provider, model) before the call failed. Preserve that identity
-            # intact; do NOT trigger the routing-fallback retry path, which would
-            # silently rewrite the resolved identity with the fallback provider.
-            # Mirrors the identical guard in _call_llm_async_direct:842.
-            raise
-        except (BudgetGuardRefusal, AttemptLifecycleRefusal):
-            # REQ-F-003 / NFR-F-003: same pass-through as the direct path --
-            # a budget-guard refusal must not be treated as a pre-selection
-            # routing failure and silently retried against fallback_provider.
-            # call_llm_async unwraps this at the outermost boundary.
-            raise
-        except LLMServiceError:
-            raise
-        except Exception as e:
-            self._logger.error(f"Routing failed: {e}")
-            fallback_provider = self._routing_error_fallback_provider(
-                routing_context, available_providers
-            )
-            self._logger.warning(
-                f"Falling back to {fallback_provider} due to pre-selection routing failure"
-            )
-            self._record_fallback_metric("routing_fallback")
-            fallback_max_tokens = routing_context.get("max_tokens")
-            if fallback_max_tokens is not None and "max_tokens" not in kwargs:
-                kwargs["max_tokens"] = fallback_max_tokens
-            return await self._call_llm_async_direct(
-                provider=fallback_provider,
-                messages=messages,
-                model=model,
-                temperature=temperature,
-                routing_context=routing_context,
-                **kwargs,
-            )
+        """Resolve routing before invoking the selected provider asynchronously."""
+        provider, model, eligible_providers = self._resolve_routed_call(
+            messages, routing_context, model, kwargs
+        )
+        return await self._call_llm_async_direct(
+            provider=provider,
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            routing_context=routing_context,
+            eligible_providers=eligible_providers,
+            **kwargs,
+        )
 
     def _resolve_config(
         self,
@@ -1406,6 +1289,8 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
+        *,
+        eligible_providers: Optional[List[str]] = None,
         **kwargs,
     ) -> LLMResponse:
         """Async direct provider invocation with resilience and fallback parity."""
@@ -1445,11 +1330,14 @@ class LLMService:
             # propagate unconditionally; call_llm_async unwraps at the top.
             raise
         except Exception as e:
-            kwargs["excluded_providers"] = (routing_context or {}).get(
-                "excluded_providers", ()
-            )
             return await self._handle_direct_call_exception(
-                e, provider, current_model, tools, original_messages, **kwargs
+                e,
+                provider,
+                current_model,
+                tools,
+                original_messages,
+                eligible_providers=eligible_providers,
+                **kwargs,
             )
 
     def _invoke_with_resilience(
@@ -4143,112 +4031,17 @@ class LLMService:
         model: Optional[str] = None,
         **kwargs: Any,
     ) -> AsyncGenerator[LLMStreamChunk, None]:
-        """Streaming routing variant — sibling of ``_call_llm_async_with_routing`` (:924).
-
-        Resolves the routing decision (identical logic to the non-streaming sibling)
-        then delegates to ``_call_llm_stream_async_direct`` with the resolved
-        provider/model.  The routing resolution block is byte-equivalent to
-        ``_call_llm_async_with_routing``; only the terminal delegate call differs
-        (``_call_llm_stream_async_direct`` instead of ``_call_llm_async_direct``).
-        """
-        if not self.routing_service:
-            raise LLMServiceError("Routing requested but no routing service available")
-
-        available_providers: List[str] = []
-        # Narrow try to routing decision only — _call_llm_stream_async_direct errors
-        # must propagate as-is; the broad except was re-labeling downstream errors as
-        # routing failures and silently swapping to fallback_provider.
-        try:
-            context = self._create_routing_context(routing_context, messages)
-            available_providers = self._provider_utils.get_available_providers()
-
-            if not available_providers:
-                raise LLMServiceError("No providers configured")
-
-            prompt = self._message_utils.extract_prompt_from_messages(messages)
-            decision = self.routing_service.route_request(
-                prompt=prompt,
-                task_type=context.task_type,
-                available_providers=available_providers,
-                routing_context=context,
-            )
-
-            self._logger.info(
-                f"Routing decision: {decision.provider}:{decision.model} "
-                f"(complexity: {decision.complexity}, "
-                f"confidence: {decision.confidence:.2f})"
-            )
-
-            self._record_routing_attributes(decision)
-
-            node_max_tokens = routing_context.get("max_tokens")
-            if node_max_tokens is None:
-                node_max_tokens = kwargs.pop("max_tokens", None)
-
-            resolved_max_tokens = (
-                node_max_tokens if node_max_tokens is not None else decision.max_tokens
-            )
-            if resolved_max_tokens == 0:
-                self._logger.debug(
-                    "max_tokens=0 resolved to no limit (provider default)"
-                )
-                kwargs["max_tokens"] = 0
-                resolved_max_tokens = None
-            elif resolved_max_tokens is not None:
-                source = (
-                    "node context" if node_max_tokens is not None else "activity config"
-                )
-                self._logger.debug(
-                    f"max_tokens={resolved_max_tokens} (source: {source})"
-                )
-                kwargs["max_tokens"] = resolved_max_tokens
-
-            if resolved_max_tokens is not None:
-                self._set_current_span_attributes(
-                    {GEN_AI_REQUEST_MAX_TOKENS: resolved_max_tokens}
-                )
-
-        except LLMServiceError:
-            raise
-        except Exception as e:
-            # PRE-selection routing failure only (the decision block above). The
-            # resolved delegate call is OUTSIDE this try (below), so a post-selection
-            # provider error propagates as-is and never reaches here — it must NOT be
-            # silently re-routed to the fallback provider, which would rewrite the
-            # resolved (provider, model) identity. Mirrors the intent of
-            # _call_llm_async_with_routing:1019.
-            self._logger.error(f"Routing failed: {e}")
-            fallback_provider = self._routing_error_fallback_provider(
-                routing_context, available_providers
-            )
-            self._logger.warning(
-                f"Falling back to {fallback_provider} due to pre-selection routing failure"
-            )
-            self._record_fallback_metric("routing_fallback")
-            fallback_max_tokens = routing_context.get("max_tokens")
-            if fallback_max_tokens is not None and "max_tokens" not in kwargs:
-                kwargs["max_tokens"] = fallback_max_tokens
-            async for chunk in self._call_llm_stream_async_direct(
-                provider=fallback_provider,
-                messages=messages,
-                model=model,
-                temperature=temperature,
-                routing_context=routing_context,
-                **kwargs,
-            ):
-                yield chunk
-            return
-
-        # Post-selection delegation — OUTSIDE the try so errors from the resolved
-        # call propagate unchanged and never trigger the pre-selection routing
-        # fallback above (CR-fix: the broad except previously caught downstream
-        # provider errors and silently swapped to fallback_provider).
+        """Resolve routing before streaming from the selected provider."""
+        provider, model, eligible_providers = self._resolve_routed_call(
+            messages, routing_context, model, kwargs
+        )
         async for chunk in self._call_llm_stream_async_direct(
-            provider=decision.provider,
+            provider=provider,
             messages=messages,
-            model=decision.model,
+            model=model,
             temperature=temperature,
             routing_context=routing_context,
+            eligible_providers=eligible_providers,
             **kwargs,
         ):
             yield chunk
@@ -4324,6 +4117,8 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
+        *,
+        eligible_providers: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> AsyncGenerator[LLMStreamChunk, None]:
         """Direct streaming provider invocation with resilience and fallback.
@@ -4447,9 +4242,6 @@ class LLMService:
 
             # Pre-first-chunk error: check fallback eligibility (mirrors :1124).
             if self.features_registry and self.routing_config:
-                kwargs["excluded_providers"] = (routing_context or {}).get(
-                    "excluded_providers", ()
-                )
                 resp = await self._fallback_handler.try_with_fallback_async(
                     provider,
                     current_model,
@@ -4458,6 +4250,7 @@ class LLMService:
                     self._provider_utils.get_provider_config,
                     self._client_factory.get_or_create_client,
                     self._message_utils.convert_messages_to_langchain,
+                    eligible_providers=eligible_providers,
                     **kwargs,
                 )
                 # Materialize the fallback LLMResponse. The non-streaming fallback

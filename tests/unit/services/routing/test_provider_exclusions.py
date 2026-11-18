@@ -1,51 +1,14 @@
 """B006 regression coverage for routing and provider dispatch."""
 
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
-from langchain_core.messages import AIMessage
 
 from agentmap.exceptions.service_exceptions import (
     LLMConfigurationError,
-    LLMProviderError,
+    LLMServiceError,
 )
-from agentmap.models.llm_execution import LLMStreamChunk
-from agentmap.services.llm_service import LLMService
-from agentmap.services.routing.cache import RoutingCache
-from agentmap.services.routing.routing_service import LLMRoutingService
 from agentmap.services.routing.types import RoutingContext, TaskComplexity
-from tests.utils.mock_service_factory import MockServiceFactory
-
-
-@pytest.fixture
-def router():
-    config = Mock()
-    config.is_routing_cache_enabled.return_value = True
-    config.performance = {}
-    config.get_cache_ttl.return_value = 300
-    config.get_provider_preference.return_value = ["anthropic", "openai", "google"]
-    config.is_cost_optimization_enabled.return_value = False
-    config.get_fallback_provider.return_value = "anthropic"
-    config.get_fallback_model.return_value = "claude-low"
-    config.fallback = {"default_provider": "anthropic"}
-    config.routing_matrix = {
-        "anthropic": {"low": "claude-low"},
-        "openai": {"low": "gpt-low"},
-        "google": {"low": "gemini-low"},
-    }
-    config.get_model_for_complexity.side_effect = (
-        lambda provider, complexity: config.routing_matrix.get(provider, {}).get(
-            complexity
-        )
-    )
-    logger = MockServiceFactory.create_mock_logging_service()
-    analyzer = Mock()
-    analyzer.determine_overall_complexity.side_effect = (
-        lambda prompt, task_type, context: TaskComplexity.from_string(
-            context.complexity_override or "medium"
-        )
-    )
-    return LLMRoutingService(config, logger, RoutingCache(logger), analyzer)
 
 
 class TestRoutingProviderExclusions:
@@ -75,15 +38,11 @@ class TestRoutingProviderExclusions:
                 {"retry_with_lower_complexity": False, "fallback_provider": "GOOGLE"},
                 "Emergency fallback",
             ),
-            ({"model_override": "claude-low"}, "Emergency fallback"),
-            ({"model_override": "missing-model"}, "Emergency fallback"),
         ],
         ids=[
             "lower-complexity",
             "configured",
             "emergency",
-            "known-model",
-            "unknown-model",
         ],
     )
     def test_fallback_selects_an_eligible_provider(self, router, options, reason):
@@ -96,6 +55,38 @@ class TestRoutingProviderExclusions:
         assert (decision.provider, decision.model) == ("openai", "gpt-low")
         assert decision.fallback_used
         assert reason in decision.reasoning
+
+    @pytest.mark.parametrize("model_override", ["claude-low", "missing-model"])
+    def test_direct_model_override_uses_eligible_alternate(
+        self, router, model_override
+    ):
+        decision = router.select_optimal_model(
+            "general",
+            TaskComplexity.MEDIUM,
+            ["anthropic", "openai"],
+            RoutingContext(
+                excluded_providers=["Anthropic"], model_override=model_override
+            ),
+        )
+
+        assert (decision.provider, decision.model) == ("openai", "gpt-low")
+        assert decision.fallback_used
+
+    def test_eligible_configured_routing_fallback_wins(self, router):
+        decision = router.select_optimal_model(
+            "general",
+            TaskComplexity.MEDIUM,
+            ["openai", "google", "anthropic"],
+            RoutingContext(
+                excluded_providers=["Anthropic"],
+                fallback_provider="google",
+                fallback_model="gemini-low",
+                retry_with_lower_complexity=False,
+            ),
+        )
+
+        assert (decision.provider, decision.model) == ("google", "gemini-low")
+        assert "Configured fallback" in decision.reasoning
 
     def test_exception_recovery_selects_an_eligible_provider(self, router):
         router.complexity_analyzer.determine_overall_complexity.side_effect = (
@@ -169,55 +160,6 @@ class TestRoutingProviderExclusions:
         ] == ["anthropic", "openai", "google"]
 
 
-@pytest.fixture
-def llm_service(router, monkeypatch):
-    config = MockServiceFactory.create_mock_app_config_service()
-    config.get_llm_resilience_config.return_value = {"retry": {"max_attempts": 1}}
-    config.get_llm_config.side_effect = lambda provider: {
-        "model": router.routing_config.routing_matrix[provider]["low"],
-        "api_key": "test-key",
-    }
-    registry = Mock()
-    registry.get_available_providers.return_value = list(
-        router.routing_config.routing_matrix
-    )
-    registry.is_provider_available.side_effect = (
-        lambda service, provider: provider in router.routing_config.routing_matrix
-    )
-    service = LLMService(
-        configuration=config,
-        logging_service=MockServiceFactory.create_mock_logging_service(),
-        routing_service=router,
-        llm_models_config_service=MockServiceFactory.create_mock_llm_models_config_service(),
-        features_registry_service=registry,
-        routing_config_service=router.routing_config,
-    )
-
-    def make_client(provider, config, **kwargs):
-        if provider == "openai":
-            error = LLMProviderError("primary call failed")
-            return Mock(
-                invoke=Mock(side_effect=error), ainvoke=AsyncMock(side_effect=error)
-            )
-        response = AIMessage(content=f"response from {provider}")
-        return Mock(
-            invoke=Mock(return_value=response), ainvoke=AsyncMock(return_value=response)
-        )
-
-    client_factory = Mock(side_effect=make_client)
-    monkeypatch.setattr(service._client_factory, "get_or_create_client", client_factory)
-
-    async def stream_response(messages, params, provider, model, client, credentials):
-        if provider == "openai":
-            raise LLMProviderError("primary stream failed")
-        yield LLMStreamChunk(text_delta=f"response from {provider}", chunk_index=0)
-
-    monkeypatch.setattr(
-        service, "_invoke_with_resilience_stream_async", stream_response
-    )
-    return service, client_factory
-
-
 async def call_routed(service, mode, **routing_context):
     messages = [{"role": "user", "content": "test"}]
     if mode == "sync":
@@ -252,8 +194,12 @@ class TestRoutedDispatchProviderExclusions:
 
         clients.assert_not_called()
 
-    async def test_router_failure_cannot_dispatch_excluded_fallback(
-        self, llm_service, mode, monkeypatch
+    @pytest.mark.parametrize(
+        ("fallback_provider", "excluded"),
+        [("gpt", "OPENAI"), ("missing", "OPENAI"), ("claude", "GOOGLE")],
+    )
+    async def test_router_failure_dispatches_eligible_provider(
+        self, llm_service, mode, monkeypatch, fallback_provider, excluded
     ):
         service, clients = llm_service
         monkeypatch.setattr(
@@ -262,15 +208,17 @@ class TestRoutedDispatchProviderExclusions:
             Mock(side_effect=RuntimeError("router failed")),
         )
 
-        with pytest.raises(LLMConfigurationError, match="eligible"):
-            await call_routed(
-                service,
-                mode,
-                excluded_providers=["ANTHROPIC"],
-                fallback_provider="claude",
-            )
+        text = await call_routed(
+            service,
+            mode,
+            excluded_providers=[excluded],
+            fallback_provider=fallback_provider,
+        )
 
-        clients.assert_not_called()
+        assert text == "response from anthropic"
+        assert [
+            (call.args[0], call.args[1]["model"]) for call in clients.call_args_list
+        ] == [("anthropic", "claude-low")]
 
     @pytest.mark.parametrize("configured_fallback", ["anthropic", "openai"])
     async def test_provider_failure_retries_only_eligible_providers(
@@ -289,3 +237,30 @@ class TestRoutedDispatchProviderExclusions:
 
         assert [call.args[0] for call in clients.call_args_list] == ["openai", "google"]
         assert text == "response from google"
+
+    @pytest.mark.parametrize("configured_fallback", ["google", "openai"])
+    async def test_retry_ignores_registry_providers_without_credentials(
+        self, llm_service, mode, monkeypatch, configured_fallback
+    ):
+        service, clients = llm_service
+        service.routing_config.fallback["default_provider"] = configured_fallback
+        read_config = service.configuration.get_llm_config.side_effect
+        service.configuration.get_llm_config.side_effect = lambda provider: read_config(
+            provider
+        ) | ({"api_key": ""} if provider == "google" else {})
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        resolve_config = Mock(wraps=service._provider_utils.get_provider_config)
+        monkeypatch.setattr(
+            service._provider_utils, "get_provider_config", resolve_config
+        )
+
+        with pytest.raises(LLMServiceError, match="primary"):
+            await call_routed(
+                service,
+                mode,
+                complexity_override="low",
+                excluded_providers=["Anthropic"],
+            )
+
+        resolve_config.assert_called_once_with("openai")
+        assert [call.args[0] for call in clients.call_args_list] == ["openai"]
