@@ -12,6 +12,9 @@ from src.agentmap.services.config.app_config_service import AppConfigService
 from src.agentmap.services.config.llm_routing_config_service import (
     LLMRoutingConfigService,
 )
+from src.agentmap.services.config.llm_routing_validators import (
+    validate_provider_routing,
+)
 from tests.utils.mock_service_factory import MockServiceFactory
 
 
@@ -211,6 +214,31 @@ class TestLlmRoutingConfigService(unittest.TestCase):
                 for error in service.validate_AppConfigService()
             )
         )
+
+    def test_provider_routing_validation_prefers_canonical_config_independent_of_order(
+        self,
+    ):
+        provider_configs = [
+            {
+                "openai": {"api_key": "canonical-key"},
+                "gpt": {},
+            },
+            {
+                "gpt": {},
+                "openai": {"api_key": "canonical-key"},
+            },
+        ]
+
+        for providers in provider_configs:
+            app_config = Mock(spec=AppConfigService)
+            app_config.get_section.return_value = {"providers": providers}
+            errors = validate_provider_routing(
+                {"openai": {"low": "gpt-4o-mini"}},
+                app_config,
+                self.mock_logging_service.get_class_logger(self),
+            )
+
+            self.assertEqual(errors, [])
 
     def test_get_prompt_cache_capable_providers(self):
         """Test listing prompt-cache-capable providers."""

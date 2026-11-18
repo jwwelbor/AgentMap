@@ -200,10 +200,14 @@ def validate_provider_routing(
         # Get provider configurations
         llm_config = app_config_service.get_section("llm", {})
         providers_config = llm_config.get("providers", {})
-        providers_by_identity = {
-            canonicalize_provider(provider): config
-            for provider, config in providers_config.items()
-        }
+        providers_by_identity = {}
+        for provider, config in providers_config.items():
+            provider_key = canonicalize_provider(provider)
+            if (
+                provider_key not in providers_by_identity
+                or provider.lower() == provider_key
+            ):
+                providers_by_identity[provider_key] = config
 
         # Validate each provider in routing matrix has configuration
         for provider in available_providers:
