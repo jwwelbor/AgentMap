@@ -306,6 +306,9 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
         self.mock_routing_service.route_request.side_effect = Exception(
             "routing failed"
         )
+        self.mock_routing_service.recover_route.return_value = Mock(
+            provider="openai", model="openai-default-model"
+        )
 
         fallback_response = LLMResponse(
             text="fallback response",
@@ -333,7 +336,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
         mock_direct.assert_awaited_once_with(
             provider="openai",
             messages=[{"role": "user", "content": "test"}],
-            model=None,
+            model="openai-default-model",
             temperature=None,
             routing_context={
                 "routing_enabled": True,
@@ -446,7 +449,7 @@ class TestLLMServiceAsync(unittest.IsolatedAsyncioTestCase):
     async def test_call_llm_async_uses_configured_fallback_handler(self):
         """Async direct-call failures should reuse configured tiered fallback logic."""
         mock_features_registry = Mock()
-        mock_features_registry.is_provider_available.return_value = True
+        mock_features_registry.get_available_providers.return_value = ["anthropic"]
         mock_routing_config = Mock()
         mock_routing_config.fallback = {"default_provider": "anthropic"}
         mock_routing_config.routing_matrix = {"anthropic": {"low": "claude-haiku"}}
@@ -1858,7 +1861,7 @@ class TestLLMServiceToolDefinitionSendPath(unittest.IsolatedAsyncioTestCase):
         and succeeds via the existing fallback ladder -- unchanged pre-F06
         behavior."""
         mock_features_registry = Mock()
-        mock_features_registry.is_provider_available.return_value = True
+        mock_features_registry.get_available_providers.return_value = ["anthropic"]
         mock_routing_config = Mock()
         mock_routing_config.fallback = {"default_provider": "anthropic"}
         mock_routing_config.routing_matrix = {"anthropic": {"low": "claude-haiku"}}
@@ -2164,7 +2167,7 @@ class TestLLMServiceBudgetGuard(unittest.IsolatedAsyncioTestCase):
         """A guard-registered service with a live one-tier fallback ladder:
         primary ``openai`` -> fallback ``anthropic`` (mirrors TC-019's setup)."""
         mock_features_registry = Mock()
-        mock_features_registry.is_provider_available.return_value = True
+        mock_features_registry.get_available_providers.return_value = ["anthropic"]
         mock_routing_config = Mock()
         mock_routing_config.fallback = {"default_provider": "anthropic"}
         mock_routing_config.routing_matrix = {"anthropic": {"low": "claude-haiku"}}

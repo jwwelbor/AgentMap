@@ -289,11 +289,13 @@ class TestLLMService(unittest.TestCase):
         self.mock_routing_service.route_request.side_effect = Exception(
             "Routing failed"
         )
+        self.mock_routing_service.recover_route.return_value = Mock(
+            provider="openai", model="gpt-4o-mini"
+        )
 
         with patch.object(self.service, "_call_llm_direct") as mock_direct_call:
             mock_direct_call.return_value = "Fallback response"
 
-            # Execute test — pass temperature and model to verify they survive fallback (B002)
             messages = [{"role": "user", "content": "Test"}]
             result = self.service.call_llm(
                 provider="anthropic",
@@ -303,11 +305,11 @@ class TestLLMService(unittest.TestCase):
                 routing_context=routing_context,
             )
 
-            # Verify fallback preserves caller's model, temperature, and routing_context
+            # Keep caller temperature and context with the recovered provider/model.
             mock_direct_call.assert_called_with(
                 provider="openai",  # fallback_provider
                 messages=messages,
-                model="custom-model",
+                model="gpt-4o-mini",
                 temperature=0.5,
                 routing_context=routing_context,
                 eligible_providers=["openai", "anthropic", "google"],

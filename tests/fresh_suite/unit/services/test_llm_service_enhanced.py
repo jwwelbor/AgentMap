@@ -338,6 +338,9 @@ class TestLLMServiceEnhanced(unittest.TestCase):
         self.mock_routing_service.route_request.side_effect = Exception(
             "Routing service down"
         )
+        self.mock_routing_service.recover_route.return_value = Mock(
+            provider="openai", model="gpt-4o-mini"
+        )
 
         with patch.object(self.service, "_call_llm_direct") as mock_direct:
             mock_direct.return_value = "Fallback response"
@@ -352,7 +355,7 @@ class TestLLMServiceEnhanced(unittest.TestCase):
             mock_direct.assert_called_with(
                 provider="openai",  # fallback_provider
                 messages=[{"role": "user", "content": "test"}],
-                model=None,
+                model="gpt-4o-mini",
                 temperature=None,
                 routing_context=routing_context,
                 eligible_providers=["openai", "anthropic", "google"],

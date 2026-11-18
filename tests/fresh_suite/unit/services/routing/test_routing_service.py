@@ -850,22 +850,24 @@ class TestLLMRoutingService(unittest.TestCase):
         self.assertIn("No providers available", str(context.exception))
 
     def test_create_emergency_fallback_last_resort(self):
-        """Test emergency fallback last resort with no matrix."""
-        available_providers = ["unknown_provider"]
+        """A provider's default supplies its emergency model without a matrix."""
+        available_providers = ["openai"]
         reason = "Last resort test"
 
-        # Mock empty routing matrix and fallback model
         self.mock_routing_config.routing_matrix = {}
         self.mock_routing_config.get_fallback_model.return_value = (
             "claude-3-7-sonnet-20250219"
         )
+        self.mock_routing_config.get_provider_default_model.return_value = "gpt-4o"
 
         # Execute test
         result = self.service.create_emergency_fallback(available_providers, reason)
 
-        # Verify last resort fallback - now uses config's fallback model
-        self.assertEqual(result.provider, "unknown_provider")
-        self.assertEqual(result.model, "claude-3-7-sonnet-20250219")
+        self.assertEqual(result.provider, "openai")
+        self.assertEqual(result.model, "gpt-4o")
+        self.mock_routing_config.get_provider_default_model.assert_called_once_with(
+            "openai"
+        )
         self.assertTrue(result.fallback_used)
         self.assertEqual(result.confidence, 0.1)  # Very low confidence
         self.assertIn("Last resort", result.reasoning)

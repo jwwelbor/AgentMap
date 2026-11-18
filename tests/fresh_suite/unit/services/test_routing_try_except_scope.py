@@ -165,6 +165,9 @@ class TestSyncRoutingTryExceptScope(unittest.TestCase):
         self.service.routing_service.route_request.side_effect = Exception(
             "routing service unavailable"
         )
+        self.service.routing_service.recover_route.return_value = Mock(
+            provider="openai", model="openai-default-model"
+        )
         fallback_response = "fallback text"
 
         with patch.object(
@@ -288,6 +291,9 @@ class TestAsyncRoutingTryExceptScope(unittest.IsolatedAsyncioTestCase):
         """Actual route_request() failure should still trigger fallback_provider path."""
         self.service.routing_service.route_request.side_effect = Exception(
             "routing service unavailable"
+        )
+        self.service.routing_service.recover_route.return_value = Mock(
+            provider="openai", model="openai-default-model"
         )
         fallback_response = LLMResponse(
             text="fallback text",

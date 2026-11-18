@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from agentmap.exceptions.service_exceptions import LLMConfigurationError
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
+from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.routing.activity_routing import ActivityRoutingTable
 from agentmap.services.routing.cache import RoutingCache
@@ -182,9 +183,12 @@ class LLMRoutingService:
 
             return decision
 
+        except LLMConfigurationError:
+            raise
         except Exception as e:
             self._logger.error(f"Error in route_request: {e}")
-            # Return emergency fallback
+            if routing_context.fallback_provider or routing_context.fallback_model:
+                return self.recover_route(eligible_providers, routing_context, str(e))
             return self.create_emergency_fallback(eligible_providers, str(e))
 
     @staticmethod
@@ -374,7 +378,7 @@ class LLMRoutingService:
         activity_table = ActivityRoutingTable(self.routing_config, self._logger)
         ordered: List[Dict[str, Any]] = []
         seen_pairs: Set[Tuple[str, str]] = set()
-        available_lower = {provider.lower() for provider in available_providers}
+        available_keys = set(map(canonicalize_provider, available_providers))
 
         # 1) Activity-driven plan (primary + fallbacks)
         for entry in activity_table.plan(ctx.activity, complexity_key):
@@ -382,10 +386,10 @@ class LLMRoutingService:
             model = entry.get("model")
             if not provider or not model:
                 continue
-            provider_lower = provider.lower()
-            if provider_lower not in available_lower:
+            provider_key = canonicalize_provider(provider)
+            if provider_key not in available_keys:
                 continue
-            pair = (provider_lower, model)
+            pair = (provider_key, model)
             if pair in seen_pairs:
                 continue
             candidate: Dict[str, Any] = {"provider": provider, "model": model}
@@ -396,13 +400,13 @@ class LLMRoutingService:
 
         # 2) Matrix-based backstops for remaining providers
         for provider in available_providers:
-            provider_lower = provider.lower()
+            provider_key = canonicalize_provider(provider)
             model = self.routing_config.get_model_for_complexity(
-                provider_lower, complexity_key
+                provider_key, complexity_key
             )
             if not model:
                 continue
-            pair = (provider_lower, model)
+            pair = (provider_key, model)
             if pair in seen_pairs:
                 continue
             ordered.append({"provider": provider, "model": model})
@@ -418,18 +422,19 @@ class LLMRoutingService:
                 candidate
                 for candidate in ordered
                 if self.routing_config.supports_prompt_caching(
-                    candidate["provider"].lower()
+                    canonicalize_provider(candidate["provider"])
                 )
             ]
 
         # 5) Apply provider preference ordering when supplied
         if ctx.provider_preference:
             preference_index = {
-                p.lower(): i for i, p in enumerate(ctx.provider_preference)
+                canonicalize_provider(provider): index
+                for index, provider in enumerate(ctx.provider_preference)
             }
             ordered.sort(
                 key=lambda item: preference_index.get(
-                    item["provider"].lower(), 1_000_000
+                    canonicalize_provider(item["provider"]), 1_000_000
                 )
             )
 
@@ -444,7 +449,7 @@ class LLMRoutingService:
     ) -> Optional[RoutingDecision]:
         """Select the first viable candidate and convert to a decision."""
 
-        available_set = {provider.lower() for provider in available_providers}
+        available_set = set(map(canonicalize_provider, available_providers))
         activity = routing_context.activity
 
         for index, candidate in enumerate(candidates):
@@ -453,8 +458,7 @@ class LLMRoutingService:
             if not provider or not model:
                 continue
 
-            provider_lower = provider.lower()
-            if provider_lower not in available_set:
+            if canonicalize_provider(provider) not in available_set:
                 continue
 
             reasoning = (
@@ -518,6 +522,14 @@ class LLMRoutingService:
             decision=decision,
             provider_preference=routing_context.provider_preference,
             cost_optimization=routing_context.cost_optimization,
+        )
+
+    def recover_route(
+        self, eligible_providers: List[str], context: RoutingContext, reason: str
+    ) -> RoutingDecision:
+        """Resolve a configured or emergency fallback after a routing error."""
+        return self.fallback_handler.select_fallback(
+            eligible_providers, TaskComplexity.LOW, context, reason
         )
 
     def create_emergency_fallback(

@@ -13,17 +13,26 @@ from agentmap.services.routing.types import RoutingContext, TaskComplexity
 
 class TestRoutingProviderExclusions:
     @pytest.mark.parametrize("entrypoint", ["route_request", "select_optimal_model"])
+    @pytest.mark.parametrize(
+        ("provider", "excluded"),
+        [
+            ("anthropic", "Anthropic"),
+            ("anthropic", "Claude"),
+            ("openai", "GpT"),
+            ("google", "gemini"),
+        ],
+    )
     def test_refuses_when_every_available_provider_is_excluded(
-        self, router, entrypoint
+        self, router, entrypoint, provider, excluded
     ):
-        context = RoutingContext(excluded_providers=["Anthropic"])
+        context = RoutingContext(excluded_providers=[excluded])
 
         with pytest.raises(LLMConfigurationError, match="No eligible providers"):
             if entrypoint == "route_request":
-                router.route_request("test", "general", ["anthropic"], context)
+                router.route_request("test", "general", [provider], context)
             else:
                 router.select_optimal_model(
-                    "general", TaskComplexity.MEDIUM, ["anthropic"], context
+                    "general", TaskComplexity.MEDIUM, [provider], context
                 )
 
     @pytest.mark.parametrize(
@@ -111,7 +120,7 @@ class TestRoutingProviderExclusions:
         providers = ["anthropic", "openai"]
         initial = "openai" if initial_exclusion else "anthropic"
         revised = "anthropic" if initial_exclusion else "openai"
-        revised_exclusion = [] if initial_exclusion else ["Anthropic"]
+        revised_exclusion = [] if initial_exclusion else ["Claude"]
 
         def route(excluded):
             return router.route_request(
@@ -159,22 +168,37 @@ class TestRoutingProviderExclusions:
             )
         ] == ["anthropic", "openai", "google"]
 
-
-async def call_routed(service, mode, **routing_context):
-    messages = [{"role": "user", "content": "test"}]
-    if mode == "sync":
-        return service.call_llm(messages, routing_context=routing_context)
-    if mode == "async":
-        response = await service.call_llm_async(
-            messages, routing_context=routing_context
+    def test_candidates_match_aliases_and_preserve_available_spelling(self, router):
+        candidates = router.select_candidates(
+            RoutingContext(excluded_providers=["CLAUDE", "google"]),
+            complexity=TaskComplexity.LOW,
+            available_providers=["GPT", "anthropic", "GeMiNi"],
         )
+
+        assert candidates == [{"provider": "GPT", "model": "gpt-low"}]
+
+    def test_emergency_fallback_refuses_provider_without_own_model(self, router):
+        with pytest.raises(LLMConfigurationError, match="no-model-provider"):
+            router.create_emergency_fallback(["no-model-provider"], "matrix exhausted")
+
+
+async def call_routed(service, mode, *, provider=None, model=None, **routing_context):
+    messages = [{"role": "user", "content": "test"}]
+    arguments = {"routing_context": routing_context}
+    if provider is not None:
+        arguments["provider"] = provider
+    if model is not None:
+        arguments["model"] = model
+
+    if mode == "sync":
+        return service.call_llm(messages, **arguments)
+    if mode == "async":
+        response = await service.call_llm_async(messages, **arguments)
         return response.text
     return "".join(
         [
             chunk.text_delta
-            async for chunk in service.call_llm_stream_async(
-                messages, routing_context=routing_context
-            )
+            async for chunk in service.call_llm_stream_async(messages, **arguments)
         ]
     )
 
@@ -182,21 +206,22 @@ async def call_routed(service, mode, **routing_context):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["sync", "async", "stream"])
 class TestRoutedDispatchProviderExclusions:
+    @pytest.mark.parametrize(
+        "exclusions", [["Anthropic", "OpenAI", "Google"], ["claude", "GpT", "gemini"]]
+    )
     async def test_all_excluded_refuses_before_client_acquisition(
-        self, llm_service, mode
+        self, llm_service, mode, exclusions
     ):
         service, clients = llm_service
 
         with pytest.raises(LLMConfigurationError, match="No eligible providers"):
-            await call_routed(
-                service, mode, excluded_providers=["Anthropic", "OpenAI", "Google"]
-            )
+            await call_routed(service, mode, excluded_providers=exclusions)
 
         clients.assert_not_called()
 
     @pytest.mark.parametrize(
         ("fallback_provider", "excluded"),
-        [("gpt", "OPENAI"), ("missing", "OPENAI"), ("claude", "GOOGLE")],
+        [("gpt", "GpT"), ("missing", "OPENAI"), ("claude", "GOOGLE")],
     )
     async def test_router_failure_dispatches_eligible_provider(
         self, llm_service, mode, monkeypatch, fallback_provider, excluded
@@ -220,7 +245,7 @@ class TestRoutedDispatchProviderExclusions:
             (call.args[0], call.args[1]["model"]) for call in clients.call_args_list
         ] == [("anthropic", "claude-low")]
 
-    @pytest.mark.parametrize("configured_fallback", ["anthropic", "openai"])
+    @pytest.mark.parametrize("configured_fallback", ["claude", "gpt"])
     async def test_provider_failure_retries_only_eligible_providers(
         self, llm_service, mode, configured_fallback
     ):
@@ -232,11 +257,73 @@ class TestRoutedDispatchProviderExclusions:
             mode,
             complexity_override="low",
             provider_preference=["openai"],
-            excluded_providers=["Anthropic"],
+            excluded_providers=["Claude"],
         )
 
         assert [call.args[0] for call in clients.call_args_list] == ["openai", "google"]
         assert text == "response from google"
+
+    @pytest.mark.parametrize("trigger", ["matrix-exhausted", "router-error"])
+    @pytest.mark.parametrize(
+        ("global_provider", "fallback_provider", "fallback_model", "expected_model"),
+        [
+            ("openai", "openai", "gpt-request-fallback", "claude-provider-default"),
+            ("openai", "claude", None, "claude-provider-default"),
+            ("openai", "claude", "claude-request-fallback", "claude-request-fallback"),
+            ("anthropic", None, None, "anthropic-system-fallback"),
+        ],
+    )
+    async def test_partial_matrix_recovery_uses_model_owned_by_selected_provider(
+        self,
+        llm_service,
+        provider_configs,
+        mode,
+        monkeypatch,
+        trigger,
+        global_provider,
+        fallback_provider,
+        fallback_model,
+        expected_model,
+    ):
+        service, clients = llm_service
+        service.routing_config.routing_matrix.pop("anthropic")
+        service.routing_config.fallback.update(
+            default_provider=global_provider,
+            default_model=f"{global_provider}-system-fallback",
+        )
+        provider_configs["anthropic"]["model"] = "claude-provider-default"
+        if trigger == "router-error":
+            monkeypatch.setattr(
+                service.routing_service,
+                "route_request",
+                Mock(side_effect=RuntimeError("router failed")),
+            )
+
+        text = await call_routed(
+            service,
+            mode,
+            provider="openai",
+            model="gpt-request-model",
+            excluded_providers=["OpenAI", "Google"],
+            fallback_provider=fallback_provider,
+            fallback_model=fallback_model,
+        )
+
+        assert text == "response from anthropic"
+        assert [
+            (call.args[0], call.args[1]["model"]) for call in clients.call_args_list
+        ] == [("anthropic", expected_model)]
+
+    async def test_eligible_aliased_retry_provider_retains_configured_priority(
+        self, llm_service, mode
+    ):
+        service, clients = llm_service
+        service.routing_config.fallback["default_provider"] = "GeMiNi"
+
+        text = await call_routed(service, mode, complexity_override="low")
+
+        assert text == "response from google"
+        assert [call.args[0] for call in clients.call_args_list] == ["openai", "google"]
 
     @pytest.mark.parametrize("configured_fallback", ["google", "openai"])
     async def test_retry_ignores_registry_providers_without_credentials(

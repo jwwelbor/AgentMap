@@ -15,6 +15,7 @@ from agentmap.models.llm_execution import LLMMessage, LLMResponse
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.llm.fallback_ladder import LLMFallbackAsyncLadderMixin
+from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.llm.tool_call_extraction import (
     normalize_response_content,
     normalize_response_content_value,
@@ -132,7 +133,9 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         if not self.routing_config:
             return None
 
-        provider_matrix = self.routing_config.routing_matrix.get(provider.lower(), {})
+        provider_matrix = self.routing_config.routing_matrix.get(
+            canonicalize_provider(provider), {}
+        )
         return provider_matrix.get(complexity.lower())
 
     def _build_tier_plan(
@@ -140,7 +143,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         original_provider: str,
         original_model: str,
         eligible_providers: Optional[Sequence[str]] = None,
-    ) -> List[tuple]:
+    ) -> List[tuple[str, str]]:
         """Build the ordered list of (provider, model) pairs to attempt as fallbacks.
 
         Shared by try_with_fallback (sync) and try_with_fallback_async so the
@@ -156,69 +159,70 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
             Ordered list of (provider, model) tuples for permitted providers
             with a low model in the routing matrix.
         """
-        plan: List[tuple] = []
-        seen: set = set()
-        allowed = (
-            {provider.lower() for provider in eligible_providers}
-            if eligible_providers is not None
-            else None
-        )
-
-        def _add(provider: str, model: str) -> None:
-            key = (provider, model)
-            if key not in seen:
-                seen.add(key)
-                plan.append(key)
-
-        def _is_available(provider: str) -> bool:
-            return bool(
-                self.features_registry
-                and (allowed is None or provider.lower() in allowed)
-                and self.features_registry.is_provider_available("llm", provider)
-            )
-
-        configured_fallback_provider = (
+        configured_provider = (
             self.routing_config.fallback.get("default_provider")
             if self.routing_config
             else None
         )
+        original = canonicalize_provider(original_provider)
+        configured = (
+            canonicalize_provider(configured_provider) if configured_provider else None
+        )
+        allowed = (
+            {canonicalize_provider(provider) for provider in eligible_providers}
+            if eligible_providers is not None
+            else None
+        )
 
-        # Tier 1: same provider, low-complexity fallback model
-        if _is_available(original_provider):
-            tier1_model = self.get_fallback_model(original_provider, "low")
-            if tier1_model and tier1_model != original_model:
-                _add(original_provider, tier1_model)
-
-        # Tier 2: configured fallback provider
-        if (
-            configured_fallback_provider
-            and configured_fallback_provider != original_provider
-            and _is_available(configured_fallback_provider)
-        ):
-            tier2_model = self.get_fallback_model(configured_fallback_provider, "low")
-            if tier2_model:
-                _add(configured_fallback_provider, tier2_model)
-
-        # Tier 3: emergency — first available provider not already in the plan
-        if self.features_registry:
-            registered = self.features_registry.get_available_providers("llm")
-            available: Sequence[str] = (
-                registered if isinstance(registered, (list, tuple)) else ()
+        # Keep the fallback tiers stable: same provider, configured provider,
+        # then the remaining eligible providers in request/registry order.
+        if eligible_providers is not None:
+            candidates = list(eligible_providers)
+        else:
+            registered = (
+                self.features_registry.get_available_providers("llm")
+                if self.features_registry
+                else []
             )
-            if eligible_providers is not None:
-                registered_names = {provider.lower() for provider in available}
-                available = [
-                    provider
-                    for provider in eligible_providers
-                    if provider.lower() in registered_names
-                ]
-            for provider in available:
-                if provider in [original_provider, configured_fallback_provider]:
-                    continue
-                tier3_model = self.get_fallback_model(provider, "low")
-                if tier3_model:
-                    _add(provider, tier3_model)
+            if not isinstance(registered, (list, tuple)):
+                registered = (
+                    list(self.routing_config.routing_matrix)
+                    if self.routing_config
+                    else []
+                )
+            candidates = [original_provider]
+            if configured_provider:
+                candidates.append(configured_provider)
+            candidates.extend(registered)
 
+        # Compute the request/registry intersection once using the registry's
+        # availability contract, then reuse canonical identities for tier
+        # membership and deduplication.
+        available: List[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            provider = canonicalize_provider(candidate)
+            if provider in seen or (allowed is not None and provider not in allowed):
+                continue
+            seen.add(provider)
+            if self.features_registry and self.features_registry.is_provider_available(
+                "llm", provider
+            ):
+                available.append(provider)
+
+        preferred = [original]
+        if configured:
+            preferred.append(configured)
+        ordered = list(dict.fromkeys([*preferred, *available]))
+        available_set = set(available)
+
+        plan: List[tuple[str, str]] = []
+        for provider in ordered:
+            if provider not in available_set:
+                continue
+            model = self.get_fallback_model(provider)
+            if model and (provider, model) != (original, original_model):
+                plan.append((provider, model))
         return plan
 
     def try_with_fallback(

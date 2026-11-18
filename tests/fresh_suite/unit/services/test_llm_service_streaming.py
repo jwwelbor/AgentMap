@@ -920,7 +920,6 @@ class TestCallLLMStreamAsyncWithRouting(unittest.IsolatedAsyncioTestCase):
             messages=[{"role": "user", "content": "hi"}],
             routing_context=routing_context,
             temperature=None,
-            model=None,
         ):
             chunks.append(chunk)
 

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from agentmap.exceptions import LLMConfigurationError
 from agentmap.services.config import AppConfigService
 from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
+from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.logging_service import LoggingService
 
 
@@ -45,12 +46,7 @@ class LLMProviderUtils:
         Returns:
             Normalized provider name
         """
-        provider_lower = provider.lower()
-
-        # Handle aliases
-        aliases = {"gpt": "openai", "claude": "anthropic", "gemini": "google"}
-
-        return aliases.get(provider_lower, provider_lower)
+        return canonicalize_provider(provider)
 
     def get_provider_config(self, provider: str) -> Dict[str, Any]:
         """

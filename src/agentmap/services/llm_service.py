@@ -735,7 +735,6 @@ class LLMService:
                 messages,
                 routing_context,
                 temperature=temperature,
-                model=model,
                 **kwargs,
             )
         if not provider:
@@ -805,7 +804,6 @@ class LLMService:
                 messages,
                 routing_context,
                 temperature=temperature,
-                model=model,
                 **kwargs,
             )
         if not provider:
@@ -854,9 +852,8 @@ class LLMService:
         self,
         messages: List[LLMMessage],
         routing_context: Dict[str, Any],
-        model: Optional[str],
         kwargs: Dict[str, Any],
-    ) -> Tuple[str, Optional[str], List[str]]:
+    ) -> Tuple[str, str, List[str]]:
         """Resolve a provider, model, and retry allowlist before dispatch."""
         if not self.routing_service:
             raise LLMServiceError("Routing requested but no routing service available")
@@ -884,7 +881,7 @@ class LLMService:
             raise
         except Exception as error:
             provider, model = self._recover_routed_call(
-                self.routing_service, routing_context, eligible_providers, model, error
+                self.routing_service, context, eligible_providers, error
             )
             fallback_max_tokens = routing_context.get("max_tokens")
             if fallback_max_tokens is not None:
@@ -903,24 +900,18 @@ class LLMService:
     def _recover_routed_call(
         self,
         router: LLMRoutingService,
-        routing_context: Dict[str, Any],
+        context: RoutingContext,
         eligible_providers: List[str],
-        model: Optional[str],
         error: Exception,
-    ) -> Tuple[str, Optional[str]]:
+    ) -> Tuple[str, str]:
         """Recover using the configured provider or the router's emergency decision."""
         self._logger.error(f"Routing failed: {error}")
-        configured = routing_context.get("fallback_provider", "anthropic")
-        provider = (
-            self._provider_utils.normalize_provider(configured) if configured else None
+        fallback = router.recover_route(eligible_providers, context, str(error))
+        self._logger.warning(
+            f"Falling back to {fallback.provider} due to routing failure"
         )
-        if provider is None or provider not in eligible_providers:
-            fallback = router.create_emergency_fallback(eligible_providers, str(error))
-            provider, model = fallback.provider, fallback.model
-
-        self._logger.warning(f"Falling back to {provider} due to routing failure")
         self._record_fallback_metric("routing_fallback")
-        return provider, model
+        return fallback.provider, fallback.model
 
     def _apply_routed_max_tokens(
         self,
@@ -952,12 +943,11 @@ class LLMService:
         messages: List[LLMMessage],
         routing_context: Dict[str, Any],
         temperature: Optional[float] = None,
-        model: Optional[str] = None,
         **kwargs: Any,
     ) -> str:
         """Resolve routing before invoking the selected provider."""
         provider, model, eligible_providers = self._resolve_routed_call(
-            messages, routing_context, model, kwargs
+            messages, routing_context, kwargs
         )
         return self._call_llm_direct(
             provider=provider,
@@ -1092,12 +1082,11 @@ class LLMService:
         messages: List[LLMMessage],
         routing_context: Dict[str, Any],
         temperature: Optional[float] = None,
-        model: Optional[str] = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Resolve routing before invoking the selected provider asynchronously."""
         provider, model, eligible_providers = self._resolve_routed_call(
-            messages, routing_context, model, kwargs
+            messages, routing_context, kwargs
         )
         return await self._call_llm_async_direct(
             provider=provider,
@@ -4005,7 +3994,6 @@ class LLMService:
                 messages,
                 routing_context,
                 temperature=temperature,
-                model=model,
                 **kwargs,
             ):
                 yield chunk
@@ -4028,12 +4016,11 @@ class LLMService:
         messages: List[LLMMessage],
         routing_context: Dict[str, Any],
         temperature: Optional[float] = None,
-        model: Optional[str] = None,
         **kwargs: Any,
     ) -> AsyncGenerator[LLMStreamChunk, None]:
         """Resolve routing before streaming from the selected provider."""
         provider, model, eligible_providers = self._resolve_routed_call(
-            messages, routing_context, model, kwargs
+            messages, routing_context, kwargs
         )
         async for chunk in self._call_llm_stream_async_direct(
             provider=provider,

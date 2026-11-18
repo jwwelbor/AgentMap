@@ -8,6 +8,7 @@ provider preferences, cost optimization, and availability constraints.
 from typing import List, Optional, Sequence
 
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
+from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.routing.types import (
     RoutingDecision,
     TaskComplexity,
@@ -17,10 +18,12 @@ from agentmap.services.routing.types import (
 def filter_excluded_providers(
     available_providers: Sequence[str], excluded_providers: Sequence[str]
 ) -> List[str]:
-    """Keep available providers in input order after case-insensitive exclusions."""
-    excluded = {provider.lower() for provider in excluded_providers}
+    """Apply exclusions by provider identity while preserving availability order."""
+    excluded = {canonicalize_provider(provider) for provider in excluded_providers}
     return [
-        provider for provider in available_providers if provider.lower() not in excluded
+        provider
+        for provider in available_providers
+        if canonicalize_provider(provider) not in excluded
     ]
 
 
@@ -69,7 +72,7 @@ class ModelSelector:
         # Try to find the provider for this model
         for provider in available_providers:
             provider_matrix = self.routing_config.routing_matrix.get(
-                provider.lower(), {}
+                canonicalize_provider(provider), {}
             )
             if model_override in provider_matrix.values():
                 return RoutingDecision(
@@ -107,15 +110,15 @@ class ModelSelector:
             Filtered list of available preferred providers
         """
         available_set = {
-            provider.lower()
+            canonicalize_provider(provider)
             for provider in filter_excluded_providers(
                 available_providers, excluded_providers
             )
         }
         return [
-            provider.lower()
-            for provider in preferred_providers
-            if provider.lower() in available_set
+            provider
+            for provider in map(canonicalize_provider, preferred_providers)
+            if provider in available_set
         ]
 
     def apply_cost_optimization(
@@ -157,7 +160,7 @@ class ModelSelector:
 
         for provider in preferred_providers:
             model = self.routing_config.get_model_for_complexity(
-                provider, complexity_str
+                canonicalize_provider(provider), complexity_str
             )
             if model:
                 return RoutingDecision(

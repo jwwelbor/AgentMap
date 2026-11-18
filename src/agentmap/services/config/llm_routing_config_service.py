@@ -66,6 +66,7 @@ from agentmap.services.config.llm_routing_validators import (
     validate_provider_routing,
     validate_routing_config,
 )
+from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.logging_service import LoggingService
 
 
@@ -303,6 +304,12 @@ class LLMRoutingConfigService:
 
         # Fall back to llm_models_config_service
         return self._llm_models_config_service.get_fallback_model()
+
+    def get_provider_default_model(self, provider: str) -> Optional[str]:
+        """Return a default belonging to the selected provider."""
+        key = canonicalize_provider(provider)
+        model = self._llm_models_config_service.get_default_model(key)
+        return model if isinstance(model, str) and model else None
 
     def is_cost_optimization_enabled(self) -> bool:
         """
