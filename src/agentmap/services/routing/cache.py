@@ -105,7 +105,7 @@ class RoutingCache:
             "task_type": task_type,
             "complexity": str(complexity),
             "prompt_hash": prompt_hash,
-            "available_providers": sorted(available_providers),
+            "available_providers": available_providers,  # Matrix candidates use this order.
             "provider_preference": provider_preference,
             "cost_optimization": cost_optimization,
         }

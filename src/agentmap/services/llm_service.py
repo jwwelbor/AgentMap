@@ -849,6 +849,24 @@ class LLMService:
                 "result was not affected."
             )
 
+    def _routing_error_fallback_provider(
+        self, routing_context: Dict[str, Any], available_providers: List[str]
+    ) -> str:
+        """Validate the configured recovery provider against request exclusions."""
+        provider: str = routing_context.get("fallback_provider", "anthropic")
+        exclusions = routing_context.get("excluded_providers", ())
+        if exclusions:
+            normalized = (
+                self._provider_utils.normalize_provider(provider) if provider else None
+            )
+            available = {name.lower() for name in available_providers}
+            excluded = {name.lower() for name in exclusions}
+            if normalized not in available or normalized in excluded:
+                raise LLMConfigurationError(
+                    f"Routing fallback provider {provider!r} is not eligible"
+                )
+        return provider
+
     def _call_llm_with_routing(
         self,
         messages: List[LLMMessage],
@@ -876,6 +894,7 @@ class LLMService:
         if not self.routing_service:
             raise LLMServiceError("Routing requested but no routing service available")
 
+        available_providers: List[str] = []
         # Narrow try to routing decision only — _call_llm_direct errors must propagate
         # as-is; the broad except was re-labeling downstream errors as routing failures.
         try:
@@ -953,7 +972,9 @@ class LLMService:
         except Exception as e:
             self._logger.error(f"Routing failed: {e}")
             # Fall back to direct call if routing (pre-selection) fails
-            fallback_provider = routing_context.get("fallback_provider", "anthropic")
+            fallback_provider = self._routing_error_fallback_provider(
+                routing_context, available_providers
+            )
             self._logger.warning(
                 f"Falling back to {fallback_provider} due to routing failure"
             )
@@ -1069,6 +1090,9 @@ class LLMService:
 
             # For provider errors, try fallback if services available
             if self.features_registry and self.routing_config:
+                kwargs["excluded_providers"] = (routing_context or {}).get(
+                    "excluded_providers", ()
+                )
                 try:
                     current_model = model or config.get("model", "unknown")
                     return self._fallback_handler.try_with_fallback(
@@ -1103,6 +1127,7 @@ class LLMService:
         if not self.routing_service:
             raise LLMServiceError("Routing requested but no routing service available")
 
+        available_providers: List[str] = []
         # Narrow try to routing decision only — _call_llm_async_direct errors must
         # propagate as-is; the broad except was re-labeling downstream errors as
         # routing failures and silently swapping to fallback_provider.
@@ -1182,7 +1207,9 @@ class LLMService:
             raise
         except Exception as e:
             self._logger.error(f"Routing failed: {e}")
-            fallback_provider = routing_context.get("fallback_provider", "anthropic")
+            fallback_provider = self._routing_error_fallback_provider(
+                routing_context, available_providers
+            )
             self._logger.warning(
                 f"Falling back to {fallback_provider} due to pre-selection routing failure"
             )
@@ -1418,6 +1445,9 @@ class LLMService:
             # propagate unconditionally; call_llm_async unwraps at the top.
             raise
         except Exception as e:
+            kwargs["excluded_providers"] = (routing_context or {}).get(
+                "excluded_providers", ()
+            )
             return await self._handle_direct_call_exception(
                 e, provider, current_model, tools, original_messages, **kwargs
             )
@@ -4124,6 +4154,7 @@ class LLMService:
         if not self.routing_service:
             raise LLMServiceError("Routing requested but no routing service available")
 
+        available_providers: List[str] = []
         # Narrow try to routing decision only — _call_llm_stream_async_direct errors
         # must propagate as-is; the broad except was re-labeling downstream errors as
         # routing failures and silently swapping to fallback_provider.
@@ -4187,7 +4218,9 @@ class LLMService:
             # resolved (provider, model) identity. Mirrors the intent of
             # _call_llm_async_with_routing:1019.
             self._logger.error(f"Routing failed: {e}")
-            fallback_provider = routing_context.get("fallback_provider", "anthropic")
+            fallback_provider = self._routing_error_fallback_provider(
+                routing_context, available_providers
+            )
             self._logger.warning(
                 f"Falling back to {fallback_provider} due to pre-selection routing failure"
             )
@@ -4414,6 +4447,9 @@ class LLMService:
 
             # Pre-first-chunk error: check fallback eligibility (mirrors :1124).
             if self.features_registry and self.routing_config:
+                kwargs["excluded_providers"] = (routing_context or {}).get(
+                    "excluded_providers", ()
+                )
                 resp = await self._fallback_handler.try_with_fallback_async(
                     provider,
                     current_model,

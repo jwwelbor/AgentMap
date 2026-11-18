@@ -8,7 +8,7 @@ Handles multi-tier fallback logic when LLM calls fail, including:
 - Tier 4: Error with full context
 """
 
-from typing import Any, Awaitable, Callable, List, Optional
+from typing import Any, Awaitable, Callable, List, Optional, Sequence
 
 from agentmap.exceptions import LLMServiceError
 from agentmap.models.llm_execution import LLMMessage, LLMResponse
@@ -139,6 +139,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         self,
         original_provider: str,
         original_model: str,
+        excluded_providers: Sequence[str] = (),
     ) -> List[tuple]:
         """Build the ordered list of (provider, model) pairs to attempt as fallbacks.
 
@@ -152,15 +153,16 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         Tier 3: Any remaining available provider not already in the plan.
 
         Returns:
-            Ordered list of (provider, model) tuples. Entries where no low model
-            is found in the routing matrix are omitted.
+            Ordered list of (provider, model) tuples for permitted providers
+            with a low model in the routing matrix.
         """
         plan: List[tuple] = []
         seen: set = set()
+        excluded = {provider.lower() for provider in excluded_providers}
 
         def _add(provider: str, model: str) -> None:
             key = (provider, model)
-            if key not in seen:
+            if provider.lower() not in excluded and key not in seen:
                 seen.add(key)
                 plan.append(key)
 
@@ -214,6 +216,8 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         get_provider_config_fn: Any,
         get_or_create_client_fn: Any,
         convert_messages_fn: Any,
+        *,
+        excluded_providers: Sequence[str] = (),
         **kwargs,
     ) -> str:
         """
@@ -232,6 +236,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
             get_provider_config_fn: Function to get provider config
             get_or_create_client_fn: Function to get or create client
             convert_messages_fn: Function to convert messages to LangChain format
+            excluded_providers: Providers excluded by the routing request
             **kwargs: Additional parameters
 
         Returns:
@@ -252,7 +257,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
 
         # Use shared tier plan — keeps sync/async ladders in sync (DRY).
         for fallback_provider, fallback_model in self._build_tier_plan(
-            original_provider, original_model
+            original_provider, original_model, excluded_providers
         ):
             try:
                 self._logger.warning(

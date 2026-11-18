@@ -57,7 +57,7 @@ class FallbackHandler:
         Apply fallback strategy when preferred providers unavailable.
 
         Args:
-            available_providers: List of available providers
+            available_providers: Available providers after applying request exclusions
             task_type: Type of task being performed
             complexity: Task complexity level
             routing_context: Routing context and preferences
