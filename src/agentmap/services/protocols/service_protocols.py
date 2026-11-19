@@ -203,7 +203,7 @@ class LLMServiceProtocol(Protocol):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """
         Call LLM with specified provider and messages.
@@ -230,7 +230,7 @@ class LLMServiceProtocol(Protocol):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """
         Ask the LLM a question about an image.
@@ -259,7 +259,7 @@ class LLMServiceProtocol(Protocol):
         routing_context: Optional[Dict[str, Any]] = None,
         *,
         attempt_lifecycle: Optional[LLMAttemptLifecycleProtocol] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """
         Call LLM asynchronously and return a rich ``LLMResponse``.
@@ -290,7 +290,7 @@ class LLMServiceProtocol(Protocol):
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
         cache_system_prompt: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> AsyncIterator[LLMStreamChunk]:
         """
         Call LLM asynchronously and return an async iterator of streaming chunks.
@@ -332,7 +332,7 @@ class LLMServiceProtocol(Protocol):
         self,
         prompt: str,
         provider: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """
         Ask the LLM a question asynchronously using the text-only interface.
@@ -357,7 +357,7 @@ class LLMServiceProtocol(Protocol):
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
         cache_prompt: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """
         Ask the LLM about an image asynchronously, returning a rich response.
@@ -432,7 +432,7 @@ class LLMServiceProtocol(Protocol):
         """
         ...
 
-    def restore_batch(self, handle_data: dict) -> LLMBatchHandle:
+    def restore_batch(self, handle_data: Dict[str, Any]) -> LLMBatchHandle:
         """
         Restore a batch handle from a serialized dict after process restart.
 
@@ -633,7 +633,7 @@ class LLMBudgetGuardProtocol(Protocol):
 class StorageServiceProtocol(Protocol):
     """Protocol for storage service interface used by agents."""
 
-    def read(self, collection: str, **kwargs) -> Any:
+    def read(self, collection: str, **kwargs: Any) -> Any:
         """
         Read from storage collection.
 
@@ -646,7 +646,7 @@ class StorageServiceProtocol(Protocol):
         """
         ...
 
-    def write(self, collection: str, data: Any, **kwargs) -> Any:
+    def write(self, collection: str, data: Any, **kwargs: Any) -> Any:
         """
         Write to storage collection.
 
@@ -781,8 +781,8 @@ class GraphRunnerServiceProtocol(Protocol):
     def run(
         self,
         bundle: Any,  # GraphBundle
-        initial_state: Optional[dict] = None,
-        **kwargs,
+        initial_state: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
     ) -> Any:  # ExecutionResult
         """Execute a graph bundle and return the result."""
         ...
@@ -790,7 +790,7 @@ class GraphRunnerServiceProtocol(Protocol):
     async def run_async(
         self,
         bundle: Any,  # GraphBundle
-        initial_state: Optional[dict] = None,
+        initial_state: Optional[Dict[str, Any]] = None,
         parent_graph_name: Optional[str] = None,
         parent_tracker: Optional[Any] = None,
         is_subgraph: bool = False,
@@ -900,7 +900,7 @@ class MessagingServiceProtocol(Protocol):
 class BlobStorageServiceProtocol(Protocol):
     """Protocol for blob storage service interface used by agents."""
 
-    def read_blob(self, uri: str, **kwargs) -> bytes:
+    def read_blob(self, uri: str, **kwargs: Any) -> bytes:
         """
         Read blob from storage.
 
@@ -913,7 +913,7 @@ class BlobStorageServiceProtocol(Protocol):
         """
         ...
 
-    def write_blob(self, uri: str, data: bytes, **kwargs) -> Dict[str, Any]:
+    def write_blob(self, uri: str, data: bytes, **kwargs: Any) -> Dict[str, Any]:
         """
         Write blob to storage.
 
@@ -939,7 +939,7 @@ class BlobStorageServiceProtocol(Protocol):
         """
         ...
 
-    def list_blobs(self, prefix: str, **kwargs) -> List[str]:
+    def list_blobs(self, prefix: str, **kwargs: Any) -> List[str]:
         """
         List blobs with given prefix.
 
@@ -952,7 +952,7 @@ class BlobStorageServiceProtocol(Protocol):
         """
         ...
 
-    def delete_blob(self, uri: str, **kwargs) -> Dict[str, Any]:
+    def delete_blob(self, uri: str, **kwargs: Any) -> Dict[str, Any]:
         """
         Delete a blob.
 
