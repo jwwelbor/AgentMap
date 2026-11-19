@@ -70,5 +70,8 @@ jobs:
     - name: Install locked dependencies
       run: uv sync --locked --all-extras
 
-    - name: Check mypy baseline
+    - name: Run zero-error mypy source check
+      run: uv run --locked --all-extras mypy src/
+
+    - name: Check mypy diagnostic baseline
       run: uv run --locked --all-extras python tools/mypy_ratchet.py
