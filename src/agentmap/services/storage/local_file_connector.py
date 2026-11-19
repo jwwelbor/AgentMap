@@ -6,7 +6,7 @@ interface, serving as a fallback when cloud storage is not specified.
 """
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from agentmap.services.storage.base_connector import BlobStorageConnector
 
@@ -22,7 +22,7 @@ class LocalFileConnector(BlobStorageConnector):
 
     URI_SCHEME = "file"
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the local file connector.
 
@@ -31,6 +31,7 @@ class LocalFileConnector(BlobStorageConnector):
                 - base_dir: Base directory for file operations
         """
         super().__init__(config)
+        self._client: Any = None
         self.base_dir = config.get("base_dir", "") if config else ""
 
     def _initialize_client(self) -> None:
@@ -111,11 +112,11 @@ class LocalFileConnector(BlobStorageConnector):
 
             self.log_debug(f"Successfully wrote {len(data)} bytes to {path}")
         except PermissionError as e:
-            return self._handle_provider_error(
+            self._handle_provider_error(
                 "writing", path, e, raise_error=True, resource_type="file"
             )
         except Exception as e:
-            return self._handle_provider_error(
+            self._handle_provider_error(
                 "writing", uri, e, raise_error=True, resource_type="file"
             )
 

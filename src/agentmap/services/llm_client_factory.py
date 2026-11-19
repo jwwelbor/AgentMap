@@ -151,9 +151,12 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         owner: ObservedResources | None = None,
     ) -> Any:
         """Build OpenAI client, with streaming usage or governed observation."""
+        client_class: Any
         try:
             # Try the new langchain-openai package first
             from langchain_openai import ChatOpenAI
+
+            client_class = ChatOpenAI
         except ImportError:
             if governed:
                 raise LLMDependencyError(
@@ -161,7 +164,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 )
             # Fall back to legacy import
             try:
-                ChatOpenAI = getattr(
+                client_class = getattr(
                     importlib.import_module("langchain.chat_models"), "ChatOpenAI"
                 )
 
@@ -184,7 +187,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
             kwargs["max_tokens"] = max_tokens
         if streaming:
             kwargs["stream_options"] = {"include_usage": True}
-        return ChatOpenAI(**kwargs)
+        return client_class(**kwargs)
 
     def _create_anthropic_client(
         self,
@@ -210,19 +213,26 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         if governed:
             return observed_anthropic_client(kwargs, owner)
 
+        client_class: Any
         try:
             # Try langchain-anthropic first
             from langchain_anthropic import ChatAnthropic
+
+            client_class = ChatAnthropic
         except ImportError:
             try:
-                from langchain_community.chat_models import ChatAnthropic
+                from langchain_community.chat_models import (
+                    ChatAnthropic as CommunityChatAnthropic,
+                )
+
+                client_class = CommunityChatAnthropic
 
                 self._logger.warning(
                     "Using community LangChain import. Consider upgrading to langchain-anthropic."
                 )
             except ImportError:
                 try:
-                    ChatAnthropic = getattr(
+                    client_class = getattr(
                         importlib.import_module("langchain.chat_models"),
                         "ChatAnthropic",
                     )
@@ -235,7 +245,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                         "Anthropic dependencies not found. Install with: pip install langchain-anthropic"
                     )
 
-        return ChatAnthropic(**kwargs)
+        return client_class(**kwargs)
 
     def _create_google_client(
         self,
@@ -249,9 +259,12 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         owner: ObservedResources | None = None,
     ) -> Any:
         """Build Google client; streaming has no verified usage opt-in."""
+        client_class: Any
         try:
             # Try langchain-google-genai first
             from langchain_google_genai import ChatGoogleGenerativeAI
+
+            client_class = ChatGoogleGenerativeAI
         except ImportError:
             if governed:
                 raise LLMDependencyError(
@@ -259,7 +272,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 )
             try:
                 # Fall back to community package
-                ChatGoogleGenerativeAI = getattr(
+                client_class = getattr(
                     importlib.import_module("langchain_community.chat_models"),
                     "ChatGoogleGenerativeAI",
                 )
@@ -281,7 +294,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
             kwargs.update(governed_google_kwargs(owner))
         if max_tokens is not None:
             kwargs["max_output_tokens"] = max_tokens
-        return ChatGoogleGenerativeAI(**kwargs)
+        return client_class(**kwargs)
 
     def clear_cache(self) -> None:
         """Clear the client cache."""
