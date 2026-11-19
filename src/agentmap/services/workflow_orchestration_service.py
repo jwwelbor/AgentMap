@@ -18,8 +18,9 @@ Architecture:
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 from uuid import UUID
 
 from agentmap.di import initialize_di
@@ -342,24 +343,24 @@ def _normalize_initial_state_for_execution(
         return {}
 
     # If already a dict, check if it needs any normalization
-    if isinstance(initial_state, dict):
+    if isinstance(initial_state, Mapping):
         # Already a dict, but might contain complex objects that need normalization
         # StateAdapter handles dict format natively, just ensure it's clean
-        return initial_state
+        return dict(initial_state)
 
     # For pydantic models or objects with dict() method
     if hasattr(initial_state, "dict") and callable(getattr(initial_state, "dict")):
-        return cast(Dict[str, Any], initial_state.dict())
+        return _require_state_mapping(initial_state.dict(), "dict()")
 
     # For pydantic v2 models with model_dump() method
     if hasattr(initial_state, "model_dump") and callable(
         getattr(initial_state, "model_dump")
     ):
-        return cast(Dict[str, Any], initial_state.model_dump())
+        return _require_state_mapping(initial_state.model_dump(), "model_dump()")
 
     # For objects with __dict__ attribute
     if hasattr(initial_state, "__dict__"):
-        return cast(Dict[str, Any], initial_state.__dict__)
+        return _require_state_mapping(initial_state.__dict__, "__dict__")
 
     # For simple values, wrap in a state structure
     if isinstance(initial_state, (str, int, float, bool, list)):
@@ -371,3 +372,9 @@ def _normalize_initial_state_for_execution(
     except (TypeError, ValueError):
         # If all else fails, wrap the object
         return {"state": initial_state}
+
+
+def _require_state_mapping(value: Any, source: str) -> Dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"Initial state {source} must return a mapping")
+    return dict(value)

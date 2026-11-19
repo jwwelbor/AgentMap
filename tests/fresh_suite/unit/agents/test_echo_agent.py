@@ -91,6 +91,16 @@ class TestEchoAgent(unittest.TestCase):
             minimal_agent.output_field
         )  # Default is now None, not "output"
 
+    def test_prompt_service_without_format_method_is_rejected(self):
+        class GetPromptOnlyService:
+            def get_prompt(self, prompt_name, variables=None):
+                return prompt_name
+
+        agent = EchoAgent(name="templated_echo", prompt="Hello {name}")
+
+        with self.assertRaisesRegex(TypeError, "format_prompt"):
+            agent.configure_prompt_service(GetPromptOnlyService())
+
     def test_agent_protocol_compliance(self):
         """Test that EchoAgent correctly implements (or doesn't implement) service protocols."""
         # EchoAgent should NOT implement business service protocols

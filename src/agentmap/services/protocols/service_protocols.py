@@ -815,18 +815,16 @@ class GraphRunnerServiceProtocol(Protocol):
 class PromptManagerServiceProtocol(Protocol):
     """Protocol for prompt manager service interface used by agents."""
 
-    def get_prompt(
-        self, prompt_name: str, variables: Optional[Dict[str, Any]] = None
-    ) -> str:
+    def format_prompt(self, prompt_ref_or_text: str, values: Dict[str, Any]) -> str:
         """
-        Get a prompt template and optionally fill it with variables.
+        Resolve and format a prompt using the supplied values.
 
         Args:
-            prompt_name: Name of the prompt template
-            variables: Optional variables to substitute in the template
+            prompt_ref_or_text: Prompt reference or text to format
+            values: Values to substitute in the prompt
 
         Returns:
-            Prompt string (with variables substituted if provided)
+            Formatted prompt text
         """
         ...
 

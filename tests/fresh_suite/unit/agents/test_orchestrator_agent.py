@@ -326,6 +326,25 @@ class TestOrchestratorAgent(unittest.TestCase):
         result = agent._get_nodes_from_inputs(inputs)
         self.assertEqual(result, {})
 
+    def test_get_nodes_from_inputs_discards_malformed_node_records(self):
+        agent = self.create_orchestrator_agent()
+        valid_record = {"type": "agent"}
+        malformed_nodes = {
+            "valid": valid_record,
+            "scalar": "bad",
+            "null": None,
+            7: valid_record,
+        }
+
+        standard_result = agent._get_nodes_from_inputs(
+            {"available_nodes": malformed_nodes}
+        )
+        self.assertEqual(standard_result, {"valid": valid_record})
+
+        agent.input_fields = ["node_data"]
+        configured_result = agent._get_nodes_from_inputs({"node_data": malformed_nodes})
+        self.assertEqual(configured_result, {"valid": valid_record})
+
     # =============================================================================
     # 4. Process Method Integration Tests
     # =============================================================================

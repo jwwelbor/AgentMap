@@ -702,6 +702,8 @@ def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str,
 
     # Enforce payload size bound on the data portion (F-5 / NB-C)
     if response_data is not None:
+        if not isinstance(response_data, dict):
+            raise InvalidInputs("Resume response_data must be a JSON object")
         try:
             encoded_size = len(json.dumps(response_data).encode("utf-8"))
         except (TypeError, ValueError):

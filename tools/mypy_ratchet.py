@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_PATH = ROOT / "tools" / "mypy-baseline.json"
 MYPY_COMMAND = (
@@ -54,7 +53,9 @@ def normalize_file(value: str, root: Path = ROOT) -> str:
         try:
             normalized = path.resolve().relative_to(root.resolve()).as_posix()
         except ValueError as error:
-            raise ValueError(f"Diagnostic path is outside repository: {value}") from error
+            raise ValueError(
+                f"Diagnostic path is outside repository: {value}"
+            ) from error
     else:
         normalized = path.as_posix()
     if normalized.startswith("./"):
@@ -108,8 +109,21 @@ def diagnostic_counts(diagnostics: Iterable[Diagnostic]) -> dict[str, object]:
     }
 
 
-def load_diagnostics(baseline: dict[str, object]) -> Counter[Diagnostic]:
+def parse_baseline(content: str) -> dict[str, object]:
+    """Parse baseline JSON and require the expected object root."""
+    try:
+        baseline = json.loads(content)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Invalid baseline JSON: {error}") from error
+    if not isinstance(baseline, dict):
+        raise ValueError("Mypy baseline root must be a JSON object")
+    return baseline
+
+
+def load_diagnostics(baseline: object) -> Counter[Diagnostic]:
     """Load the baseline multiset, retaining repeated findings."""
+    if not isinstance(baseline, dict):
+        raise ValueError("Mypy baseline root must be an object")
     counts = baseline.get("diagnostics")
     if not isinstance(counts, list):
         raise ValueError("Baseline must contain a diagnostics list")
@@ -117,17 +131,24 @@ def load_diagnostics(baseline: dict[str, object]) -> Counter[Diagnostic]:
     for item in counts:
         if not isinstance(item, dict):
             raise ValueError("Each baseline diagnostic must be an object")
-        try:
-            diagnostic = Diagnostic(
-                file=str(item["file"]),
-                code=str(item["code"]),
-                message=str(item["message"]),
-            )
-            count = int(item["count"])
-        except (KeyError, TypeError, ValueError) as error:
-            raise ValueError(f"Invalid baseline diagnostic: {item}") from error
+        file_name = item.get("file")
+        code = item.get("code")
+        message = item.get("message")
+        count = item.get("count")
+        if (
+            not isinstance(file_name, str)
+            or not file_name
+            or not isinstance(code, str)
+            or not code
+            or not isinstance(message, str)
+            or not message
+            or not isinstance(count, int)
+            or isinstance(count, bool)
+        ):
+            raise ValueError(f"Invalid baseline diagnostic: {item}")
         if count < 1:
             raise ValueError("Baseline diagnostic counts must be positive")
+        diagnostic = Diagnostic(file=file_name, code=code, message=message)
         result[diagnostic] = count
     return result
 
@@ -152,8 +173,7 @@ def dependency_manifest_digest(root: Path = ROOT) -> str:
     """Hash installed versions of packages selected from the project lock."""
     lock = tomllib.loads((root / "uv.lock").read_text(encoding="utf-8"))
     locked_names = {
-        re.sub(r"[-_.]+", "-", package["name"]).lower()
-        for package in lock["package"]
+        re.sub(r"[-_.]+", "-", package["name"]).lower() for package in lock["package"]
     }
     installed = {}
     for distribution in importlib.metadata.distributions():
@@ -246,7 +266,9 @@ def write_baseline(diagnostics: list[Diagnostic], root: Path = ROOT) -> None:
     print(f"Updated {baseline_path.relative_to(root)} with {len(diagnostics)} findings")
 
 
-def check_environment(baseline: dict[str, object], root: Path = ROOT) -> None:
+def check_environment(baseline: object, root: Path = ROOT) -> None:
+    if not isinstance(baseline, dict):
+        raise ValueError("Mypy baseline root must be an object")
     expected = baseline.get("environment")
     if not isinstance(expected, dict):
         raise ValueError("Baseline must contain environment metadata")
@@ -288,9 +310,13 @@ def main() -> int:
     if not BASELINE_PATH.exists():
         print(f"Missing baseline: {BASELINE_PATH.relative_to(ROOT)}", file=sys.stderr)
         return 2
-    baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
-    check_environment(baseline)
-    existing = load_diagnostics(baseline)
+    try:
+        baseline = parse_baseline(BASELINE_PATH.read_text(encoding="utf-8"))
+        check_environment(baseline)
+        existing = load_diagnostics(baseline)
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"Invalid mypy baseline: {error}", file=sys.stderr)
+        return 2
     current = Counter(diagnostics)
     added = find_new_diagnostics(existing, current)
     if added:
@@ -301,7 +327,10 @@ def main() -> int:
                 f"(new occurrences: {count})",
                 file=sys.stderr,
             )
-        print("Review the findings, then use --update for an approved baseline change.", file=sys.stderr)
+        print(
+            "Review the findings, then use --update for an approved baseline change.",
+            file=sys.stderr,
+        )
         return 1
 
     removed = sum(existing.values()) - sum(current.values())

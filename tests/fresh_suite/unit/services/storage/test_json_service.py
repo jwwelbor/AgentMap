@@ -781,6 +781,24 @@ class TestJSONStorageService(unittest.TestCase):
 
         self.assertEqual(result["count"], 1)
 
+    def test_query_sort_handles_mixed_json_value_types(self):
+        test_data = [
+            {"id": "object", "rank": {"nested": 1}},
+            {"id": "string-z", "rank": "z"},
+            {"id": "number", "rank": 3},
+            {"id": "none", "rank": None},
+            {"id": "boolean", "rank": False},
+            {"id": "list", "rank": ["a"]},
+            {"id": "string-a", "rank": "a"},
+        ]
+
+        result = self.service._apply_query_filter(test_data, {"sort": "rank"})
+
+        self.assertEqual(
+            [item["id"] for item in result["data"]],
+            ["none", "boolean", "number", "string-a", "string-z", "list", "object"],
+        )
+
     def test_read_with_query(self):
         """Test reading with query parameters."""
         collection = "query_test"

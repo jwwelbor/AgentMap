@@ -335,6 +335,27 @@ class TestMemoryStorageService(unittest.TestCase):
         result_list = list(results.values())
         self.assertTrue(result_list[0]["score"] >= result_list[1]["score"])
 
+    def test_query_sort_handles_mixed_memory_value_types(self):
+        collection = "mixed_sort_test"
+        docs = [
+            ("object", {"rank": {"nested": 1}}),
+            ("string-z", {"rank": "z"}),
+            ("number", {"rank": 3}),
+            ("none", {"rank": None}),
+            ("boolean", {"rank": False}),
+            ("list", {"rank": ["a"]}),
+            ("string-a", {"rank": "a"}),
+        ]
+        for document_id, document in docs:
+            self.service.write(collection, document, document_id)
+
+        results = self.service.read(collection, query={"sort": "rank"})
+
+        self.assertEqual(
+            list(results.keys()),
+            ["none", "boolean", "number", "string-a", "string-z", "list", "object"],
+        )
+
     def test_batch_delete_with_query(self):
         """Test batch delete using query filters."""
         collection = "batch_delete_test"

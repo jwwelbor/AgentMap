@@ -347,12 +347,18 @@ class OpenAIBatchAdapter:
                         "OpenAIBatchAdapter.fetch_results: error payload must be an object"
                     )
                     continue
+                error_type = error_payload.get("code", "unknown")
+                error_message = error_payload.get("message", "")
                 yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
-                        error_type=error_payload.get("code", "unknown"),
-                        message=error_payload.get("message", ""),
+                        error_type=(
+                            error_type if isinstance(error_type, str) else "unknown"
+                        ),
+                        message=(
+                            error_message if isinstance(error_message, str) else ""
+                        ),
                         retryable=False,
                     ),
                 )
@@ -379,7 +385,8 @@ class OpenAIBatchAdapter:
                 continue
 
             status_code = response_payload.get("status_code", 200)
-            body = response_payload.get("body") or {}
+            raw_body = response_payload.get("body")
+            body = {} if raw_body is None else raw_body
             if not isinstance(body, dict):
                 self._logger.warning(
                     "OpenAIBatchAdapter.fetch_results: response body must be an object"
@@ -388,14 +395,24 @@ class OpenAIBatchAdapter:
 
             if status_code != 200:
                 # HTTP-level error from the provider
-                error_detail = body.get("error", {}) if isinstance(body, dict) else {}
+                error_detail = body.get("error", {})
+                if not isinstance(error_detail, dict):
+                    error_detail = {}
+                error_type = error_detail.get("code", "http_error")
+                error_message = error_detail.get(
+                    "message", f"HTTP {status_code} from OpenAI"
+                )
                 yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
-                        error_type=error_detail.get("code", "http_error"),
-                        message=error_detail.get(
-                            "message", f"HTTP {status_code} from OpenAI"
+                        error_type=(
+                            error_type if isinstance(error_type, str) else "http_error"
+                        ),
+                        message=(
+                            error_message
+                            if isinstance(error_message, str)
+                            else f"HTTP {status_code} from OpenAI"
                         ),
                         retryable=False,
                     ),
@@ -430,7 +447,7 @@ class OpenAIBatchAdapter:
             # Normalize usage: OpenAI uses prompt_tokens/completion_tokens
             usage: Optional[LLMUsage] = None
             usage_raw = body.get("usage")
-            if usage_raw:
+            if isinstance(usage_raw, dict):
                 usage = LLMUsage(
                     input_tokens=usage_raw.get("prompt_tokens"),
                     output_tokens=usage_raw.get("completion_tokens"),
@@ -438,12 +455,20 @@ class OpenAIBatchAdapter:
                     cache_creation_input_tokens=None,
                     cache_read_input_tokens=None,
                 )
+            elif usage_raw is not None:
+                self._logger.warning(
+                    "OpenAIBatchAdapter.fetch_results: usage payload must be an object"
+                )
+
+            resolved_model = body.get("model")
+            if not isinstance(resolved_model, str):
+                resolved_model = None
 
             yield LLMBatchResult(
                 request_id=request_id,
                 status="succeeded",
                 resolved_provider="openai",
-                resolved_model=body.get("model"),
+                resolved_model=resolved_model,
                 text=content,
                 usage=usage,
             )

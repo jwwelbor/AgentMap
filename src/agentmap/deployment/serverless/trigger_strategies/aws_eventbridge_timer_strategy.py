@@ -9,8 +9,8 @@ class AwsEventBridgeTimerStrategy:
     """Strategy for AWS EventBridge timer events."""
 
     def matches(self, event: Dict[str, Any]) -> bool:
-        source: str = event.get("source", "")
-        return source.startswith("aws.events")
+        source = event.get("source", "")
+        return isinstance(source, str) and source.startswith("aws.events")
 
     def parse(self, event: Dict[str, Any]) -> Tuple[TriggerType, Dict[str, Any]]:
         payload = {

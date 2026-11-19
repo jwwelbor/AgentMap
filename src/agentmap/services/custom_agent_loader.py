@@ -9,8 +9,9 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict, Optional, Type, cast
+from typing import Any, Dict, Optional, Type
 
+from agentmap.services.class_import import require_class
 from agentmap.services.logging_service import LoggingService
 
 
@@ -75,7 +76,11 @@ class CustomAgentLoader:
 
             # Get the class from the module
             if hasattr(module, class_name):
-                agent_class = cast(Type[Any], getattr(module, class_name))
+                agent_class = require_class(
+                    getattr(module, class_name), f"{module_name}.{class_name}"
+                )
+                if not self.validate_agent_class(agent_class):
+                    return None
                 self.logger.debug(f"Successfully loaded custom agent: {class_path}")
                 return agent_class
             else:

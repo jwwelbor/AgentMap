@@ -186,8 +186,11 @@ class TestAgentFactoryService(unittest.TestCase):
         # Mock the importlib functions
         with patch("importlib.import_module") as mock_import_module:
             mock_module = Mock()
-            mock_agent_class = Mock()
-            mock_agent_class.__name__ = "DefaultAgent"
+
+            class DefaultAgent:
+                pass
+
+            mock_agent_class = DefaultAgent
             mock_module.DefaultAgent = mock_agent_class
             mock_import_module.return_value = mock_module
 
@@ -210,9 +213,12 @@ class TestAgentFactoryService(unittest.TestCase):
 
     def test_import_class_from_path_tries_custom_loader_for_non_package(self):
         """Test that custom agent loader is tried for non-agentmap paths."""
+
         # Arrange
-        mock_agent_class = Mock()
-        mock_agent_class.__name__ = "CustomAgent"
+        class CustomAgent:
+            pass
+
+        mock_agent_class = CustomAgent
         self.mock_custom_agent_loader.load_agent_class.return_value = mock_agent_class
 
         # Act
@@ -240,8 +246,11 @@ class TestAgentFactoryService(unittest.TestCase):
 
         with patch("importlib.import_module") as mock_import_module:
             mock_module = Mock()
-            mock_agent_class = Mock()
-            mock_agent_class.__name__ = "CustomAgent"
+
+            class CustomAgent:
+                pass
+
+            mock_agent_class = CustomAgent
             mock_module.CustomAgent = mock_agent_class
             mock_import_module.return_value = mock_module
 
@@ -262,10 +271,34 @@ class TestAgentFactoryService(unittest.TestCase):
 
         self.assertIn("Invalid class path format", str(context.exception))
 
+    def test_import_class_from_path_rejects_non_class_module_attribute(self):
+        with patch("importlib.import_module") as mock_import_module:
+            mock_module = Mock()
+            mock_module.not_a_class = lambda: None
+            mock_import_module.return_value = mock_module
+
+            with self.assertRaisesRegex(ImportError, "does not resolve to a class"):
+                self.service._resolver._import_class_from_path(
+                    "agentmap.test_module.not_a_class"
+                )
+
+    def test_custom_agent_fallback_rejects_non_class_module_attribute(self):
+        import sys
+        from types import ModuleType
+
+        module = ModuleType("invalid_agent")
+        module.invalidAgent = lambda: None
+        with patch.dict(sys.modules, {"invalid_agent": module}):
+            self.assertIsNone(self.service._resolver._try_load_custom_agent("invalid"))
+
     def test_import_class_from_path_uses_cache(self):
         """Test that previously imported classes are returned from cache."""
+
         # Arrange - populate cache
-        mock_agent_class = Mock()
+        class CachedAgent:
+            pass
+
+        mock_agent_class = CachedAgent
         self.service._resolver._class_cache["cached.class.Agent"] = mock_agent_class
 
         # Act

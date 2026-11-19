@@ -317,6 +317,12 @@ class TestStorageConfigService(unittest.TestCase):
         result = self.storage_config_service.list_collections("missing")
         self.assertEqual(result, [])
 
+    def test_list_collections_rejects_non_mapping_configuration(self):
+        self.storage_config_service.get_value = Mock(return_value=["users"])
+
+        with self.assertRaises(StorageConfigurationNotAvailableException):
+            self.storage_config_service.list_collections("csv")
+
     def test_has_collection(self):
         """Test checking if collection exists."""
         self.assertTrue(self.storage_config_service.has_collection("csv", "users"))

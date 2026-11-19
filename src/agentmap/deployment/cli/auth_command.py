@@ -237,7 +237,11 @@ def auth_update(
     _, new_keys = create_auth_configuration()
 
     # Update only the API keys, preserving other auth settings
-    existing_config["authentication"]["api_keys"] = new_keys
+    auth_config = existing_config.get("authentication")
+    if not isinstance(auth_config, dict):
+        typer.secho("❌ Authentication configuration must be a mapping", fg=colors.RED)
+        raise typer.Exit(code=1)
+    auth_config["api_keys"] = new_keys
 
     # Save updated configuration
     save_yaml_config(config, existing_config)
@@ -279,6 +283,9 @@ def auth_view(
         raise typer.Exit(code=1)
 
     auth_config = existing_config["authentication"]
+    if not isinstance(auth_config, dict):
+        typer.secho("❌ Authentication configuration must be a mapping", fg=colors.RED)
+        raise typer.Exit(code=1)
 
     typer.secho(
         f"\n🔍 Authentication Configuration from: {config}", fg=colors.CYAN, bold=True
@@ -292,7 +299,37 @@ def auth_view(
     )
 
     # Show API keys
-    api_keys: dict[str, APIKeyConfiguration] = auth_config.get("api_keys", {})
+    raw_api_keys = auth_config.get("api_keys", {})
+    if not isinstance(raw_api_keys, dict):
+        typer.secho("❌ api_keys must be a mapping", fg=colors.RED)
+        raise typer.Exit(code=1)
+    api_keys: dict[str, APIKeyConfiguration] = {}
+    for name, key_config in raw_api_keys.items():
+        if not isinstance(name, str) or not isinstance(key_config, dict):
+            typer.secho("❌ Each api_keys entry must be a named mapping", fg=colors.RED)
+            raise typer.Exit(code=1)
+        key = key_config.get("key")
+        permissions = key_config.get("permissions", [])
+        if (
+            not isinstance(key, str)
+            or not isinstance(permissions, list)
+            or not all(isinstance(permission, str) for permission in permissions)
+        ):
+            typer.secho(
+                "❌ Each api_keys entry must contain a string key and string permissions",
+                fg=colors.RED,
+            )
+            raise typer.Exit(code=1)
+        validated_config: APIKeyConfiguration = {
+            "key": key,
+            "permissions": permissions,
+            "user_id": name,
+            "metadata": {},
+        }
+        expires_at = key_config.get("expires_at")
+        if isinstance(expires_at, str):
+            validated_config["expires_at"] = expires_at
+        api_keys[name] = validated_config
     if api_keys:
         if show_keys:
             typer.secho(

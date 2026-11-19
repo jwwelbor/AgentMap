@@ -16,6 +16,7 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     print_err,
     print_json,
 )
+from agentmap.deployment.cli.utils.cli_utils import parse_json_object
 from agentmap.runtime_api import ensure_initialized, run_workflow_async
 
 
@@ -184,9 +185,8 @@ def run_command(
 def parse_json_state(state: str) -> dict[str, object]:
     """Helper function to parse JSON state (for backward compatibility)."""
     try:
-        parsed = json.loads(state) if state != "{}" else {}
+        return {} if state == "{}" else parse_json_object(state)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in state: {e}")
-    if not isinstance(parsed, dict):
-        raise ValueError("JSON state must be an object")
-    return parsed
+        raise ValueError(f"Invalid JSON in state: {e}") from e
+    except ValueError as e:
+        raise ValueError("JSON state must be an object") from e

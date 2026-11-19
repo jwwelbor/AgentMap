@@ -22,6 +22,7 @@ from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
+from agentmap.services.storage.sort_utils import get_sort_options, stable_sort_key
 from agentmap.services.storage.types import StorageResult, WriteMode
 
 
@@ -747,8 +748,9 @@ class JSONStorageService(BaseStorageService):
         # Extract special query parameters
         limit = query.pop("limit", None)
         offset = query.pop("offset", 0)
-        sort_field = query.pop("sort", None)
-        sort_order = query.pop("order", "asc").lower()
+        sort_field, reverse = get_sort_options(
+            query.pop("sort", None), query.pop("order", "asc")
+        )
 
         # Handle empty data
         if data is None:
@@ -768,10 +770,9 @@ class JSONStorageService(BaseStorageService):
 
             # Apply sorting
             if sort_field and list_result:
-                reverse = sort_order == "desc"
                 list_result.sort(
-                    key=lambda x: cast(
-                        Any, x.get(sort_field) if isinstance(x, dict) else None
+                    key=lambda x: stable_sort_key(
+                        x.get(sort_field) if isinstance(x, dict) else None
                     ),
                     reverse=reverse,
                 )

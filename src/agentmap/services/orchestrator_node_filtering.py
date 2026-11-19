@@ -20,6 +20,8 @@ class NodeFilter:
             return {
                 name: info
                 for name, info in nodes.items()
-                if info.get("type", "").lower() == type_filter.lower()
+                if isinstance(info, dict)
+                and isinstance(info.get("type"), str)
+                and info["type"].lower() == type_filter.lower()
             }
         return nodes

@@ -7,8 +7,9 @@ protocol implementations, and metadata without affecting AgentMap's core DI cont
 """
 
 import importlib
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
+from agentmap.services.class_import import require_class
 from agentmap.services.logging_service import LoggingService
 
 # Import all mixins and utilities
@@ -78,9 +79,7 @@ def _import_class(class_path: str) -> type:
         raise ImportError(f"Invalid class path (no module): {class_path}")
     module = importlib.import_module(module_path)
     cls = getattr(module, class_name, None)
-    if cls is None:
-        raise ImportError(f"Class '{class_name}' not found in module '{module_path}'")
-    return cast(type[Any], cls)
+    return require_class(cls, class_path)
 
 
 def _topological_sort(

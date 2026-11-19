@@ -90,7 +90,10 @@ class BranchingAgent(BaseAgent):
         )
 
         # What to return if field not found or value not in success/failure lists
-        self.default_result: bool = context.get("default_result", True)
+        default_result = context.get("default_result", True)
+        self.default_result: bool = (
+            default_result if isinstance(default_result, bool) else True
+        )
 
         # Fallback fields to check if primary field not found (for backward compatibility)
         self.fallback_fields = context.get(

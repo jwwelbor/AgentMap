@@ -902,6 +902,33 @@ class TestAvailabilityCacheManager(unittest.TestCase):
             loop = asyncio.get_event_loop()
             loop.run_until_complete(run_test())
 
+    def test_malformed_nested_availability_entries_are_regenerated(self):
+        malformed_cache_values = [
+            {"availability": []},
+            {"availability": {"csv_storage": []}},
+        ]
+
+        for cache_data in malformed_cache_values:
+            with self.subTest(cache_data=cache_data):
+                self.file_cache._memory_cache = None
+                self.file_cache.save_cache(cache_data)
+                strategy = MockValidationStrategy("csv_storage")
+                self.manager.register_validator("csv_storage", strategy)
+
+                result = asyncio.run(
+                    self.manager.get_or_generate_availability(
+                        "csv_storage", self.test_config
+                    )
+                )
+
+                self.assertEqual(strategy.call_count, 1)
+                self.assertTrue(result["enabled"])
+                cached = self.file_cache.load_cache()
+                self.assertIsInstance(
+                    self.manager._get_cached_availability(cached, "csv_storage"),
+                    dict,
+                )
+
     def test_get_availability_cache_hit(self):
         """Test availability retrieval from valid cache."""
         strategy = MockValidationStrategy("csv_storage")

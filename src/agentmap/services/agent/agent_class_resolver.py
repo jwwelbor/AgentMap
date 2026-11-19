@@ -6,8 +6,9 @@ Handles custom agents, built-in agents, and fallback logic.
 """
 
 import importlib
-from typing import Any, Dict, Optional, Set, Type, cast
+from typing import Any, Dict, Optional, Set, Type
 
+from agentmap.services.class_import import require_class
 from agentmap.services.custom_agent_loader import CustomAgentLoader
 from agentmap.services.logging_service import LoggingService
 
@@ -195,6 +196,7 @@ class AgentClassResolver:
             try:
                 agent_class = self._custom_agent_loader.load_agent_class(class_path)
                 if agent_class:
+                    agent_class = require_class(agent_class, class_path)
                     self._class_cache[class_path] = agent_class
                     self.logger.debug(
                         f"[AgentClassResolver] Loaded custom agent: {class_path} -> {agent_class.__name__}"
@@ -216,7 +218,7 @@ class AgentClassResolver:
             module = importlib.import_module(module_path)
 
             # Get the class from the module
-            agent_class = cast(Type[Any], getattr(module, class_name))
+            agent_class = require_class(getattr(module, class_name), class_path)
 
             # Cache the class for performance
             self._class_cache[class_path] = agent_class
@@ -254,7 +256,9 @@ class AgentClassResolver:
 
             try:
                 module = __import__(modname, fromlist=[classname])
-                agent_class = cast(Type[Any], getattr(module, classname))
+                agent_class = require_class(
+                    getattr(module, classname), f"{modname}.{classname}"
+                )
                 self.logger.debug(
                     f"[AgentClassResolver] Successfully loaded custom agent: {agent_class.__name__}"
                 )

@@ -8,10 +8,11 @@ this service only loads what's required by the graph.
 Follows the same patterns as ApplicationBootstrapService but with filtered, minimal loading.
 """
 
-from typing import Any, Dict, Optional, Set, cast
+from typing import Any, Dict, Optional, Set
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.agent.agent_registry_service import AgentRegistryService
+from agentmap.services.class_import import require_class
 from agentmap.services.config.agent_config_service import AgentConfigService
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.dependency_checker_service import DependencyCheckerService
@@ -370,8 +371,7 @@ class GraphBootstrapService:
 
         try:
             module = __import__(module_path, fromlist=[class_name])
-            agent_class = getattr(module, class_name)
-            return cast(type[Any], agent_class)
+            return require_class(getattr(module, class_name), class_path)
         except (ImportError, AttributeError) as e:
             raise ImportError(f"Cannot import {class_path}: {e}")
 

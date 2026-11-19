@@ -52,8 +52,12 @@ class SummaryAgent(BaseAgent, LLMCapableAgent):
         self.use_llm = bool(self.llm_type)
 
         # Formatting configuration
-        self.format_template: str = self.context.get("format", "{key}: {value}")
-        self.separator: str = self.context.get("separator", "\n\n")
+        format_template = self.context.get("format", "{key}: {value}")
+        self.format_template: str = (
+            format_template if isinstance(format_template, str) else "{key}: {value}"
+        )
+        separator = self.context.get("separator", "\n\n")
+        self.separator: str = separator if isinstance(separator, str) else "\n\n"
         self.include_keys = self.context.get("include_keys", True)
 
         # Resolve the prompt using PromptManagerService if available

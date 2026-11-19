@@ -115,6 +115,16 @@ class TestLLMAgent(unittest.TestCase):
         self.assertEqual(minimal_agent.temperature, 0.7)  # Default temperature
         self.assertIsNone(minimal_agent.max_tokens)  # Default max_tokens
 
+    def test_non_boolean_routing_flag_uses_legacy_mode(self):
+        agent = LLMAgent(
+            name="invalid-routing-flag",
+            prompt="Test prompt",
+            context={"routing_enabled": "false", "provider": "openai"},
+        )
+
+        self.assertFalse(agent.is_routing_enabled())
+        self.assertEqual(agent.provider, "openai")
+
     def test_agent_initialization_with_different_providers(self):
         """Test LLMAgent with different LLM providers."""
         providers_config = [

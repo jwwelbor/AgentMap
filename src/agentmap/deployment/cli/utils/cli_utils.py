@@ -62,13 +62,20 @@ def parse_json_state(state_str: str) -> Dict[str, object]:
         return {}
 
     try:
-        parsed = json.loads(state_str)
+        return parse_json_object(state_str)
     except json.JSONDecodeError as e:
         typer.secho(f"❌ Invalid JSON in --state: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    if not isinstance(parsed, dict):
+    except ValueError:
         typer.secho("❌ JSON in --state must be an object", fg=typer.colors.RED)
         raise typer.Exit(code=1)
+
+
+def parse_json_object(value: str) -> Dict[str, object]:
+    """Parse a JSON object, raising ValueError for non-object roots."""
+    parsed = json.loads(value)
+    if not isinstance(parsed, dict):
+        raise ValueError("JSON value must be an object")
     return parsed
 
 

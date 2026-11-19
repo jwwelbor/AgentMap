@@ -6,7 +6,7 @@ contain business logic. All orchestration logic moved to OrchestratorService.
 """
 
 import logging
-from typing import Any, Dict, Optional, Tuple, cast
+from typing import Any, Dict, Optional, Tuple
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
@@ -279,8 +279,10 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
         """Get node dictionary from inputs when available."""
         # First check standard field names for nodes
         for field_name in ["available_nodes", "nodes", "__node_registry"]:
-            if field_name in inputs and isinstance(inputs[field_name], dict):
-                return cast(Dict[str, Dict[str, Any]], inputs[field_name])
+            if field_name in inputs:
+                node_registry = self._validated_node_registry(inputs[field_name])
+                if node_registry:
+                    return node_registry
 
         # Then check configured input fields for nodes (skip text fields)
         for field in self.input_fields:
@@ -292,11 +294,22 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
                 "message",
                 "user_input",
             ]:
-                value = inputs[field]
-                if isinstance(value, dict):
-                    return value
+                node_registry = self._validated_node_registry(inputs[field])
+                if node_registry:
+                    return node_registry
 
         return {}
+
+    @staticmethod
+    def _validated_node_registry(value: Any) -> Dict[str, Dict[str, Any]]:
+        """Keep only string-named nodes with mapping metadata."""
+        if not isinstance(value, dict):
+            return {}
+        nodes: Dict[str, Dict[str, Any]] = {}
+        for name, info in value.items():
+            if isinstance(name, str) and isinstance(info, dict):
+                nodes[name] = info
+        return nodes
 
     def get_service_info(self) -> Dict[str, Any]:
         """Get information about agent configuration and service delegation."""

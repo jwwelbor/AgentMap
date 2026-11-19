@@ -78,7 +78,10 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         self._prompt_manager_service = prompt_manager_service
 
         # Configuration from context with sensible defaults
-        self.routing_enabled: bool = self.context.get("routing_enabled", False)
+        routing_enabled = self.context.get("routing_enabled", False)
+        self.routing_enabled: bool = (
+            routing_enabled if isinstance(routing_enabled, bool) else False
+        )
 
         if self.routing_enabled:
             # Routing mode: Provider will be determined dynamically

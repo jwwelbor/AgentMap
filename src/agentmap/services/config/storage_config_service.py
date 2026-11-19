@@ -326,9 +326,13 @@ class StorageConfigService:
         Returns:
             List of collection names
         """
-        collections_config: Dict[str, Any] = self.get_value(
-            f"{storage_type}.collections", {}
-        )
+        collections_config: Any = self.get_value(f"{storage_type}.collections", {})
+        if collections_config is None:
+            return []
+        if not isinstance(collections_config, dict):
+            raise StorageConfigurationNotAvailableException(
+                f"Storage collections for '{storage_type}' must be a mapping"
+            )
         return list(collections_config.keys())
 
     def has_collection(self, storage_type: str, collection_name: str) -> bool:

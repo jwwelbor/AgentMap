@@ -6,6 +6,7 @@ that serves as the foundation for all AgentMap agents.
 """
 
 import unittest
+from types import MappingProxyType
 from typing import Any, Dict
 from unittest.mock import Mock
 
@@ -175,6 +176,35 @@ class TestBaseAgent(unittest.TestCase):
         self.assertIsNone(agent.state_adapter_service)
         with self.assertRaisesRegex(ValueError, "StateAdapterService not provided"):
             agent.require_state_adapter_service()
+
+    def test_state_updates_accept_mapping_and_normalize_to_dict(self):
+        agent = ConcreteAgent(
+            name="state_updates_agent",
+            prompt="test",
+            logger=self.mock_logger,
+        )
+
+        result = agent._resolve_state_update(
+            {"state_updates": MappingProxyType({"answer": 42})},
+            execution_id="execution-1",
+            start_time=0.0,
+        )
+
+        self.assertEqual(result, {"answer": 42})
+
+    def test_state_updates_reject_non_mapping_results(self):
+        agent = ConcreteAgent(
+            name="state_updates_agent",
+            prompt="test",
+            logger=self.mock_logger,
+        )
+
+        with self.assertRaisesRegex(TypeError, "state_updates must be a mapping"):
+            agent._resolve_state_update(
+                {"state_updates": ["bad"]},
+                execution_id="execution-1",
+                start_time=0.0,
+            )
 
     def test_base_agent_context_processing(self):
         """Test BaseAgent correctly processes context information."""

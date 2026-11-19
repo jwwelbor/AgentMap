@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import os
 import secrets
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -73,13 +74,29 @@ class AuthService:
         self._api_keys: Dict[str, Dict[str, Any]] = self._load_api_keys()
 
         # JWT configuration (for future implementation)
-        self.jwt_secret: Optional[str] = auth_config.get("jwt", {}).get("secret")
-        self.jwt_algorithm: str = auth_config.get("jwt", {}).get("algorithm", "HS256")
+        jwt_config = auth_config.get("jwt", {})
+        if not isinstance(jwt_config, Mapping):
+            jwt_config = {}
+        jwt_secret = jwt_config.get("secret")
+        self.jwt_secret: Optional[str] = (
+            jwt_secret if isinstance(jwt_secret, str) else None
+        )
+        jwt_algorithm = jwt_config.get("algorithm", "HS256")
+        self.jwt_algorithm: str = (
+            jwt_algorithm if isinstance(jwt_algorithm, str) else "HS256"
+        )
 
         # Supabase configuration (for future implementation)
-        self.supabase_url: Optional[str] = auth_config.get("supabase", {}).get("url")
-        self.supabase_key: Optional[str] = auth_config.get("supabase", {}).get(
-            "anon_key"
+        supabase_config = auth_config.get("supabase", {})
+        if not isinstance(supabase_config, Mapping):
+            supabase_config = {}
+        supabase_url = supabase_config.get("url")
+        self.supabase_url: Optional[str] = (
+            supabase_url if isinstance(supabase_url, str) else None
+        )
+        supabase_key = supabase_config.get("anon_key")
+        self.supabase_key: Optional[str] = (
+            supabase_key if isinstance(supabase_key, str) else None
         )
 
         self.logger.info(
@@ -97,17 +114,47 @@ class AuthService:
 
         # Load from config file
         config_keys = self.config.get("api_keys", {})
+        if not isinstance(config_keys, Mapping):
+            self.logger.warning("[AuthService] API key configuration must be a mapping")
+            config_keys = {}
         for key_name, key_config in config_keys.items():
-            if isinstance(key_config, dict):
+            if isinstance(key_name, str) and isinstance(key_config, Mapping):
                 key_value = key_config.get("key")
-                if key_value:
+                if isinstance(key_value, str) and key_value:
+                    permissions = key_config.get("permissions", [])
+                    if not isinstance(permissions, list) or not all(
+                        isinstance(permission, str) for permission in permissions
+                    ):
+                        permissions = []
+                    user_id = key_config.get("user_id", key_name)
+                    if not isinstance(user_id, str):
+                        user_id = key_name
+                    expires_at = key_config.get("expires_at")
+                    if not isinstance(expires_at, str):
+                        expires_at = None
+                    elif expires_at:
+                        try:
+                            datetime.fromisoformat(expires_at)
+                        except ValueError:
+                            expires_at = None
+                    metadata = key_config.get("metadata", {})
+                    if isinstance(metadata, Mapping):
+                        metadata = {
+                            metadata_key: metadata_value
+                            for metadata_key, metadata_value in metadata.items()
+                            if isinstance(metadata_key, str)
+                            and isinstance(metadata_value, str)
+                        }
+                    else:
+                        metadata = {}
+
                     key_hash = self._hash_api_key(key_value)
                     api_keys[key_hash] = {
                         "name": key_name,
-                        "permissions": key_config.get("permissions", []),
-                        "user_id": key_config.get("user_id", key_name),
-                        "expires_at": key_config.get("expires_at"),
-                        "metadata": key_config.get("metadata", {}),
+                        "permissions": permissions,
+                        "user_id": user_id,
+                        "expires_at": expires_at,
+                        "metadata": metadata,
                     }
 
         # Load from environment variables (pattern: AGENTMAP_API_KEY_<n>)

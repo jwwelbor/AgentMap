@@ -5,7 +5,9 @@ This module provides utility functions for path-based operations,
 query filtering, and document management.
 """
 
-from typing import Any, Dict, cast
+from typing import Any, Dict
+
+from agentmap.services.storage.sort_utils import get_sort_options, stable_sort_key
 
 
 class MemoryStorageHelpers:
@@ -184,8 +186,9 @@ class MemoryStorageHelpers:
         # Extract special query parameters
         limit = query.pop("limit", None)
         offset = query.pop("offset", 0)
-        sort_field = query.pop("sort", None)
-        sort_order = query.pop("order", "asc").lower()
+        sort_field, reverse = get_sort_options(
+            query.pop("sort", None), query.pop("order", "asc")
+        )
 
         # Apply field filtering
         filtered_data: Dict[str, Any] = {}
@@ -207,11 +210,9 @@ class MemoryStorageHelpers:
 
         # Apply sorting
         if sort_field:
-            reverse = sort_order == "desc"
             items.sort(
-                key=lambda x: cast(
-                    Any,
-                    x[1].get(sort_field) if isinstance(x[1], dict) else None,
+                key=lambda x: stable_sort_key(
+                    x[1].get(sort_field) if isinstance(x[1], dict) else None
                 ),
                 reverse=reverse,
             )

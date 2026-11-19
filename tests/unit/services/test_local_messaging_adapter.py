@@ -5,6 +5,7 @@ import logging
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 from agentmap.services.messaging.local_adapter import LocalMessageAdapter
 
@@ -34,4 +35,32 @@ class TestLocalMessageAdapter(unittest.TestCase):
             topic_dir.mkdir()
             (topic_dir / "invalid.json").write_text("[]", encoding="utf-8")
 
-            self.assertIsNone(adapter.read_message("updates", "missing"))
+            adapter.logger = Mock()
+
+            self.assertIsNone(adapter.read_message("updates", "invalid"))
+            adapter.logger.warning.assert_not_called()
+
+    def test_list_messages_skips_non_object_json_and_keeps_valid_messages(self):
+        with tempfile.TemporaryDirectory() as storage_path:
+            adapter = LocalMessageAdapter(
+                {"storage_path": storage_path}, logging.getLogger(__name__)
+            )
+            topic_dir = Path(storage_path) / "updates"
+            topic_dir.mkdir()
+            (topic_dir / "invalid.json").write_text("[]", encoding="utf-8")
+            (topic_dir / "valid.json").write_text(
+                '{"message_id": "valid-id", "timestamp": "now", "topic": "updates"}',
+                encoding="utf-8",
+            )
+
+            with self.assertLogs(adapter.logger, level="WARNING") as logs:
+                messages = adapter.list_messages("updates")
+
+            self.assertEqual(
+                [message["message_id"] for message in messages], ["valid-id"]
+            )
+            self.assertTrue(
+                any(
+                    "Ignoring non-object message file" in entry for entry in logs.output
+                )
+            )

@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock, patch
 
+import pytest
+
 from agentmap.di.containers import ApplicationContainer
 from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.config.agent_config_service import AgentConfigService
@@ -52,3 +54,18 @@ def test_llm_agent_registration_uses_injected_provider_discovery():
         "openai", "agents.openai.OpenAIAgent"
     )
     assert service._loaded_agents == {"openai"}
+
+
+def test_import_agent_class_rejects_non_class_module_attribute():
+    service = GraphBootstrapService(
+        agent_registry_service=Mock(spec=AgentRegistryService),
+        features_registry_service=Mock(spec=FeaturesRegistryService),
+        app_config_service=Mock(spec=AppConfigService),
+        logging_service=MockServiceFactory.create_mock_logging_service(),
+        dependency_checker_service=Mock(spec=DependencyCheckerService),
+    )
+
+    with pytest.raises(ImportError, match="does not resolve to a class"):
+        service._import_agent_class(
+            "agentmap.services.protocol_validation.is_valid_protocol"
+        )
