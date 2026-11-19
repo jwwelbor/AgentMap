@@ -37,6 +37,19 @@ def _make_validator():
     return CSVStructureValidator(column_config, logger)
 
 
+class TestDataFrameRowValidation(unittest.TestCase):
+    def test_validation_errors_preserve_field_name(self):
+        validator = _make_validator()
+        df = _make_df("GraphName,Node,Output_Field\ntest,node1,bad@field\n")
+        result = ValidationResult(file_path="test.csv")
+
+        validator.validate_dataframe_rows(df, result)
+
+        self.assertEqual(len(result.errors), 1)
+        self.assertEqual(result.errors[0].field_name, "Output_Field")
+        self.assertEqual(result.errors[0].line_number, 2)
+
+
 class TestOutputFieldMultiOutput(unittest.TestCase):
     """Test that Output_Field validator supports pipe-separated multi-output fields."""
 
