@@ -106,6 +106,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         app_config_service=_expose(_core, "app_config_service"),
         logging_service=_expose(_core, "logging_service"),
         features_registry_service=_expose(_bootstrap, "features_registry_service"),
+        dependency_checker_service=_expose(_bootstrap, "dependency_checker_service"),
         function_resolution_service=_expose(_bootstrap, "function_resolution_service"),
         agent_registry_service=_expose(_bootstrap, "agent_registry_service"),
         csv_graph_parser_service=_expose(_bootstrap, "csv_graph_parser_service"),

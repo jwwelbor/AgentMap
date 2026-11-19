@@ -58,19 +58,16 @@ repos:
         args: [--fix, --exit-non-zero-on-fix]
         types: [python]
 
-  # Type checking with mypy
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+  # Type checking through the uv-locked project environment
+  - repo: local
     hooks:
       - id: mypy
-        name: Type check with mypy
-        additional_dependencies:
-          - types-PyYAML
-          - types-toml
-        args: [--config-file=mypy.ini]
-        types: [python]
+        name: Check the mypy baseline
+        entry: uv run --locked --all-extras python tools/mypy_ratchet.py
+        language: system
         # Only check src directory, not tests
         files: ^src/
+        pass_filenames: false
 
   # Security checks
   - repo: https://github.com/PyCQA/bandit

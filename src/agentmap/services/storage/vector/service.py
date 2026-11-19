@@ -258,7 +258,6 @@ class VectorStorageService(BaseStorageService):
 
         except Exception as e:
             self._handle_error("read", e, collection=collection)
-            return None
 
     def _perform_write(
         self,
@@ -375,9 +374,6 @@ class VectorStorageService(BaseStorageService):
         except Exception as e:
             self._handle_error(
                 "delete", e, collection=collection, document_id=document_id
-            )
-            return self._create_error_result(
-                "delete", f"Vector deletion failed: {str(e)}", collection=collection
             )
 
     def exists(self, collection: str, document_id: Optional[str] = None) -> bool:

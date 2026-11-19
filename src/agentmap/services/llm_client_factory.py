@@ -5,6 +5,7 @@ Handles the creation of provider-specific LangChain clients (OpenAI, Anthropic, 
 with proper dependency management and client caching.
 """
 
+import importlib
 from threading import RLock
 from typing import Any, Callable, Dict
 
@@ -160,12 +161,14 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 )
             # Fall back to legacy import
             try:
-                from langchain.chat_models import ChatOpenAI
+                ChatOpenAI = getattr(
+                    importlib.import_module("langchain.chat_models"), "ChatOpenAI"
+                )
 
                 self._logger.warning(
                     "Using deprecated LangChain import. Consider upgrading to langchain-openai."
                 )
-            except ImportError:
+            except (ImportError, AttributeError):
                 raise LLMDependencyError(
                     "OpenAI dependencies not found. Install with: pip install langchain-openai"
                 )
@@ -219,12 +222,15 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 )
             except ImportError:
                 try:
-                    from langchain.chat_models import ChatAnthropic
+                    ChatAnthropic = getattr(
+                        importlib.import_module("langchain.chat_models"),
+                        "ChatAnthropic",
+                    )
 
                     self._logger.warning(
                         "Using legacy LangChain import. Please upgrade your dependencies."
                     )
-                except ImportError:
+                except (ImportError, AttributeError):
                     raise LLMDependencyError(
                         "Anthropic dependencies not found. Install with: pip install langchain-anthropic"
                     )
@@ -253,12 +259,15 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 )
             try:
                 # Fall back to community package
-                from langchain_community.chat_models import ChatGoogleGenerativeAI
+                ChatGoogleGenerativeAI = getattr(
+                    importlib.import_module("langchain_community.chat_models"),
+                    "ChatGoogleGenerativeAI",
+                )
 
                 self._logger.warning(
                     "Using community LangChain import. Consider upgrading to langchain-google-genai."
                 )
-            except ImportError:
+            except (ImportError, AttributeError):
                 raise LLMDependencyError(
                     "Google dependencies not found. Install with: pip install langchain-google-genai"
                 )

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, NoReturn, Optional, overload
 from urllib.parse import unquote, urlparse
 
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
@@ -25,9 +25,9 @@ class BlobStorageConnector(ABC):
     """
 
     # URI scheme handled by this connector
-    URI_SCHEME = None
+    URI_SCHEME: Optional[str] = None
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the storage connector.
 
@@ -105,7 +105,7 @@ class BlobStorageConnector(ABC):
             True if the blob exists, False otherwise
         """
 
-    def list_blobs(self, prefix: str, **kwargs) -> list[str]:
+    def list_blobs(self, prefix: str, **kwargs: Any) -> list[str]:
         """
         List blobs with given prefix.
 
@@ -167,7 +167,7 @@ class BlobStorageConnector(ABC):
         parsed = urlparse(uri)
 
         # Extract scheme
-        scheme = parsed.scheme or self.URI_SCHEME
+        scheme = parsed.scheme or self.URI_SCHEME or ""
 
         # Extract container/bucket name (netloc)
         container = parsed.netloc
@@ -199,7 +199,7 @@ class BlobStorageConnector(ABC):
         # Default implementation does nothing
         # Subclasses can override to integrate with logging
 
-    def resolve_env_value(self, value: str) -> str:
+    def resolve_env_value(self, value: Any) -> Any:
         """
         Resolve environment variable references in config values.
 
@@ -229,6 +229,26 @@ class BlobStorageConnector(ABC):
             return env_value
 
         return value
+
+    @overload
+    def _handle_provider_error(
+        self,
+        operation: str,
+        uri: str,
+        error: Exception,
+        raise_error: Literal[True] = True,
+        resource_type: str = "blob",
+    ) -> NoReturn: ...
+
+    @overload
+    def _handle_provider_error(
+        self,
+        operation: str,
+        uri: str,
+        error: Exception,
+        raise_error: Literal[False],
+        resource_type: str = "blob",
+    ) -> Dict[str, Any]: ...
 
     def _handle_provider_error(
         self,
@@ -290,7 +310,7 @@ class BlobStorageConnector(ABC):
 
 
 def get_connector_for_uri(
-    uri: str, config: Dict[str, Any] = None
+    uri: str, config: Optional[Dict[str, Any]] = None
 ) -> BlobStorageConnector:
     """
     Factory function to get the appropriate connector for a URI.

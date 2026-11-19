@@ -25,7 +25,7 @@ except ImportError:
     _KNOWN_AGENT_TYPES = None
 
 if TYPE_CHECKING:
-    from agentmap.services.logging_service import LoggingService
+    from agentmap.services.logging_service import TraceLogger
 
 
 class CSVStructureValidator:
@@ -36,7 +36,7 @@ class CSVStructureValidator:
     checking structure, required columns, and row content.
     """
 
-    def __init__(self, column_config: CSVColumnConfig, logger: "LoggingService"):
+    def __init__(self, column_config: CSVColumnConfig, logger: "TraceLogger"):
         """
         Initialize validator with column configuration and logger.
 

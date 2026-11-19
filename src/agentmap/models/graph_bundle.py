@@ -55,6 +55,7 @@ class GraphBundle:
     validation_metadata: Optional[Dict[str, Any]] = None  # NEW: Integrity checks
     bundle_format: str = "metadata-v1"  # NEW: Format version
     created_at: Optional[str] = None  # NEW: Creation timestamp
+    last_updated: Optional[str] = None
     missing_declarations: Optional[Set[str]] = (
         None  # NEW: Agent types without declarations
     )
@@ -70,7 +71,7 @@ class GraphBundle:
     # Thread-safe scoped registry for per-run isolation (not serialized)
     scoped_registry: Optional["RunScopedDeclarationRegistry"] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize defaults and issue deprecation warnings as needed."""
         # If using new format, ensure all required fields are set
         if (
@@ -201,7 +202,7 @@ class GraphBundle:
         required_agents: Set[str],
         required_services: Set[str],
         function_mappings: Dict[str, str],
-        csv_hash: str,
+        csv_hash: Optional[str],
         version_hash: Optional[str] = None,
         # New Phase 1 parameters
         entry_point: Optional[str] = None,

@@ -616,6 +616,16 @@ class TestJSONStorageService(unittest.TestCase):
         self.assertEqual(retrieved["status"], "updated")
         self.assertEqual(retrieved["content"], "initial")  # Should be preserved
 
+    def test_append_creates_missing_collection(self):
+        """Appending to a missing collection creates it with the supplied data."""
+        collection = "append_missing"
+        data = [{"id": "first", "value": 1}]
+
+        result = self.service.write(collection, data, mode=WriteMode.APPEND)
+
+        self.assertTrue(result.success)
+        self.assertEqual(self.service.read(collection), data)
+
     def test_write_with_path(self):
         """Test writing with path parameter."""
         collection = "path_writes"

@@ -5,7 +5,8 @@ This module provides mixins for service registration, unregistration,
 and registry management operations.
 """
 
-from typing import Any, Dict, List, Optional, Type
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 
 class RegistrationMixin:
@@ -18,11 +19,22 @@ class RegistrationMixin:
     - A `self._is_valid_protocol(protocol)` method for protocol validation.
     """
 
+    if TYPE_CHECKING:
+        logger: logging.Logger
+        _service_providers: Dict[str, Any]
+        _protocol_implementations: Dict[type[Any], str]
+        _service_metadata: Dict[str, Dict[str, Any]]
+        _protocol_cache: Dict[str, List[type[Any]]]
+
+        def _is_valid_protocol(self, protocol: type[Any]) -> bool: ...
+
+        def _cleanup_partial_registration(self, service_name: str) -> None: ...
+
     def register_service_provider(
         self,
         service_name: str,
         provider: Any,
-        protocols: Optional[List[Type]] = None,
+        protocols: Optional[List[type[Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
@@ -110,7 +122,7 @@ class RegistrationMixin:
             self._cleanup_partial_registration(service_name)
 
     def register_protocol_implementation(
-        self, protocol: Type, service_name: str
+        self, protocol: type[Any], service_name: str
     ) -> None:
         """
         Register a protocol implementation for an existing service.

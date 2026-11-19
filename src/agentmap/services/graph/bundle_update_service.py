@@ -6,7 +6,7 @@ after scaffolding or when declarations change.
 """
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.custom_agent_declaration_manager import (
@@ -73,7 +73,7 @@ class BundleUpdateService:
             f"with current declarations"
         )
 
-        update_summary = {
+        update_summary: Dict[str, Any] = {
             "newly_resolved": [],
             "updated_mappings": [],
             "removed_mappings": [],
@@ -116,23 +116,36 @@ class BundleUpdateService:
     ) -> None:
         """Update bundle with newly available declarations."""
 
+        agent_mappings = bundle.agent_mappings
+        if agent_mappings is None:
+            agent_mappings = {}
+            bundle.agent_mappings = agent_mappings
+        custom_agents = bundle.custom_agents
+        if custom_agents is None:
+            custom_agents = set()
+            bundle.custom_agents = custom_agents
+        missing_declarations = bundle.missing_declarations
+        if missing_declarations is None:
+            missing_declarations = set()
+            bundle.missing_declarations = missing_declarations
+
         custom_agent_declarations = (
             self.custom_agent_declaration_manager.load_declarations().get("agents", {})
             or {}
         )
-        for agent_type in list(bundle.missing_declarations):
+        for agent_type in list(missing_declarations):
             decl = self.declaration_registry.get_agent_declaration(
                 agent_type
             ) or custom_agent_declarations.get(agent_type)
 
             if decl:
-                class_path = (
-                    isinstance(decl, dict) and decl.get("class_path") or decl.class_path
-                )
+                class_path = self._get_declaration_class_path(decl)
+                if class_path is None:
+                    continue
                 # Found declaration - update bundle
-                bundle.agent_mappings[agent_type] = class_path
-                bundle.custom_agents.add(agent_type)
-                bundle.missing_declarations.remove(agent_type)
+                agent_mappings[agent_type] = class_path
+                custom_agents.add(agent_type)
+                missing_declarations.remove(agent_type)
                 summary["newly_resolved"].append(agent_type)
 
                 self.logger.debug(
@@ -145,11 +158,24 @@ class BundleUpdateService:
     ) -> None:
         """Verify existing mappings are still current."""
 
+        agent_mappings = bundle.agent_mappings
+        if agent_mappings is None:
+            agent_mappings = {}
+            bundle.agent_mappings = agent_mappings
+        custom_agents = bundle.custom_agents
+        if custom_agents is None:
+            custom_agents = set()
+            bundle.custom_agents = custom_agents
+        missing_declarations = bundle.missing_declarations
+        if missing_declarations is None:
+            missing_declarations = set()
+            bundle.missing_declarations = missing_declarations
+
         custom_agent_declarations = (
             self.custom_agent_declaration_manager.load_declarations().get("agents", {})
             or {}
         )
-        for agent_type, class_path in list(bundle.agent_mappings.items()):
+        for agent_type, class_path in list(agent_mappings.items()):
             decl = self.declaration_registry.get_agent_declaration(
                 agent_type
             ) or custom_agent_declarations.get(agent_type)
@@ -158,14 +184,12 @@ class BundleUpdateService:
                 # Declaration no longer exists - handle in the elif below
                 decl_class_path = None
             else:
-                decl_class_path = (
-                    isinstance(decl, dict) and decl.get("class_path") or decl.class_path
-                )
+                decl_class_path = self._get_declaration_class_path(decl)
 
             if decl and decl_class_path and decl_class_path != class_path:
                 # Declaration changed - update mapping
                 old_path = class_path
-                bundle.agent_mappings[agent_type] = decl_class_path
+                agent_mappings[agent_type] = decl_class_path
                 summary["updated_mappings"].append(
                     (agent_type, old_path, decl_class_path)
                 )
@@ -174,11 +198,11 @@ class BundleUpdateService:
                     f"{old_path} -> {decl_class_path}"
                 )
 
-            elif not decl and agent_type in bundle.custom_agents:
+            elif not decl and agent_type in custom_agents:
                 # Custom agent no longer exists - mark as missing
-                bundle.missing_declarations.add(agent_type)
-                del bundle.agent_mappings[agent_type]
-                bundle.custom_agents.discard(agent_type)
+                missing_declarations.add(agent_type)
+                del agent_mappings[agent_type]
+                custom_agents.discard(agent_type)
                 summary["removed_mappings"].append(agent_type)
                 self.logger.warning(
                     f"[BundleUpdateService] Agent '{agent_type}' no longer "
@@ -189,18 +213,22 @@ class BundleUpdateService:
         self, bundle: GraphBundle, summary: Dict[str, Any]
     ) -> None:
         """Update service requirements for newly resolved agents."""
+        required_services = bundle.required_services
+        if required_services is None:
+            required_services = set()
+            bundle.required_services = required_services
         new_requirements = self.declaration_registry.resolve_agent_requirements(
             set(summary["newly_resolved"])
         )
 
         if new_requirements["services"]:
             # Add new service requirements
-            bundle.required_services.update(new_requirements["services"])
+            required_services.update(new_requirements["services"])
             summary["new_services"] = new_requirements["services"]
 
             # Recalculate load order
             bundle.service_load_order = self.declaration_registry.calculate_load_order(
-                bundle.required_services
+                required_services
             )
 
             self.logger.debug(
@@ -211,6 +239,11 @@ class BundleUpdateService:
     def _persist_updated_bundle(self, bundle: GraphBundle) -> None:
         """Save updated bundle back to cache."""
         try:
+            if bundle.csv_hash is None or bundle.graph_name is None:
+                self.logger.error(
+                    "[BundleUpdateService] Cannot persist a bundle without its CSV hash and graph name"
+                )
+                return
             # Use FilePathService for centralized path calculation
             bundle_path = self.file_path_service.get_bundle_path(
                 csv_hash=bundle.csv_hash, graph_name=bundle.graph_name
@@ -257,10 +290,11 @@ class BundleUpdateService:
                 f"obsolete mappings: {', '.join(summary['removed_mappings'])}"
             )
 
-        if bundle.missing_declarations:
+        missing_declarations = bundle.missing_declarations or set()
+        if missing_declarations:
             self.logger.warning(
-                f"[BundleUpdateService] ⚠️ Still missing {len(bundle.missing_declarations)} "
-                f"declarations: {', '.join(bundle.missing_declarations)}"
+                f"[BundleUpdateService] ⚠️ Still missing {len(missing_declarations)} "
+                f"declarations: {', '.join(missing_declarations)}"
             )
 
         total_mapped = len(bundle.agent_mappings) if bundle.agent_mappings else 0
@@ -278,7 +312,7 @@ class BundleUpdateService:
         Returns:
             Dictionary with update preview information
         """
-        preview = {
+        preview: Dict[str, Any] = {
             "bundle_name": bundle.graph_name,
             "current_mappings": (
                 len(bundle.agent_mappings) if bundle.agent_mappings else 0
@@ -308,3 +342,12 @@ class BundleUpdateService:
                     preview["would_remove"].append(agent_type)
 
         return preview
+
+    @staticmethod
+    def _get_declaration_class_path(declaration: Any) -> Optional[str]:
+        """Read a class path from typed or legacy dictionary declarations."""
+        if isinstance(declaration, dict):
+            class_path = declaration.get("class_path")
+        else:
+            class_path = getattr(declaration, "class_path", None)
+        return class_path if isinstance(class_path, str) else None

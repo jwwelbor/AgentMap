@@ -14,7 +14,7 @@ from agentmap.models.graph_spec import GraphSpec, NodeSpec
 from agentmap.services.csv_graph_parser.column_config import CSVColumnConfig
 
 if TYPE_CHECKING:
-    from agentmap.services.logging_service import LoggingService
+    from agentmap.services.logging_service import TraceLogger
 
 
 class CSVRowParser:
@@ -25,7 +25,7 @@ class CSVRowParser:
     column normalization, edge target parsing, and field extraction.
     """
 
-    def __init__(self, column_config: CSVColumnConfig, logger: "LoggingService"):
+    def __init__(self, column_config: CSVColumnConfig, logger: "TraceLogger"):
         """
         Initialize parser with column configuration and logger.
 

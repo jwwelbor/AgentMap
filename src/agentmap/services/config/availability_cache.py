@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Iterator, Optional, Union
 
 
 @dataclass
@@ -76,22 +76,22 @@ class ThreadSafeFileCache:
         self._generation_lock = threading.Lock()
         self._memory_cache: Optional[Dict[str, Any]] = None
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Cleanup resources on destruction."""
         self._cleanup_resources()
 
-    def _cleanup_resources(self):
+    def _cleanup_resources(self) -> None:
         """Clean up managed resources."""
         self._memory_cache = None
 
     @contextmanager
-    def _cache_read_lock(self):
+    def _cache_read_lock(self) -> Iterator[None]:
         """Context manager for cache read operations."""
         with self._cache_lock:
             yield
 
     @contextmanager
-    def _cache_write_lock(self):
+    def _cache_write_lock(self) -> Iterator[None]:
         """Context manager for cache write operations."""
         with self._cache_lock:
             yield
@@ -157,7 +157,14 @@ class ThreadSafeFileCache:
             try:
                 if self._cache_file_path.exists():
                     with open(self._cache_file_path, "r", encoding="utf-8") as f:
-                        cache_data = json.load(f)
+                        loaded_data = json.load(f)
+
+                    if not isinstance(loaded_data, dict) or not all(
+                        isinstance(key, str) for key in loaded_data
+                    ):
+                        raise ValueError("Cache payload must be a JSON object")
+
+                    cache_data: Dict[str, Any] = loaded_data
 
                     self._memory_cache = cache_data
                     self._logger.debug(f"Loaded cache from {self._cache_file_path}")
@@ -253,14 +260,16 @@ class AvailabilityCacheManager:
         self._cache = cache_impl
         self._logger = logger or logging.getLogger(__name__)
         self._validators: Dict[str, ValidationStrategy] = {}
-        self._generation_lock = None  # Will be initialized lazily
+        self._generation_lock: Optional[asyncio.Lock] = None
 
-    def register_validator(self, storage_type: str, validator: ValidationStrategy):
+    def register_validator(
+        self, storage_type: str, validator: ValidationStrategy
+    ) -> None:
         """Register a validation strategy for a storage type."""
         self._validators[storage_type] = validator
         self._logger.debug(f"Registered validator for storage type: {storage_type}")
 
-    def _ensure_lock(self):
+    def _ensure_lock(self) -> asyncio.Lock:
         """Lazily initialize the asyncio lock when needed."""
         if self._generation_lock is None:
             self._generation_lock = asyncio.Lock()
@@ -281,10 +290,10 @@ class AvailabilityCacheManager:
         # Check cache first
         cached_data = self._cache.load_cache()
         if cached_data:
-            availability_data = cached_data.get("availability", {}).get(storage_type)
-            if availability_data:
-                validation_result = self._cache.validate_cache(config)
-                if validation_result.is_valid:
+            availability_data = self._get_cached_availability(cached_data, storage_type)
+            if availability_data is not None:
+                cache_status = self._cache.validate_cache(config)
+                if cache_status.is_valid:
                     self._logger.debug(f"Using cached availability for {storage_type}")
                     return availability_data
 
@@ -294,17 +303,17 @@ class AvailabilityCacheManager:
             # Double-check after acquiring lock
             cached_data = self._cache.load_cache()
             if cached_data:
-                availability_data = cached_data.get("availability", {}).get(
-                    storage_type
+                availability_data = self._get_cached_availability(
+                    cached_data, storage_type
                 )
-                if availability_data:
-                    validation_result = self._cache.validate_cache(config)
-                    if validation_result.is_valid:
+                if availability_data is not None:
+                    cache_status = self._cache.validate_cache(config)
+                    if cache_status.is_valid:
                         return availability_data
 
             # Generate fresh validation
             self._logger.info(f"Generating fresh availability data for {storage_type}")
-            validation_result = await validator.validate(config)
+            generated_availability = await validator.validate(config)
 
             # Update cache
             if not cached_data:
@@ -316,12 +325,29 @@ class AvailabilityCacheManager:
                     "availability": {},
                 }
 
-            cached_data["availability"][storage_type] = validation_result
+            availability = cached_data.get("availability")
+            if not isinstance(availability, dict):
+                availability = {}
+                cached_data["availability"] = availability
+            availability[storage_type] = generated_availability
             self._cache.save_cache(cached_data)
 
-            return validation_result
+            return generated_availability
 
-    def clear_cache(self, storage_type: Optional[str] = None):
+    @staticmethod
+    def _get_cached_availability(
+        cache_data: Dict[str, Any], storage_type: str
+    ) -> Optional[Dict[str, Any]]:
+        """Return cached availability only when it has the expected object shape."""
+        availability = cache_data.get("availability")
+        if not isinstance(availability, dict):
+            return None
+        cached_result = availability.get(storage_type)
+        if not isinstance(cached_result, dict):
+            return None
+        return cached_result
+
+    def clear_cache(self, storage_type: Optional[str] = None) -> None:
         """Clear cache for specific storage type or all types."""
         cached_data = self._cache.load_cache()
         if not cached_data:

@@ -172,6 +172,9 @@ class TestBaseAgent(unittest.TestCase):
             _ = agent.logger
         with self.assertRaises(ValueError):
             _ = agent.execution_tracking_service
+        self.assertIsNone(agent.state_adapter_service)
+        with self.assertRaisesRegex(ValueError, "StateAdapterService not provided"):
+            agent.require_state_adapter_service()
 
     def test_base_agent_context_processing(self):
         """Test BaseAgent correctly processes context information."""

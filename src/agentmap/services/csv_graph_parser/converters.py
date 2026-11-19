@@ -13,7 +13,7 @@ from agentmap.models.graph_spec import NodeSpec
 from agentmap.models.node import Node
 
 if TYPE_CHECKING:
-    from agentmap.services.logging_service import LoggingService
+    from agentmap.services.logging_service import TraceLogger
 
 
 class NodeSpecConverter:
@@ -24,7 +24,7 @@ class NodeSpecConverter:
     managing edge information and context transformation.
     """
 
-    def __init__(self, logger: "LoggingService"):
+    def __init__(self, logger: "TraceLogger"):
         """
         Initialize converter with logger.
 

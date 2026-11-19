@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from dependency_injector import containers, providers
 
 
@@ -11,6 +13,7 @@ class GraphCoreContainer(containers.DeclarativeContainer):
     app_config_service = providers.Dependency()
     logging_service = providers.Dependency()
     features_registry_service = providers.Dependency()
+    dependency_checker_service: Any = providers.Dependency()
     function_resolution_service = providers.Dependency()
     agent_registry_service = providers.Dependency()
     csv_graph_parser_service = providers.Dependency()
@@ -346,6 +349,7 @@ class GraphCoreContainer(containers.DeclarativeContainer):
         features_registry_service,
         app_config_service,
         logging_service,
+        dependency_checker_service,
     ):
         from agentmap.services.graph.graph_bootstrap_service import (
             GraphBootstrapService,
@@ -356,6 +360,7 @@ class GraphCoreContainer(containers.DeclarativeContainer):
             features_registry_service,
             app_config_service,
             logging_service,
+            dependency_checker_service=dependency_checker_service,
         )
 
     graph_bootstrap_service = providers.Singleton(
@@ -364,4 +369,5 @@ class GraphCoreContainer(containers.DeclarativeContainer):
         features_registry_service,
         app_config_service,
         logging_service,
+        dependency_checker_service,
     )

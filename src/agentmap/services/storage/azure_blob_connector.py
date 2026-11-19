@@ -5,7 +5,7 @@ This module provides an Azure-specific implementation of the BlobStorageConnecto
 interface for reading and writing JSON files in Azure Blob Storage.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional, cast
 
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
 from agentmap.services.storage.base_connector import BlobStorageConnector
@@ -20,9 +20,9 @@ class AzureBlobConnector(BlobStorageConnector):
     authentication methods.
     """
 
-    URI_SCHEME = "azure"
+    URI_SCHEME: str = "azure"
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the Azure Blob Storage connector.
 
@@ -30,10 +30,11 @@ class AzureBlobConnector(BlobStorageConnector):
             config: Azure configuration with connection details
         """
         super().__init__(config)
-        self.connection_string = None
-        self.account_name = None
-        self.account_key = None
-        self.default_container = None
+        self.connection_string: Optional[str] = None
+        self.account_name: Optional[str] = None
+        self.account_key: Optional[str] = None
+        self.sas_token: Optional[str] = None
+        self.default_container: Optional[str] = None
 
     def _initialize_client(self) -> None:
         """
@@ -129,7 +130,7 @@ class AzureBlobConnector(BlobStorageConnector):
             try:
                 container_client.get_container_properties()
             except Exception as e:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "accessing",
                     container_name,
                     e,
@@ -144,16 +145,16 @@ class AzureBlobConnector(BlobStorageConnector):
             try:
                 blob_client.get_blob_properties()
             except Exception as e:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "accessing", uri, e, raise_error=True, resource_type="blob"
                 )
 
             # Download blob
             try:
                 download = blob_client.download_blob()
-                return download.readall()
+                return cast(bytes, download.readall())
             except Exception as e:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "downloading", uri, e, raise_error=True, resource_type="blob"
                 )
 
@@ -161,7 +162,7 @@ class AzureBlobConnector(BlobStorageConnector):
             # Re-raise standard exceptions
             raise
         except Exception as e:
-            return self._handle_provider_error(
+            self._handle_provider_error(
                 "reading", uri, e, raise_error=True, resource_type="blob"
             )
 
@@ -191,7 +192,7 @@ class AzureBlobConnector(BlobStorageConnector):
                 try:
                     container_client.create_container()
                 except Exception as e:
-                    return self._handle_provider_error(
+                    self._handle_provider_error(
                         "creating",
                         container_name,
                         e,
@@ -206,7 +207,7 @@ class AzureBlobConnector(BlobStorageConnector):
             try:
                 blob_client.upload_blob(data, overwrite=True)
             except Exception as e:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "writing", uri, e, raise_error=True, resource_type="blob"
                 )
 
@@ -214,7 +215,7 @@ class AzureBlobConnector(BlobStorageConnector):
             # Re-raise standard exceptions
             raise
         except Exception as e:
-            return self._handle_provider_error(
+            self._handle_provider_error(
                 "writing", uri, e, raise_error=True, resource_type="blob"
             )
 
@@ -276,11 +277,12 @@ class AzureBlobConnector(BlobStorageConnector):
         container_name = parts["container"]
         if not container_name:
             # Use default container if not specified in URI
-            container_name = self.default_container
-            if not container_name:
+            default_container = self.default_container
+            if not default_container:
                 raise ValueError(
                     f"No container specified in URI and no default container configured: {uri}"
                 )
+            container_name = default_container
 
         # Check if container name is mapped in configuration
         container_mapping = self.config.get("containers", {})

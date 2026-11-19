@@ -7,7 +7,7 @@ protocol implementations, and metadata without affecting AgentMap's core DI cont
 """
 
 import importlib
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, cast
 
 from agentmap.services.logging_service import LoggingService
 
@@ -44,7 +44,7 @@ class HostServiceRegistry(
 
         self.logger.debug("[HostServiceRegistry] Initialized")
 
-    def _is_valid_protocol(self, protocol: Type) -> bool:
+    def _is_valid_protocol(self, protocol: type[Any]) -> bool:
         """
         Validate that an object is a proper protocol type.
 
@@ -80,7 +80,7 @@ def _import_class(class_path: str) -> type:
     cls = getattr(module, class_name, None)
     if cls is None:
         raise ImportError(f"Class '{class_name}' not found in module '{module_path}'")
-    return cls
+    return cast(type[Any], cls)
 
 
 def _topological_sort(

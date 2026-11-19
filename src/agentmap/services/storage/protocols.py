@@ -33,7 +33,7 @@ class StorageReader(Protocol):
         document_id: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """
         Read data from storage.
@@ -93,8 +93,8 @@ class StorageWriter(Protocol):
         document_id: Optional[str] = None,
         mode: WriteMode = WriteMode.WRITE,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Write data to storage.
 
@@ -116,8 +116,8 @@ class StorageWriter(Protocol):
         collection: str,
         document_id: Optional[str] = None,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Delete from storage.
 
@@ -137,8 +137,8 @@ class StorageWriter(Protocol):
         collection: str,
         data: List[Dict[str, Any]],
         mode: WriteMode = WriteMode.WRITE,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Write multiple documents/records in a batch operation.
 
@@ -193,7 +193,7 @@ class StorageService(StorageReader, StorageWriter, Protocol):
 
     def create_collection(
         self, collection: str, schema: Optional[Dict[str, Any]] = None
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """
         Create a new collection (if supported by provider).
 

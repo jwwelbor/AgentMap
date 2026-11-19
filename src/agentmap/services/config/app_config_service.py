@@ -11,7 +11,7 @@ import logging
 import math
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypeVar, Union
+from typing import Any, Dict, List, Optional, TypeVar, Union, overload
 
 from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.services.config.config_managers import (
@@ -54,8 +54,8 @@ class AppConfigService:
             config_path: Optional path to configuration file. If None, uses defaults only.
         """
         self._config_service = config_service
-        self._config_data = None
-        self._logger = None
+        self._config_data: Optional[Dict[str, Any]] = None
+        self._logger: logging.Logger = logging.getLogger("bootstrap.app_config")
         self._config_file_path = Path(config_path) if config_path else None
 
         # Setup bootstrap logging - will be replaced later by DI
@@ -65,26 +65,27 @@ class AppConfigService:
         self._load_config(config_path)
 
         # Initialize specialized configuration managers
+        config_data = self._require_loaded_config()
         self._path_manager = PathConfigManager(
-            self._config_service, self._config_data, self._logger
+            self._config_service, config_data, self._logger
         )
         self._auth_manager = AuthConfigManager(
-            self._config_service, self._config_data, self._logger
+            self._config_service, config_data, self._logger
         )
         self._host_manager = HostConfigManager(
-            self._config_service, self._config_data, self._logger
+            self._config_service, config_data, self._logger
         )
         self._declaration_manager = DeclarationConfigManager(
-            self._config_service, self._config_data, self._logger
+            self._config_service, config_data, self._logger
         )
         self._routing_manager = RoutingConfigManager(
-            self._config_service, self._config_data, self._logger
+            self._config_service, config_data, self._logger
         )
         self._llm_manager = LLMConfigManager(
-            self._config_service, self._config_data, self._logger
+            self._config_service, config_data, self._logger
         )
         self._telemetry_manager = TelemetryConfigManager(
-            self._config_service, self._config_data, self._logger
+            self._config_service, config_data, self._logger
         )
 
         # Group managers for easier iteration
@@ -98,7 +99,7 @@ class AppConfigService:
             self._telemetry_manager,
         ]
 
-    def _setup_bootstrap_logging(self):
+    def _setup_bootstrap_logging(self) -> None:
         """Set up bootstrap logger for config loading before real logging is available."""
         # Only set up basic config if no handlers exist to avoid conflicts
         if not logging.getLogger().handlers:
@@ -109,7 +110,7 @@ class AppConfigService:
         self._logger = logging.getLogger("bootstrap.app_config")
         self._logger.debug("[AppConfigService] Bootstrap logger initialized")
 
-    def _load_config(self, config_path: Optional[Union[str, Path]]):
+    def _load_config(self, config_path: Optional[Union[str, Path]]) -> None:
         """Load configuration using ConfigService."""
         try:
             self._logger.info("[AppConfigService] Loading application configuration")
@@ -122,7 +123,13 @@ class AppConfigService:
             self._logger.error(error_msg)
             raise ConfigurationException(error_msg) from e
 
-    def replace_logger(self, logger: logging.Logger):
+    def _require_loaded_config(self) -> Dict[str, Any]:
+        """Return loaded configuration or raise the public not-loaded error."""
+        if self._config_data is None:
+            raise ConfigurationException("Configuration not loaded")
+        return self._config_data
+
+    def replace_logger(self, logger: logging.Logger) -> None:
         """
         Replace bootstrap logger with real logger once logging service is online.
 
@@ -146,13 +153,25 @@ class AppConfigService:
                 manager._logger = logger
 
     # Core access methods
-    def get_section(self, section: str, default: T = None) -> Dict[str, Any]:
+    @overload
+    def get_section(self, section: str) -> Optional[Dict[str, Any]]: ...
+
+    @overload
+    def get_section(self, section: str, default: T) -> Union[Dict[str, Any], T]: ...
+
+    def get_section(self, section: str, default: Any = None) -> Any:
         """Get a configuration section."""
         if self._config_data is None:
             raise ConfigurationException("Configuration not loaded")
         return self._config_data.get(section, default)
 
-    def get_value(self, path: str, default: T = None) -> T:
+    @overload
+    def get_value(self, path: str) -> Any: ...
+
+    @overload
+    def get_value(self, path: str, default: T) -> T: ...
+
+    def get_value(self, path: str, default: Any = None) -> Any:
         """Get a specific configuration value using dot notation."""
         if self._config_data is None:
             raise ConfigurationException("Configuration not loaded")
@@ -293,7 +312,7 @@ class AppConfigService:
 
     def get_output_validation_config(self) -> Dict[str, Any]:
         """Get output validation configuration."""
-        validation_config = self.get_value("execution.validation", {})
+        validation_config: Dict[str, Any] = self.get_value("execution.validation", {})
 
         defaults = {
             "multi_output_mode": "warn",  # ignore, warn, error
@@ -550,7 +569,7 @@ class AppConfigService:
             "max_concurrent_streams": 100,
         }
 
-        sse_config = self.get_value("http.sse", {})
+        sse_config: Any = self.get_value("http.sse", {})
         if not isinstance(sse_config, dict):
             raise ConfigurationException(
                 "Invalid http.sse configuration: expected a mapping of "
@@ -691,7 +710,7 @@ class AppConfigService:
             List of Path objects for protocol discovery folders
         """
         # Get protocol folders from host application config
-        protocol_folders_config = self.get_value(
+        protocol_folders_config: List[str] = self.get_value(
             "host_application.protocol_folders", []
         )
 
@@ -739,7 +758,9 @@ class AppConfigService:
             return {}
 
         # Get service configuration from host application config
-        service_config = self.get_value(f"host_application.services.{service_name}", {})
+        service_config: Dict[str, Any] = self.get_value(
+            f"host_application.services.{service_name}", {}
+        )
 
         # Provide default service configuration structure
         defaults = {
@@ -891,7 +912,7 @@ class AppConfigService:
         Returns:
             List of Path objects for custom declaration directories
         """
-        declaration_paths_config = self.get_value("declarations.custom", [])
+        declaration_paths_config: List[Any] = self.get_value("declarations.custom", [])
 
         declaration_paths = []
         for path_config in declaration_paths_config:
@@ -939,7 +960,7 @@ class AppConfigService:
         if not self.is_host_declarations_enabled():
             return []
 
-        host_paths_config = self.get_value("declarations.host.paths", [])
+        host_paths_config: List[str] = self.get_value("declarations.host.paths", [])
 
         host_paths = []
         for path in host_paths_config:
@@ -990,7 +1011,9 @@ class AppConfigService:
         Returns:
             Dictionary with validation settings
         """
-        validation_config = self.get_value("declarations.validation", {})
+        validation_config: Dict[str, Any] = self.get_value(
+            "declarations.validation", {}
+        )
 
         # Default validation settings
         defaults = {

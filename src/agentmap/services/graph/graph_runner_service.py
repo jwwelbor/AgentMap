@@ -863,11 +863,11 @@ class GraphRunnerService:
             csv_path = self._get_csv_path_from_bundle(parent_bundle)
             if csv_path:
                 try:
-                    resolved, _ = self.graph_bundle_service.get_or_create_bundle(
+                    created_bundle, _ = self.graph_bundle_service.get_or_create_bundle(
                         csv_path=csv_path,
                         graph_name=graph_name,
                     )
-                    return resolved
+                    return created_bundle
                 except Exception as e:
                     self.logger.warning(
                         f"[GraphRunnerService] Failed to create bundle for "
@@ -912,11 +912,11 @@ class GraphRunnerService:
         if raw_context and not raw_context.startswith("{"):
             csv_path = Path(raw_context)
             try:
-                resolved, _ = self.graph_bundle_service.get_or_create_bundle(
+                created_bundle, _ = self.graph_bundle_service.get_or_create_bundle(
                     csv_path=csv_path,
                     graph_name=subgraph_name,
                 )
-                subgraph_bundles[node_name] = resolved
+                subgraph_bundles[node_name] = created_bundle
                 self.logger.debug(
                     f"[GraphRunnerService] Legacy-resolved subgraph '{subgraph_name}' "
                     f"from CSV path '{raw_context}' for node '{node_name}'"

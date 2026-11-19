@@ -12,6 +12,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from agentmap.agents.agent_lifecycle_mixin import AgentLifecycleMixin
+from agentmap.models.execution.tracker import ExecutionTracker
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import (
     LLMCapableAgent,
@@ -118,7 +119,7 @@ class BaseAgent(AgentLifecycleMixin):
         self._storage_service: Optional[StorageServiceProtocol] = None
 
         # Current execution tracker (set during graph execution)
-        self._current_execution_tracker = None
+        self._current_execution_tracker: Optional[ExecutionTracker] = None
 
         # Log initialization
         if logger:
@@ -146,8 +147,17 @@ class BaseAgent(AgentLifecycleMixin):
         return self._execution_tracking_service
 
     @property
-    def state_adapter_service(self) -> StateAdapterService:
-        """Get state adapter service."""
+    def state_adapter_service(self) -> Optional[StateAdapterService]:
+        """Return the optional state adapter service."""
+        return self._state_adapter_service
+
+    def require_state_adapter_service(self) -> StateAdapterService:
+        """Get the state adapter or raise when an operation requires it."""
+        if self._state_adapter_service is None:
+            raise ValueError(
+                f"StateAdapterService not provided to agent '{self.name}'. "
+                "Please inject state_adapter_service via the constructor."
+            )
         return self._state_adapter_service
 
     @property
@@ -164,17 +174,17 @@ class BaseAgent(AgentLifecycleMixin):
             raise ValueError(f"Storage service not configured for agent '{self.name}'")
         return self._storage_service
 
-    def set_execution_tracker(self, tracker):
+    def set_execution_tracker(self, tracker: Optional[ExecutionTracker]) -> None:
         """Set the current execution tracker for this agent during graph execution."""
         self._current_execution_tracker = tracker
 
     @property
-    def current_execution_tracker(self):
+    def current_execution_tracker(self) -> Optional[ExecutionTracker]:
         """Get the current execution tracker."""
         return self._current_execution_tracker
 
     # Logging Methods (updated for better unknown level handling)
-    def log(self, level: str, message: str, *args, **kwargs):
+    def log(self, level: str, message: str, *args: Any, **kwargs: Any) -> None:
         """Log a message with the specified level and proper agent context."""
         # Define valid logging levels
         valid_levels = ["debug", "info", "warning", "error", "trace"]
@@ -187,23 +197,23 @@ class BaseAgent(AgentLifecycleMixin):
 
         logger_method(f"{self._log_prefix} {message}", *args, **kwargs)
 
-    def log_debug(self, message: str, *args, **kwargs):
+    def log_debug(self, message: str, *args: Any, **kwargs: Any) -> None:
         """Log a debug message with agent context."""
         self.log("debug", message, *args, **kwargs)
 
-    def log_info(self, message: str, *args, **kwargs):
+    def log_info(self, message: str, *args: Any, **kwargs: Any) -> None:
         """Log an info message with agent context."""
         self.log("info", message, *args, **kwargs)
 
-    def log_warning(self, message: str, *args, **kwargs):
+    def log_warning(self, message: str, *args: Any, **kwargs: Any) -> None:
         """Log a warning message with agent context."""
         self.log("warning", message, *args, **kwargs)
 
-    def log_error(self, message: str, *args, **kwargs):
+    def log_error(self, message: str, *args: Any, **kwargs: Any) -> None:
         """Log an error message with agent context."""
         self.log("error", message, *args, **kwargs)
 
-    def log_trace(self, message: str, *args, **kwargs):
+    def log_trace(self, message: str, *args: Any, **kwargs: Any) -> None:
         """Log a trace message with agent context."""
         self.log("trace", message, *args, **kwargs)
 
@@ -454,7 +464,7 @@ class BaseAgent(AgentLifecycleMixin):
         Returns:
             Dictionary with service availability and configuration
         """
-        base_info = {
+        base_info: Dict[str, Any] = {
             "agent_name": self.name,
             "agent_type": self.__class__.__name__,
             "services": {

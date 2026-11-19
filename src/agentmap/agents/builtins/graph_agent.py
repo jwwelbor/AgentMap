@@ -122,7 +122,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
         self, state: Any, inputs: Dict[str, Any]
     ) -> Tuple[Any, Dict[str, Any]]:
         """Inject graph internals needed to prepare subgraph inputs."""
-        subgraph_bundles = self.state_adapter_service.get_value(
+        subgraph_bundles = self.require_state_adapter_service().get_value(
             state, "subgraph_bundles", self._MISSING
         )
         if subgraph_bundles is not self._MISSING:
@@ -317,7 +317,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
             if "=" in field_spec:
                 # This is a mapping (target=source)
                 target_field, source_field = field_spec.split("=", 1)
-                source_value = self.state_adapter_service.get_value(
+                source_value = self.require_state_adapter_service().get_value(
                     parent_state, source_field, self._MISSING
                 )
                 if source_value is not self._MISSING:
@@ -327,7 +327,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
                     )
             else:
                 # Direct passthrough
-                field_value = self.state_adapter_service.get_value(
+                field_value = self.require_state_adapter_service().get_value(
                     parent_state, field_spec, self._MISSING
                 )
                 if (

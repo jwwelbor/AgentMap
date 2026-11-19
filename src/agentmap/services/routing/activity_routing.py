@@ -5,10 +5,12 @@ This module provides the ActivityRoutingTable class for resolving
 ordered provider/model candidates based on activity configuration.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
-from agentmap.services.logging_service import LoggingService
+
+if TYPE_CHECKING:
+    from agentmap.services.logging_service import TraceLogger
 
 
 class ActivityRoutingTable:
@@ -17,7 +19,7 @@ class ActivityRoutingTable:
     def __init__(
         self,
         routing_config: LLMRoutingConfigService,
-        logger: LoggingService,
+        logger: "TraceLogger",
     ) -> None:
         """
         Initialize the activity routing table.

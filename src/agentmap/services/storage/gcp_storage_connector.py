@@ -5,8 +5,9 @@ This module provides a GCP-specific implementation of the BlobStorageConnector
 interface for reading and writing JSON files in Google Cloud Storage buckets.
 """
 
+import importlib
 import os
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 from agentmap.async_lifecycle import raise_cleanup_error_or_note
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
@@ -22,9 +23,9 @@ class GCPStorageConnector(BlobStorageConnector):
     or application default credentials.
     """
 
-    URI_SCHEME = "gs"
+    URI_SCHEME: str = "gs"
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the Google Cloud Storage connector.
 
@@ -32,10 +33,10 @@ class GCPStorageConnector(BlobStorageConnector):
             config: GCP configuration with connection details
         """
         super().__init__(config)
-        self.project_id = None
-        self.credentials_file = None
-        self.default_bucket = None
-        self.gcp_exceptions = None
+        self.project_id: Optional[str] = None
+        self.credentials_file: Optional[str] = None
+        self.default_bucket: Optional[str] = None
+        self.gcp_exceptions: Optional[Dict[str, type[BaseException]]] = None
 
     def _initialize_client(self) -> None:
         """
@@ -48,7 +49,8 @@ class GCPStorageConnector(BlobStorageConnector):
             # Import Google Cloud Storage
             try:
                 from google.auth.exceptions import DefaultCredentialsError
-                from google.cloud import storage
+
+                storage = importlib.import_module("google.cloud.storage")
                 from google.cloud.exceptions import Forbidden, NotFound
 
                 # Store exception classes for future reference
@@ -71,7 +73,7 @@ class GCPStorageConnector(BlobStorageConnector):
             self.default_bucket = self.config.get("default_bucket", "")
 
             # Set credentials environment variable if provided
-            original_credential_env = None
+            original_credential_env: Optional[str] = None
             credential_environment_changed = False
             if self.credentials_file and os.path.exists(self.credentials_file):
                 original_credential_env = os.environ.get(
@@ -81,7 +83,7 @@ class GCPStorageConnector(BlobStorageConnector):
                 credential_environment_changed = True
 
             # Create client
-            primary_error = None
+            primary_error: Optional[BaseException] = None
             try:
                 self._create_gcp_client(storage, DefaultCredentialsError)
             except BaseException as error:
@@ -112,9 +114,11 @@ class GCPStorageConnector(BlobStorageConnector):
                 f"Failed to initialize Google Cloud Storage client: {str(e)}"
             )
 
-    def _create_gcp_client(self, storage, credentials_error) -> None:
+    def _create_gcp_client(
+        self, storage: Any, credentials_error: type[BaseException]
+    ) -> None:
         try:
-            client_kwargs = {}
+            client_kwargs: Dict[str, Any] = {}
             if self.project_id:
                 client_kwargs["project"] = self.project_id
 
@@ -148,7 +152,7 @@ class GCPStorageConnector(BlobStorageConnector):
             try:
                 bucket = self.client.bucket(bucket_name)
                 if not bucket.exists():
-                    return self._handle_provider_error(
+                    self._handle_provider_error(
                         "reading",
                         uri,
                         Exception(f"Bucket {bucket_name} not found"),
@@ -156,7 +160,7 @@ class GCPStorageConnector(BlobStorageConnector):
                         resource_type="bucket",
                     )
             except Exception as e:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "accessing",
                     bucket_name,
                     e,
@@ -169,7 +173,7 @@ class GCPStorageConnector(BlobStorageConnector):
 
             # Check if blob exists
             if not blob.exists():
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "reading",
                     uri,
                     Exception(f"Blob {blob_path} not found"),
@@ -179,9 +183,9 @@ class GCPStorageConnector(BlobStorageConnector):
 
             # Download blob
             try:
-                return blob.download_as_bytes()
+                return cast(bytes, blob.download_as_bytes())
             except Exception as e:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "downloading", uri, e, raise_error=True, resource_type="blob"
                 )
 
@@ -189,7 +193,7 @@ class GCPStorageConnector(BlobStorageConnector):
             # Re-raise standard exceptions
             raise
         except Exception as e:
-            return self._handle_provider_error(
+            self._handle_provider_error(
                 "reading", uri, e, raise_error=True, resource_type="blob"
             )
 
@@ -221,7 +225,7 @@ class GCPStorageConnector(BlobStorageConnector):
                         else:
                             self.client.create_bucket(bucket)
                     except Exception as e:
-                        return self._handle_provider_error(
+                        self._handle_provider_error(
                             "creating",
                             bucket_name,
                             e,
@@ -229,7 +233,7 @@ class GCPStorageConnector(BlobStorageConnector):
                             resource_type="bucket",
                         )
             except Exception as e:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "accessing",
                     bucket_name,
                     e,
@@ -244,7 +248,7 @@ class GCPStorageConnector(BlobStorageConnector):
             try:
                 blob.upload_from_string(data)
             except Exception as e:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "writing", uri, e, raise_error=True, resource_type="blob"
                 )
 
@@ -252,7 +256,7 @@ class GCPStorageConnector(BlobStorageConnector):
             # Re-raise standard exceptions
             raise
         except Exception as e:
-            return self._handle_provider_error(
+            self._handle_provider_error(
                 "writing", uri, e, raise_error=True, resource_type="blob"
             )
 
@@ -285,7 +289,7 @@ class GCPStorageConnector(BlobStorageConnector):
             exists = blob.exists()
             if not exists:
                 self.log_debug(f"Blob not found: {blob_path}")
-            return exists
+            return bool(exists)
 
         except Exception as e:
             self.log_warning(f"Error checking blob existence {uri}: {str(e)}")
@@ -310,11 +314,12 @@ class GCPStorageConnector(BlobStorageConnector):
         bucket_name = parts["container"]
         if not bucket_name:
             # Use default bucket if not specified in URI
-            bucket_name = self.default_bucket
-            if not bucket_name:
+            default_bucket = self.default_bucket
+            if not default_bucket:
                 raise ValueError(
                     f"No bucket specified in URI and no default bucket configured: {uri}"
                 )
+            bucket_name = default_bucket
 
         # Check if bucket name is mapped in configuration
         bucket_mapping = self.config.get("buckets", {})

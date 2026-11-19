@@ -239,6 +239,12 @@ class TestThreadSafeFileCache(unittest.TestCase):
         result = self.cache.load_cache()
         self.assertIsNone(result)
 
+    def test_load_cache_rejects_non_object_json(self):
+        """Ignore structurally invalid cache files and allow regeneration."""
+        self.cache_file.write_text("[]", encoding="utf-8")
+
+        self.assertIsNone(self.cache.load_cache())
+
     def test_load_save_cache_roundtrip(self):
         """Test complete load/save cache roundtrip."""
         cache_data = {

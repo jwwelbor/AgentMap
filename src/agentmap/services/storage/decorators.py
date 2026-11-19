@@ -1,9 +1,22 @@
 """Decorators for storage service handlers."""
 
+from collections.abc import Callable
 from functools import wraps
+from typing import Concatenate, ParamSpec, Protocol, TypeVar
 
 
-def ensure_handlers_initialized(func):
+class HandlerInitializable(Protocol):
+    def _initialize_handlers(self) -> None: ...
+
+
+Self = TypeVar("Self", bound=HandlerInitializable)
+Parameters = ParamSpec("Parameters")
+Result = TypeVar("Result")
+
+
+def ensure_handlers_initialized(
+    func: Callable[Concatenate[Self, Parameters], Result],
+) -> Callable[Concatenate[Self, Parameters], Result]:
     """
     Decorator to ensure handlers are initialized before method execution.
 
@@ -18,7 +31,9 @@ def ensure_handlers_initialized(func):
     """
 
     @wraps(func)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(
+        self: Self, *args: Parameters.args, **kwargs: Parameters.kwargs
+    ) -> Result:
         self._initialize_handlers()
         return func(self, *args, **kwargs)
 
