@@ -1,6 +1,7 @@
 import pytest
 
 from agentmap.di.containers import ApplicationContainer
+from agentmap.services.agent.agent_factory_service import AgentFactoryService
 
 # List of provider attribute names to attempt instantiation for.
 # Optional services may naturally return None (that's okay).
@@ -100,3 +101,11 @@ def test_service_provider_instantiates(container, service_name):
         pytest.xfail(f"ImportError while instantiating '{service_name}': {e}")
     except Exception as e:
         pytest.fail(f"Failed to instantiate provider '{service_name}': {e}")
+
+
+def test_graph_services_share_the_agent_factory(container):
+    agent_factory = container.agent_factory_service()
+
+    assert isinstance(agent_factory, AgentFactoryService)
+    assert container.protocol_requirements_analyzer().agent_factory is agent_factory
+    assert container.graph_bundle_service().agent_factory_service is agent_factory

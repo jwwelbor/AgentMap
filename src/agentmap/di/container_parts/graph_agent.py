@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from dependency_injector import containers, providers
 
 
@@ -10,8 +12,8 @@ class GraphAgentContainer(containers.DeclarativeContainer):
 
     features_registry_service = providers.Dependency()
     logging_service = providers.Dependency()
-    custom_agent_loader = providers.Dependency()
     app_config_service = providers.Dependency()
+    agent_factory_service: Any = providers.Dependency()
     llm_service = providers.Dependency()
     storage_service_manager = providers.Dependency()
     host_protocol_configuration_service = providers.Dependency()
@@ -25,30 +27,6 @@ class GraphAgentContainer(containers.DeclarativeContainer):
     declaration_registry_service = providers.Dependency()
     telemetry_service = providers.Dependency()
     file_path_service = providers.Dependency()
-
-    @staticmethod
-    def _create_agent_factory_service(
-        features_registry_service,
-        logging_service,
-        custom_agent_loader,
-        app_config_service,
-    ):
-        from agentmap.services.agent.agent_factory_service import AgentFactoryService
-
-        return AgentFactoryService(
-            features_registry_service,
-            logging_service,
-            custom_agent_loader,
-            app_config_service,
-        )
-
-    agent_factory_service = providers.Singleton(
-        _create_agent_factory_service,
-        features_registry_service,
-        logging_service,
-        custom_agent_loader,
-        app_config_service,
-    )
 
     @staticmethod
     def _create_agent_service_injection_service(
