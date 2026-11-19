@@ -4,10 +4,10 @@ LLM-based matching utilities for OrchestratorService.
 
 import json
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
-from agentmap.services.llm_service import LLMService
 from agentmap.services.prompt_manager_service import PromptManagerService
+from agentmap.services.protocols.service_protocols import LLMServiceProtocol
 
 
 class LLMMatcher:
@@ -15,7 +15,7 @@ class LLMMatcher:
         self,
         logger: logging.Logger,
         prompt_manager: PromptManagerService,
-        llm_service: LLMService,
+        llm_service: LLMServiceProtocol,
         keyword_parser: Callable[[Dict[str, Any]], List[str]],
     ):
         self.logger = logger
@@ -56,7 +56,7 @@ class LLMMatcher:
         )
         return self._extract_node_from_response(llm_response, available_nodes)
 
-    def _format_node_descriptions(self, nodes: Dict[str, Dict[str, Any]]) -> str:
+    def _format_node_descriptions(self, nodes: Dict[str, Any]) -> str:
         if not nodes:
             return "No nodes available"
         descriptions = []
@@ -83,7 +83,7 @@ class LLMMatcher:
                     "selectedNode" in parsed
                     and parsed["selectedNode"] in available_nodes
                 ):
-                    return parsed["selectedNode"]
+                    return cast(str, parsed["selectedNode"])
         except json.JSONDecodeError as e:
             self.logger.debug(f"LLM response was not valid JSON: {e}")
         llm_response_str = str(llm_response).strip()

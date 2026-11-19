@@ -9,7 +9,6 @@ models are data containers and services contain business logic.
 from typing import Any, Dict, List, Optional, Tuple
 
 from agentmap.services.features_registry_service import FeaturesRegistryService
-from agentmap.services.llm_service import LLMService
 from agentmap.services.logging_service import LoggingService
 
 # Import from extracted modules
@@ -17,6 +16,7 @@ from agentmap.services.orchestrator_algorithm_matching import AlgorithmMatcher
 from agentmap.services.orchestrator_llm_matching import LLMMatcher
 from agentmap.services.orchestrator_node_filtering import NodeFilter
 from agentmap.services.prompt_manager_service import PromptManagerService
+from agentmap.services.protocols.service_protocols import LLMServiceProtocol
 
 
 class OrchestratorService:
@@ -35,7 +35,7 @@ class OrchestratorService:
         self,
         prompt_manager_service: PromptManagerService,
         logging_service: LoggingService,
-        llm_service: LLMService,
+        llm_service: LLMServiceProtocol,
         features_registry_service: FeaturesRegistryService,
     ):
         """Initialize service with dependency injection."""

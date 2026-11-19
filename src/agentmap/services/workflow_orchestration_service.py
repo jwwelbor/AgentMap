@@ -15,16 +15,23 @@ Architecture:
   Executable Graph (LangGraph)
 """
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union, cast
 from uuid import UUID
 
 from agentmap.di import initialize_di
 from agentmap.models.execution.result import ExecutionResult
+from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.human_interaction import HumanInteractionResponse
 from agentmap.runtime.workflow_ops import _resolve_csv_path
 from agentmap.services.state_adapter_service import StateAdapterService
+
+if TYPE_CHECKING:
+    from agentmap.services.graph.graph_bundle_service import GraphBundleService
+    from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
 
 class WorkflowOrchestrationService:
@@ -115,7 +122,7 @@ class WorkflowOrchestrationService:
 
         # Step 7: Execute using GraphRunnerService (same as run_command.py)
         # This will ultimately call your existing GraphExecutionService
-        runner = container.graph_runner_service()
+        runner: GraphRunnerService = container.graph_runner_service()
 
         # ===== INJECT StateAdapter normalization here =====
         state_adapter_service = container.state_adapter_service()
@@ -160,8 +167,8 @@ class WorkflowOrchestrationService:
 
         # Step 2: Get required services
         interaction_handler = container.interaction_handler_service()
-        graph_bundle_service = container.graph_bundle_service()
-        graph_runner_service = container.graph_runner_service()
+        graph_bundle_service: GraphBundleService = container.graph_bundle_service()
+        graph_runner_service: GraphRunnerService = container.graph_runner_service()
 
         try:
             # Step 3: Load thread metadata from pickle storage
@@ -256,8 +263,10 @@ class WorkflowOrchestrationService:
 
 
 def _rehydrate_bundle_from_metadata(
-    bundle_info: Dict[str, Any], graph_name: Optional[str], graph_bundle_service
-) -> Optional[Any]:  # Return type is GraphBundle but avoiding import
+    bundle_info: Dict[str, Any],
+    graph_name: Optional[str],
+    graph_bundle_service: GraphBundleService,
+) -> Optional[GraphBundle]:
     """Rehydrate GraphBundle from stored metadata using multiple strategies."""
     try:
         csv_hash = bundle_info.get("csv_hash")
@@ -296,7 +305,7 @@ def execute_workflow(
     graph_name: Optional[str] = None,
     initial_state: Optional[Union[Dict[str, Any], str]] = None,
     config_file: Optional[str] = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> ExecutionResult:
     """
     Convenience function for workflow execution that preserves existing architecture.
@@ -340,17 +349,17 @@ def _normalize_initial_state_for_execution(
 
     # For pydantic models or objects with dict() method
     if hasattr(initial_state, "dict") and callable(getattr(initial_state, "dict")):
-        return initial_state.dict()
+        return cast(Dict[str, Any], initial_state.dict())
 
     # For pydantic v2 models with model_dump() method
     if hasattr(initial_state, "model_dump") and callable(
         getattr(initial_state, "model_dump")
     ):
-        return initial_state.model_dump()
+        return cast(Dict[str, Any], initial_state.model_dump())
 
     # For objects with __dict__ attribute
     if hasattr(initial_state, "__dict__"):
-        return initial_state.__dict__
+        return cast(Dict[str, Any], initial_state.__dict__)
 
     # For simple values, wrap in a state structure
     if isinstance(initial_state, (str, int, float, bool, list)):

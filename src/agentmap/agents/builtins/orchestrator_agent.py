@@ -6,7 +6,7 @@ contain business logic. All orchestration logic moved to OrchestratorService.
 """
 
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
@@ -78,12 +78,12 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
         self.temperature = float(context.get("temperature", 0.2))
 
         # Business service for delegation (will be injected via protocol)
-        self.orchestrator_service = (
+        self.orchestrator_service: Optional[OrchestratorService] = (
             None  # Will be configured via configure_orchestrator_service()
         )
 
         # Node Registry - will be injected separately (not part of standard protocols yet)
-        self.node_registry = None
+        self.node_registry: Dict[str, Any] = {}
 
         if self._logger:
             self.log_debug(
@@ -104,10 +104,10 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
                 )
             return "tiered"
 
-    def _parse_node_filter(self, context: dict) -> str:
+    def _parse_node_filter(self, context: Dict[str, Any]) -> str:
         """Parse node filter from various context formats."""
         if "nodes" in context:
-            return context["nodes"]
+            return cast(str, context["nodes"])
         elif "node_type" in context:
             return f"nodeType:{context['node_type']}"
         elif "nodeType" in context:
@@ -279,7 +279,7 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
         # First check standard field names for nodes
         for field_name in ["available_nodes", "nodes", "__node_registry"]:
             if field_name in inputs and isinstance(inputs[field_name], dict):
-                return inputs[field_name]
+                return cast(Dict[str, Dict[str, Any]], inputs[field_name])
 
         # Then check configured input fields for nodes (skip text fields)
         for field in self.input_fields:
