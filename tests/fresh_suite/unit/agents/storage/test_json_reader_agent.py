@@ -132,6 +132,13 @@ class TestModernizedJSONDocumentReaderAgent(unittest.TestCase):
         self.assertEqual(agent.json_service, self.mock_json_service)
         self.assertEqual(agent._client, self.mock_json_service)
 
+    def test_client_initialization_requires_injected_json_service(self):
+        """The compatibility initializer must fail clearly without DI wiring."""
+        agent = self.create_json_reader_agent()
+
+        with self.assertRaisesRegex(ValueError, "JSON service not configured"):
+            agent._initialize_client()
+
     def test_execute_operation_calls_json_service(self):
         """Test that _execute_operation properly delegates to json_service."""
         agent = self.create_json_reader_agent()

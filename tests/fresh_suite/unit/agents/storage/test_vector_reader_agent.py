@@ -141,6 +141,13 @@ class TestModernizedVectorReaderAgent(unittest.TestCase):
         self.assertEqual(agent.vector_service, self.mock_vector_service)
         self.assertEqual(agent._client, self.mock_vector_service)
 
+    def test_client_initialization_requires_injected_vector_service(self):
+        """The compatibility initializer must fail clearly without DI wiring."""
+        agent = self.create_vector_reader_agent()
+
+        with self.assertRaisesRegex(ValueError, "Vector service not configured"):
+            agent._initialize_client()
+
     def test_execute_operation_calls_vector_service(self):
         """Test that _execute_operation properly delegates to vector_service."""
         agent = self.create_vector_reader_agent()

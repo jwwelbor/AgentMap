@@ -8,7 +8,7 @@ operations to JSONStorageService, keeping agents simple and focused.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent,
@@ -17,6 +17,9 @@ from agentmap.models.storage import DocumentResult
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import JSONCapableAgent
 from agentmap.services.state_adapter_service import StateAdapterService
+
+if TYPE_CHECKING:
+    from agentmap.services.storage.json_service import JSONStorageService
 
 
 class JSONDocumentAgent(BaseStorageAgent, JSONCapableAgent):
@@ -64,10 +67,10 @@ class JSONDocumentAgent(BaseStorageAgent, JSONCapableAgent):
         )
 
         # JSON service will be configured via protocol
-        self._json_service = None
+        self._json_service: Optional[JSONStorageService] = None
 
     # Protocol Implementation (Required by JSONCapableAgent)
-    def configure_json_service(self, json_service) -> None:
+    def configure_json_service(self, json_service: JSONStorageService) -> None:
         """
         Configure JSON storage service for this agent.
 
@@ -82,7 +85,7 @@ class JSONDocumentAgent(BaseStorageAgent, JSONCapableAgent):
         self.log_debug("JSON service configured")
 
     @property
-    def json_service(self):
+    def json_service(self) -> JSONStorageService:
         """Get JSON service, raising clear error if not configured."""
         if self._json_service is None:
             raise ValueError(f"JSON service not configured for agent '{self.name}'")
@@ -94,16 +97,10 @@ class JSONDocumentAgent(BaseStorageAgent, JSONCapableAgent):
         as services are injected via protocols.
         """
         # In the new pattern, services are injected via configure_* methods
-        # This method is kept for compatibility but should not be used
+        # This method is kept for compatibility but should not be used.
         if self._json_service is None:
-            self.log_warning(
-                "JSON service not configured - using fallback initialization"
-            )
-            # Fallback to create service directly (not recommended)
-            from agentmap.services.storage.json_service import JSONStorageService
-
-            self._json_service = JSONStorageService(self.context)
-            self._client = self._json_service
+            raise ValueError(f"JSON service not configured for agent '{self.name}'")
+        self._client = self._json_service
 
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
@@ -127,7 +124,7 @@ class JSONDocumentAgent(BaseStorageAgent, JSONCapableAgent):
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Handle JSON operation errors.
 

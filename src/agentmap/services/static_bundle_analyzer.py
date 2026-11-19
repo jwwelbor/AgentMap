@@ -9,6 +9,7 @@ import hashlib
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
+from agentmap.models.declaration_models import AgentDeclaration
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.node import Node
 from agentmap.services.csv_graph_parser_service import CSVGraphParserService
@@ -104,10 +105,6 @@ class StaticBundleAnalyzer:
         except Exception as e:
             self.logger.error(f"Failed to parse CSV {csv_path}: {e}")
             raise ValueError(f"Invalid CSV structure: {e}") from e
-
-        # Convert node list to dict if needed
-        if isinstance(nodes, list):
-            nodes = {node.name: node for node in nodes}
 
         # Extract agent types from nodes
         agent_types = self._extract_agent_types(list(nodes.values()))
@@ -300,10 +297,14 @@ class StaticBundleAnalyzer:
             return None
 
         # Simple heuristic: look for nodes that are not targets of any edges
-        target_nodes = set()
+        target_nodes: Set[str] = set()
         for node in nodes.values():
             if hasattr(node, "edges") and node.edges:
-                target_nodes.update(node.edges.values())
+                for targets in node.edges.values():
+                    if isinstance(targets, str):
+                        target_nodes.add(targets)
+                    else:
+                        target_nodes.update(targets)
 
         # Find nodes that are not targets (potential entry points)
         entry_candidates = set(nodes.keys()) - target_nodes
@@ -315,7 +316,7 @@ class StaticBundleAnalyzer:
         # Fallback: return the first node if no clear entry point
         return next(iter(nodes.keys()))
 
-    def _is_builtin_agent(self, agent_type: str, declaration) -> bool:
+    def _is_builtin_agent(self, agent_type: str, declaration: AgentDeclaration) -> bool:
         """
         Determine if an agent is a builtin framework agent.
 
@@ -387,7 +388,7 @@ class StaticBundleAnalyzer:
             - max_parallelism: Maximum number of parallel branches
         """
         fan_out_nodes = []
-        fan_in_count = {}
+        fan_in_count: Dict[str, int] = {}
         parallel_groups = []
         max_parallelism = 1
 

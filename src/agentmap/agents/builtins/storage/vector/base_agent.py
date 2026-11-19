@@ -8,7 +8,7 @@ operations to VectorStorageService, keeping agents simple and focused.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent,
@@ -17,6 +17,9 @@ from agentmap.models.storage import DocumentResult
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import VectorCapableAgent
 from agentmap.services.state_adapter_service import StateAdapterService
+
+if TYPE_CHECKING:
+    from agentmap.services.storage.vector_service import VectorStorageService
 
 
 class VectorAgent(BaseStorageAgent, VectorCapableAgent):
@@ -71,10 +74,10 @@ class VectorAgent(BaseStorageAgent, VectorCapableAgent):
         self.output_field = context.get("output_field", "result")
 
         # Vector service will be configured via protocol
-        self._vector_service = None
+        self._vector_service: Optional[VectorStorageService] = None
 
     # Protocol Implementation (Required by VectorCapableAgent)
-    def configure_vector_service(self, vector_service) -> None:
+    def configure_vector_service(self, vector_service: VectorStorageService) -> None:
         """
         Configure vector storage service for this agent.
 
@@ -89,7 +92,7 @@ class VectorAgent(BaseStorageAgent, VectorCapableAgent):
         self.log_debug("Vector service configured")
 
     @property
-    def vector_service(self):
+    def vector_service(self) -> VectorStorageService:
         """Get vector service, raising clear error if not configured."""
         if self._vector_service is None:
             raise ValueError(f"Vector service not configured for agent '{self.name}'")
@@ -101,16 +104,10 @@ class VectorAgent(BaseStorageAgent, VectorCapableAgent):
         as services are injected via protocols.
         """
         # In the new pattern, services are injected via configure_* methods
-        # This method is kept for compatibility but should not be used
+        # This method is kept for compatibility but should not be used.
         if self._vector_service is None:
-            self.log_warning(
-                "Vector service not configured - using fallback initialization"
-            )
-            # Fallback to create service directly (not recommended)
-            from agentmap.services.storage.vector_service import VectorStorageService
-
-            self._vector_service = VectorStorageService(self.context)
-            self._client = self._vector_service
+            raise ValueError(f"Vector service not configured for agent '{self.name}'")
+        self._client = self._vector_service
 
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
@@ -137,7 +134,7 @@ class VectorAgent(BaseStorageAgent, VectorCapableAgent):
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Handle vector operation errors.
 
