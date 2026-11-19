@@ -29,6 +29,15 @@ class AuthContext:
     metadata: Dict[str, str] = field(default_factory=dict)
     expires_at: Optional[datetime] = None
 
+    def __post_init__(self) -> None:
+        # Config can explicitly contain null even though omitted values use factories.
+        permissions = cast(Optional[List[str]], self.permissions)
+        metadata = cast(Optional[Dict[str, str]], self.metadata)
+        if permissions is None:
+            self.permissions = []
+        if metadata is None:
+            self.metadata = {}
+
 
 class AuthService:
     """
