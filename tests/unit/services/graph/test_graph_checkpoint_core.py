@@ -198,18 +198,25 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         self.assertEqual(result.metadata["idx"], 2)
 
     def test_put_writes_saves_write_documents(self):
-        config = {"configurable": {"thread_id": "thread-w"}}
+        config = {
+            "configurable": {
+                "thread_id": "thread-w",
+                "checkpoint_ns": "",
+                "checkpoint_id": "checkpoint-w",
+            }
+        }
         task_id = "task-7"
         writes = [("state", {"foo": "bar"})]
 
         self.service.put_writes(config=config, writes=writes, task_id=task_id)
 
-        stored = self.file_storage.read(collection="writes")
+        collection = self.service._writes_collection("thread-w", "", "checkpoint-w")
+        stored = self.file_storage.read(collection=collection)
         self.assertEqual(len(stored), 1)
         document_id = stored[0]
         payload = pickle.loads(
             self.file_storage.read(
-                collection="writes", document_id=document_id, binary_mode=True
+                collection=collection, document_id=document_id, binary_mode=True
             )
         )
         raw_restored_writes = self.service.serde.loads_typed(payload["writes"])
@@ -219,6 +226,80 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         ]
         self.assertEqual(normalised_writes, list(writes))
         self.assertEqual(payload["task_id"], task_id)
+        self.assertEqual(payload["checkpoint_id"], "checkpoint-w")
+
+    def test_get_tuple_returns_only_pending_writes_for_its_checkpoint(self):
+        first_config = self.service.put(
+            config={"configurable": {"thread_id": "thread-pending"}},
+            checkpoint={"state": {"value": "first"}},
+            metadata={"idx": 1},
+            new_versions={},
+        )
+        second_config = self.service.put(
+            config=first_config,
+            checkpoint={"state": {"value": "second"}},
+            metadata={"idx": 2},
+            new_versions={},
+        )
+        self.service.put_writes(
+            config=first_config,
+            writes=[("state", {"value": "first write"})],
+            task_id="task-first",
+        )
+        self.service.put_writes(
+            config=second_config,
+            writes=[("state", {"value": "second write"})],
+            task_id="task-second",
+        )
+        first_collection = self.service._writes_collection(
+            "thread-pending", "", first_config["configurable"]["checkpoint_id"]
+        )
+        self.file_storage.write(
+            collection=first_collection,
+            data=b"malformed pickle",
+            document_id="corrupt.pkl",
+            mode=WriteMode.WRITE,
+            binary_mode=True,
+        )
+
+        first_result = self.service.get_tuple(first_config)
+        second_result = self.service.get_tuple(second_config)
+
+        self.assertEqual(
+            first_result.pending_writes,
+            [("task-first", "state", {"value": "first write"})],
+        )
+        self.assertEqual(
+            second_result.pending_writes,
+            [("task-second", "state", {"value": "second write"})],
+        )
+
+    def test_put_writes_skips_duplicate_channels_and_replaces_control_writes(self):
+        config = {"configurable": {"thread_id": "thread-retry"}}
+        config = self.service.put(
+            config=config, checkpoint={"state": {}}, metadata={}, new_versions={}
+        )
+
+        self.service.put_writes(
+            config,
+            [("state", "first"), ("__interrupt__", "pause")],
+            task_id="task-retry",
+        )
+        self.service.put_writes(
+            config,
+            [("state", "second"), ("__interrupt__", "resume")],
+            task_id="task-retry",
+        )
+
+        result = self.service.get_tuple(config)
+
+        self.assertEqual(
+            result.pending_writes,
+            [
+                ("task-retry", "state", "first"),
+                ("task-retry", "__interrupt__", "resume"),
+            ],
+        )
 
     def test_get_service_info_matches_new_contract(self):
         info = self.service.get_service_info()

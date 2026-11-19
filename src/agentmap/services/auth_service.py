@@ -68,7 +68,14 @@ class AuthService:
         """
         self.config: Dict[str, Any] = auth_config
         self.logger = logging_service.get_class_logger(self)
-        self.enabled: bool = auth_config.get("enabled", True)
+        enabled = auth_config.get("enabled", True)
+        if isinstance(enabled, bool):
+            self.enabled = enabled
+        else:
+            self.enabled = True
+            self.logger.warning(
+                "[AuthService] 'enabled' must be a boolean; defaulting to enabled"
+            )
 
         # Load API keys configuration
         self._api_keys: Dict[str, Dict[str, Any]] = self._load_api_keys()

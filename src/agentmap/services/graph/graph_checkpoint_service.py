@@ -14,6 +14,7 @@ in cache/checkpoints/ namespace. Checkpoint documents are pickled for fast I/O.
 """
 
 import asyncio
+import hashlib
 import pickle
 from datetime import datetime
 from typing import Any, Dict, Optional, Sequence, Tuple
@@ -21,6 +22,7 @@ from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
+    WRITES_IDX_MAP,
     BaseCheckpointSaver,
     ChannelVersions,
     Checkpoint,
@@ -220,6 +222,13 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                         for k, v in versions_seen.items()
                     }
 
+            checkpoint_id = latest_file.get("checkpoint_id")
+            pending_writes = (
+                self._load_pending_writes(thread_id, checkpoint_ns, checkpoint_id)
+                if isinstance(checkpoint_id, str) and checkpoint_id
+                else []
+            )
+
             return CheckpointTuple(
                 config={
                     "configurable": {
@@ -241,6 +250,7 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                     if latest_file.get("parent_checkpoint_id")
                     else None
                 ),
+                pending_writes=pending_writes,
             )
 
         except Exception as e:
@@ -248,6 +258,68 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                 f"Failed to load checkpoint for thread {thread_id}: {str(e)}"
             )
             return None
+
+    @staticmethod
+    def _writes_collection(
+        thread_id: str, checkpoint_ns: str, checkpoint_id: str
+    ) -> str:
+        identity = "\0".join((thread_id, checkpoint_ns, checkpoint_id))
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        return f"writes/{digest}"
+
+    def _load_pending_writes(
+        self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
+    ) -> list[tuple[str, str, Any]]:
+        collection = self._writes_collection(thread_id, checkpoint_ns, checkpoint_id)
+        filenames = self.file_storage.read(collection=collection) or []
+        if not isinstance(filenames, (list, tuple)):
+            return []
+
+        task_writes: Dict[str, list[tuple[str, Any]]] = {}
+        for filename in filenames:
+            if not isinstance(filename, str):
+                continue
+            try:
+                document_bytes = self.file_storage.read(
+                    collection=collection, document_id=filename, binary_mode=True
+                )
+                if not document_bytes:
+                    continue
+                writes_doc = pickle.loads(document_bytes)
+                if (
+                    not isinstance(writes_doc, dict)
+                    or writes_doc.get("thread_id") != thread_id
+                    or writes_doc.get("checkpoint_ns", "") != checkpoint_ns
+                    or writes_doc.get("checkpoint_id") != checkpoint_id
+                ):
+                    continue
+                task_id = writes_doc.get("task_id")
+                writes_typed = writes_doc.get("writes")
+                if not isinstance(task_id, str) or writes_typed is None:
+                    continue
+                writes = self.serde.loads_typed(writes_typed)
+                if not isinstance(writes, list):
+                    continue
+
+                valid_writes = []
+                for item in writes:
+                    if not isinstance(item, (list, tuple)) or len(item) != 2:
+                        continue
+                    channel, value = item
+                    if isinstance(channel, str):
+                        valid_writes.append((channel, value))
+                task_writes[task_id] = valid_writes
+            except Exception as e:
+                self.logger.warning(
+                    f"Skipping malformed pending writes for thread={thread_id}, "
+                    f"checkpoint={checkpoint_id}, file={filename}: {e}"
+                )
+
+        return [
+            (task_id, channel, value)
+            for task_id in sorted(task_writes)
+            for channel, value in task_writes[task_id]
+        ]
 
     def put_writes(
         self,
@@ -269,33 +341,60 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
             task_id: Identifier for the task creating the writes
             task_path: Path of the task creating the writes (optional)
         """
-        thread_id = config["configurable"]["thread_id"]
+        configurable = config["configurable"]
+        thread_id = configurable["thread_id"]
+        checkpoint_ns = configurable.get("checkpoint_ns", "")
+        checkpoint_id = configurable.get("checkpoint_id")
 
         try:
-            # Serialize writes using serde (handles complex types)
-            writes_typed = self.serde.dumps_typed(list(writes))
+            if not isinstance(checkpoint_id, str) or not checkpoint_id:
+                raise ValueError("Pending writes require a checkpoint_id")
+            if not isinstance(checkpoint_ns, str):
+                raise ValueError("checkpoint_ns must be a string")
 
-            # Create writes document
+            collection = self._writes_collection(
+                thread_id, checkpoint_ns, checkpoint_id
+            )
+            task_digest = hashlib.sha256(task_id.encode("utf-8")).hexdigest()
+            document_id = f"{task_digest}.pkl"
+            writes_by_index: Dict[int, Tuple[str, Any]] = {}
+
+            if self.file_storage.exists(collection=collection, document_id=document_id):
+                existing_bytes = self.file_storage.read(
+                    collection=collection,
+                    document_id=document_id,
+                    binary_mode=True,
+                )
+                if existing_bytes:
+                    existing_doc = pickle.loads(existing_bytes)
+                    if isinstance(existing_doc, dict):
+                        existing_writes = self.serde.loads_typed(existing_doc["writes"])
+                        for index, (channel, value) in enumerate(existing_writes):
+                            write_index = WRITES_IDX_MAP.get(channel, index)
+                            writes_by_index[write_index] = (channel, value)
+
+            for index, (channel, value) in enumerate(writes):
+                write_index = WRITES_IDX_MAP.get(channel, index)
+                if write_index >= 0 and write_index in writes_by_index:
+                    continue
+                writes_by_index[write_index] = (channel, value)
+
             writes_doc = {
-                "writes": writes_typed,  # tuple[str, bytes] from dumps_typed
+                "writes": self.serde.dumps_typed(list(writes_by_index.values())),
+                "thread_id": thread_id,
+                "checkpoint_ns": checkpoint_ns,
+                "checkpoint_id": checkpoint_id,
                 "task_id": task_id,
                 "task_path": task_path,
                 "timestamp": datetime.utcnow().isoformat(),
                 "version": "2.0",
             }
-
-            # Serialize document with pickle
             document_bytes = pickle.dumps(writes_doc)
 
-            # Generate unique ID for this writes batch
-            writes_id = str(uuid4())
-
-            # Save to file storage in writes subdirectory
-            # Uses pattern: <thread_id>_writes_<writes_id>.pkl
             result = self.file_storage.write(
-                collection="writes",  # Subdirectory for writes
+                collection=collection,
                 data=document_bytes,
-                document_id=f"{thread_id}_writes_{writes_id}.pkl",
+                document_id=document_id,
                 mode=WriteMode.WRITE,
                 binary_mode=True,
             )
@@ -303,7 +402,7 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
             if result.success:
                 self.logger.debug(
                     f"Writes saved: thread={thread_id}, task={task_id}, "
-                    f"writes_id={writes_id}, count={len(writes)}"
+                    f"checkpoint={checkpoint_id}, count={len(writes_by_index)}"
                 )
             else:
                 self.logger.error(
