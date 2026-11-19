@@ -307,7 +307,7 @@ def resolve_request_params(
 
     # --- Pass-through (non-reserved) keys ---
     # Collect pass-through keys from both option dicts, apply same conflict rule.
-    passthrough_keys: set = set()
+    passthrough_keys: set[str] = set()
     if spec.request_options:
         passthrough_keys.update(
             k for k in spec.request_options if k not in _RESERVED_OPTIONS_KEYS
@@ -351,14 +351,14 @@ def resolve_request_params(
 
 # Sentinel — never equal to any real value
 class _MissingSentinel:
-    _instance = None
+    _instance: Optional["_MissingSentinel"] = None
 
-    def __new__(cls):
+    def __new__(cls: type["_MissingSentinel"]) -> "_MissingSentinel":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<MISSING>"
 
 

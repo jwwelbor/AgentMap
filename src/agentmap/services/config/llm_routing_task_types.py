@@ -6,7 +6,7 @@ definitions used in the routing system.
 """
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 from agentmap.services.routing.types import get_valid_complexity_levels
 
@@ -125,7 +125,7 @@ def get_provider_preference(
         List of preferred providers in order
     """
     task_config = get_task_type_config(task_types, task_type)
-    return task_config.get("provider_preference", ["anthropic"])
+    return cast(List[str], task_config.get("provider_preference", ["anthropic"]))
 
 
 def get_default_complexity(
@@ -142,7 +142,7 @@ def get_default_complexity(
         Default complexity level
     """
     task_config = get_task_type_config(task_types, task_type)
-    return task_config.get("default_complexity", "medium")
+    return cast(str, task_config.get("default_complexity", "medium"))
 
 
 def get_complexity_keywords(
@@ -159,7 +159,9 @@ def get_complexity_keywords(
         Dictionary mapping complexity levels to keyword lists
     """
     task_config = get_task_type_config(task_types, task_type)
-    return task_config.get("complexity_keywords", {})
+    return cast(
+        Dict[str, List[str]], task_config.get("complexity_keywords", {})
+    )
 
 
 def get_available_task_types(task_types: Dict[str, Dict[str, Any]]) -> List[str]:
