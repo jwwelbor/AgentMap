@@ -90,7 +90,7 @@ class ConfigValidationService:
         return result
 
     def _validate_yaml_structure(
-        self, config_data: Dict[str, Any], result: ValidationResult
+        self, config_data: Any, result: ValidationResult
     ) -> None:
         """Validate basic YAML structure and format."""
 
@@ -146,7 +146,7 @@ class ConfigValidationService:
 
                 result.add_error(
                     message=f"Schema validation error: {message}",
-                    field=field_path if field_path else None,
+                    field_name=field_path if field_path else None,
                     value=str(value) if value is not None else None,
                 )
         except Exception as e:
@@ -164,17 +164,17 @@ class ConfigValidationService:
             if not csv_file.exists():
                 result.add_warning(
                     f"CSV file does not exist: {csv_path}",
-                    field="csv_path",
+                    field_name="csv_path",
                     suggestion="Create the file or update the path",
                 )
             elif not csv_file.is_file():
                 result.add_error(
-                    f"CSV path is not a file: {csv_path}", field="csv_path"
+                    f"CSV path is not a file: {csv_path}", field_name="csv_path"
                 )
             elif not csv_path.endswith(".csv"):
                 result.add_warning(
                     f"CSV path does not have .csv extension: {csv_path}",
-                    field="csv_path",
+                    field_name="csv_path",
                 )
 
         # Validate storage config path
@@ -184,7 +184,7 @@ class ConfigValidationService:
             if not storage_file.exists():
                 result.add_info(
                     f"Storage config file does not exist: {storage_config_path}",
-                    field="storage_config_path",
+                    field_name="storage_config_path",
                     suggestion="File will be created when needed",
                 )
 
@@ -207,18 +207,18 @@ class ConfigValidationService:
                         if path_obj.parent.exists():
                             result.add_info(
                                 f"{description} will be created: {path_value}",
-                                field=f"paths.{field}",
+                                field_name=f"paths.{field}",
                             )
                         else:
                             result.add_warning(
                                 f"{description} parent directory does not exist: {path_value}",
-                                field=f"paths.{field}",
+                                field_name=f"paths.{field}",
                                 suggestion="Ensure parent directory exists",
                             )
                     elif path_obj.is_file():
                         result.add_error(
                             f"{description} path is a file, not a directory: {path_value}",
-                            field=f"paths.{field}",
+                            field_name=f"paths.{field}",
                         )
 
         # Validate prompts paths
@@ -230,7 +230,7 @@ class ConfigValidationService:
                 if not prompts_path.exists():
                     result.add_info(
                         f"Prompts directory will be created: {prompts_dir}",
-                        field="prompts.directory",
+                        field_name="prompts.directory",
                     )
 
             registry_file = prompts_config.get("registry_file")
@@ -239,7 +239,7 @@ class ConfigValidationService:
                 if not registry_path.exists():
                     result.add_info(
                         f"Prompts registry file will be created: {registry_file}",
-                        field="prompts.registry_file",
+                        field_name="prompts.registry_file",
                     )
 
     def _validate_llm_configs(
@@ -288,7 +288,7 @@ class ConfigValidationService:
             if not env_value:
                 result.add_warning(
                     f"No API key configured for {provider}",
-                    field=f"{field_prefix}.api_key",
+                    field_name=f"{field_prefix}.api_key",
                     suggestion=f"Set api_key in config or {env_var} environment variable",
                 )
             else:
@@ -300,7 +300,7 @@ class ConfigValidationService:
             if len(api_key) < 10:
                 result.add_warning(
                     f"{provider} API key seems too short",
-                    field=f"{field_prefix}.api_key",
+                    field_name=f"{field_prefix}.api_key",
                     suggestion="Verify the API key is complete",
                 )
 
@@ -309,22 +309,13 @@ class ConfigValidationService:
             if any(pattern in api_key.lower() for pattern in placeholder_patterns):
                 result.add_error(
                     f"{provider} API key appears to be a placeholder",
-                    field=f"{field_prefix}.api_key",
+                    field_name=f"{field_prefix}.api_key",
                     value=api_key,
                     suggestion="Replace with your actual API key",
                 )
 
-        # Validate model name
-        model = config.get("model")
-        if model:
-            known_models = self.llm_models_config.get_known_models(provider)
-
-            if known_models and model not in known_models:
-                result.add_info(
-                    f"Using non-standard model for {provider}: {model}",
-                    field=f"{field_prefix}.model",
-                    suggestion=f"Common models: {', '.join(known_models)}",
-                )
+        # Model names are left to provider APIs for validation. The model config
+        # service intentionally exposes defaults only, not a hard-coded catalog.
 
         # Validate temperature
         temperature = config.get("temperature")
@@ -334,12 +325,12 @@ class ConfigValidationService:
                 if temp_float < 0 or temp_float > 2:
                     result.add_warning(
                         f"{provider} temperature {temp_float} is outside typical range 0-2",
-                        field=f"{field_prefix}.temperature",
+                        field_name=f"{field_prefix}.temperature",
                     )
             except (ValueError, TypeError):
                 result.add_error(
                     f"{provider} temperature must be a number",
-                    field=f"{field_prefix}.temperature",
+                    field_name=f"{field_prefix}.temperature",
                     value=str(temperature),
                 )
 
@@ -360,7 +351,7 @@ class ConfigValidationService:
                     if not critical_nodes:
                         result.add_warning(
                             "Success policy set to 'critical_nodes' but no critical nodes specified",
-                            field="execution.success_policy.critical_nodes",
+                            field_name="execution.success_policy.critical_nodes",
                             suggestion="Add node names to critical_nodes list",
                         )
 
@@ -369,5 +360,5 @@ class ConfigValidationService:
                     if not custom_function:
                         result.add_error(
                             "Success policy set to 'custom' but no custom_function specified",
-                            field="execution.success_policy.custom_function",
+                            field_name="execution.success_policy.custom_function",
                         )

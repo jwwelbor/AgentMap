@@ -110,6 +110,7 @@ dev = [
     "psutil>=7.0.0,<8",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
+    "types-pyyaml>=6.0.12.20261113",
 ]
 
 [tool.hatch.build.targets.sdist]
