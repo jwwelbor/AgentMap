@@ -147,6 +147,13 @@ class TestModernizedCSVReaderAgent(unittest.TestCase):
         self.assertIn("CSV service not configured", str(cm.exception))
         self.assertIn("test_csv_reader", str(cm.exception))
 
+    def test_client_initialization_requires_injected_csv_service(self):
+        """The compatibility initializer must fail clearly without DI wiring."""
+        agent = self.create_csv_reader_agent()
+
+        with self.assertRaisesRegex(ValueError, "CSV service not configured"):
+            agent._initialize_client()
+
     def test_execute_operation_calls_csv_service(self):
         """Test that _execute_operation properly delegates to csv_service."""
         agent = self.create_csv_reader_agent()
