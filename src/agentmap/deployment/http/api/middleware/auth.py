@@ -6,12 +6,15 @@ functions, wrapping the pure AuthService with framework-specific concerns.
 """
 
 import re
-from typing import Annotated, Callable, List, Optional
+from typing import Annotated, Any, Callable, List, Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from agentmap.services.auth_service import AuthContext, AuthService
+
+AuthDependency = Callable[..., Any]
+PermissionDependency = Callable[[AuthContext], AuthContext]
 
 
 class FastAPIAuthAdapter:
@@ -133,7 +136,7 @@ class FastAPIAuthAdapter:
 
         return False
 
-    def create_dependency(self, optional: bool = False) -> Callable:
+    def create_dependency(self, optional: bool = False) -> AuthDependency:
         """
         Create authentication dependency function.
 
@@ -196,7 +199,7 @@ class FastAPIAuthAdapter:
 
             # Determine authentication method and validate
             auth_method = self._get_auth_method(request)
-            auth_context = None
+            auth_context: Optional[AuthContext] = None
 
             if auth_method == "api_key":
                 auth_context = self.auth_service.validate_api_key(token)
@@ -222,7 +225,7 @@ class FastAPIAuthAdapter:
 
         return auth_dependency
 
-    def require_auth(self) -> Callable:
+    def require_auth(self) -> AuthDependency:
         """
         Create dependency that requires authentication.
 
@@ -231,7 +234,7 @@ class FastAPIAuthAdapter:
         """
         return self.create_dependency(optional=False)
 
-    def optional_auth(self) -> Callable:
+    def optional_auth(self) -> AuthDependency:
         """
         Create dependency for optional authentication.
 
@@ -240,7 +243,9 @@ class FastAPIAuthAdapter:
         """
         return self.create_dependency(optional=True)
 
-    def require_permissions(self, required_permissions: List[str]) -> Callable:
+    def require_permissions(
+        self, required_permissions: List[str]
+    ) -> PermissionDependency:
         """
         Create dependency that requires specific permissions.
 
@@ -291,7 +296,9 @@ class FastAPIAuthAdapter:
 
         return permission_dependency
 
-    def create_permission_dependency(self, required_permissions: List[str]) -> Callable:
+    def create_permission_dependency(
+        self, required_permissions: List[str]
+    ) -> AuthDependency:
         """
         Create combined auth + permission dependency.
 
@@ -329,19 +336,19 @@ class FastAPIAuthAdapter:
         return combined_dependency
 
     # Common permission combinations
-    def require_read_permission(self) -> Callable:
+    def require_read_permission(self) -> PermissionDependency:
         """Dependency that requires read permission."""
         return self.create_permission_dependency(["read"])
 
-    def require_write_permission(self) -> Callable:
+    def require_write_permission(self) -> PermissionDependency:
         """Dependency that requires write permission."""
         return self.create_permission_dependency(["write"])
 
-    def require_admin_permission(self) -> Callable:
+    def require_admin_permission(self) -> PermissionDependency:
         """Dependency that requires admin permission."""
         return self.create_permission_dependency(["admin"])
 
-    def require_execution_permission(self) -> Callable:
+    def require_execution_permission(self) -> PermissionDependency:
         """Dependency that requires execution permission."""
         return self.create_permission_dependency(["execute"])
 
@@ -363,7 +370,7 @@ def create_auth_adapter(auth_service: AuthService) -> FastAPIAuthAdapter:
 # Legacy compatibility wrappers
 def create_auth_dependency(
     auth_service: AuthService, optional: bool = False
-) -> Callable:
+) -> AuthDependency:
     """
     Legacy wrapper for creating authentication dependency.
 
@@ -378,7 +385,7 @@ def create_auth_dependency(
     return adapter.create_dependency(optional=optional)
 
 
-def require_auth(auth_service: AuthService) -> Callable:
+def require_auth(auth_service: AuthService) -> AuthDependency:
     """
     Legacy wrapper for requiring authentication.
 
@@ -392,7 +399,7 @@ def require_auth(auth_service: AuthService) -> Callable:
     return adapter.require_auth()
 
 
-def optional_auth(auth_service: AuthService) -> Callable:
+def optional_auth(auth_service: AuthService) -> AuthDependency:
     """
     Legacy wrapper for optional authentication.
 
@@ -406,25 +413,25 @@ def optional_auth(auth_service: AuthService) -> Callable:
     return adapter.optional_auth()
 
 
-def require_admin_permission(auth_service: AuthService) -> Callable:
+def require_admin_permission(auth_service: AuthService) -> PermissionDependency:
     """Legacy wrapper for admin permission dependency."""
     adapter = FastAPIAuthAdapter(auth_service)
     return adapter.require_admin_permission()
 
 
-def require_read_permission(auth_service: AuthService) -> Callable:
+def require_read_permission(auth_service: AuthService) -> PermissionDependency:
     """Legacy wrapper for read permission dependency."""
     adapter = FastAPIAuthAdapter(auth_service)
     return adapter.require_read_permission()
 
 
-def require_write_permission(auth_service: AuthService) -> Callable:
+def require_write_permission(auth_service: AuthService) -> PermissionDependency:
     """Legacy wrapper for write permission dependency."""
     adapter = FastAPIAuthAdapter(auth_service)
     return adapter.require_write_permission()
 
 
-def require_execution_permission(auth_service: AuthService) -> Callable:
+def require_execution_permission(auth_service: AuthService) -> PermissionDependency:
     """Legacy wrapper for execution permission dependency."""
     adapter = FastAPIAuthAdapter(auth_service)
     return adapter.require_execution_permission()
