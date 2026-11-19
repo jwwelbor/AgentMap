@@ -5,7 +5,7 @@ This module provides utility functions for path-based operations,
 query filtering, and document management.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 
 class MemoryStorageHelpers:
@@ -109,6 +109,7 @@ class MemoryStorageHelpers:
             return value
 
         # Make a copy to avoid modifying original
+        result: Any
         if isinstance(data, dict):
             result = data.copy()
         elif isinstance(data, list):
@@ -187,7 +188,7 @@ class MemoryStorageHelpers:
         sort_order = query.pop("order", "asc").lower()
 
         # Apply field filtering
-        filtered_data = {}
+        filtered_data: Dict[str, Any] = {}
         for doc_id, doc_data in data.items():
             if not isinstance(doc_data, dict):
                 continue
@@ -208,7 +209,10 @@ class MemoryStorageHelpers:
         if sort_field:
             reverse = sort_order == "desc"
             items.sort(
-                key=lambda x: x[1].get(sort_field) if isinstance(x[1], dict) else None,
+                key=lambda x: cast(
+                    Any,
+                    x[1].get(sort_field) if isinstance(x[1], dict) else None,
+                ),
                 reverse=reverse,
             )
 
