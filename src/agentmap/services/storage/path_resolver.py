@@ -85,14 +85,16 @@ class PathResolverMixin:
         Raises:
             ValueError: If path is unsafe
         """
-        full_path = str(Path(self._base_directory) / key)
+        base_directory = self._base_directory
+        if base_directory is None:
+            raise ValueError("No base directory configured for system storage")
+
+        full_path = str(Path(base_directory) / key)
 
         # Validate path if file_path_service is available
         if self._file_path_service:
             try:
-                self._file_path_service.validate_safe_path(
-                    full_path, self._base_directory
-                )
+                self._file_path_service.validate_safe_path(full_path, base_directory)
             except Exception as e:
                 self._logger.error(
                     f"[{self.provider_name}] Path validation failed for {full_path}: {e}"

@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 
 class PersistenceManager:
@@ -81,7 +81,7 @@ class PersistenceManager:
                 persistence_data = json.load(f)
 
             self._logger.debug(f"Loaded memory storage from {file_path}")
-            return persistence_data
+            return cast(Dict[str, Any], persistence_data)
 
         except Exception as e:
             self._logger.warning(f"Failed to load persistence data: {e}")

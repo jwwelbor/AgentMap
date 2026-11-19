@@ -22,7 +22,7 @@ class JSONDocumentWriterAgent(JSONDocumentAgent):
 
     def _execute_operation(
         self, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Execute write operation for JSON files by delegating to JSONStorageService.
 

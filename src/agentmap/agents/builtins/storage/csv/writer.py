@@ -22,7 +22,7 @@ class CSVWriterAgent(CSVAgent):
 
     def _execute_operation(
         self, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Execute write operation for CSV files by delegating to CSVStorageService.
 
