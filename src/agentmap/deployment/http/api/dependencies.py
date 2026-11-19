@@ -6,12 +6,13 @@ by providing direct access to the ApplicationContainer stored in app state.
 """
 
 import functools
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 from fastapi import HTTPException, Request, status
 
 from agentmap.di import ApplicationContainer
-from agentmap.services.auth_service import AuthContext
+from agentmap.services.auth_service import AuthContext, AuthService
+from agentmap.services.config import AppConfigService
 
 
 def get_container(request: Request) -> ApplicationContainer:
@@ -32,10 +33,10 @@ def get_container(request: Request) -> ApplicationContainer:
     Returns:
         ApplicationContainer instance with all registered services
     """
-    return request.app.state.container
+    return cast(ApplicationContainer, request.app.state.container)
 
 
-def requires_auth(permission: Optional[str] = None) -> Callable:
+def requires_auth(permission: Optional[str] = None) -> Callable[..., Any]:
     """
     Authentication decorator for FastAPI route functions.
 
@@ -60,12 +61,12 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
             pass
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
             # For FastAPI routes, the request is typically the first positional argument
             # or available in kwargs
-            request = None
+            request: Optional[Request] = None
 
             # Method 1: Check if request is in args (most common)
             if args and isinstance(args[0], Request):
@@ -92,13 +93,13 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
             # Get container from request app state with retry for lifespan race condition
             import asyncio
 
-            container = None
+            container: Optional[ApplicationContainer] = None
             max_retries = 20  # Increased from 10
             retry_delay = 0.15  # Increased from 0.1s to 150ms (total 3 seconds)
 
             for attempt in range(max_retries):
                 try:
-                    container = request.app.state.container
+                    container = cast(ApplicationContainer, request.app.state.container)
                     if container is not None:
                         break
                 except AttributeError:
@@ -116,7 +117,7 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
 
             # Get auth service from container with retry logic
             # This must be done first to check if authentication is disabled
-            auth_service = None
+            auth_service: Optional[AuthService] = None
             for attempt in range(10):  # Try up to 10 times
                 try:
                     auth_service = container.auth_service()
@@ -130,8 +131,15 @@ def requires_auth(permission: Optional[str] = None) -> Callable:
                             detail=f"Auth service not available after {attempt+1} attempts: {str(e)}",
                         )
 
+            if auth_service is None:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Auth service is not initialized.",
+                )
+
             # Check if authentication is disabled (this avoids race conditions)
             # Tests mock auth_service.is_authentication_enabled() so check that
+            auth_context: AuthContext
             if not auth_service.is_authentication_enabled():
                 auth_context = AuthContext(
                     authenticated=True,
@@ -218,7 +226,7 @@ def _extract_auth_token(request: Request) -> Optional[str]:
     return None
 
 
-def _validate_token(auth_service, token: str) -> AuthContext:
+def _validate_token(auth_service: AuthService, token: str) -> AuthContext:
     """
     Validate authentication token using appropriate method.
 
@@ -238,7 +246,7 @@ def _validate_token(auth_service, token: str) -> AuthContext:
         return auth_service.validate_api_key(token)
 
 
-def _is_public_endpoint(path: str, public_endpoints: list) -> bool:
+def _is_public_endpoint(path: str, public_endpoints: list[str]) -> bool:
     """
     Check if the requested path is a public endpoint.
 
@@ -316,10 +324,10 @@ def get_auth_context(request: Request) -> AuthContext:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Authentication context not found - ensure @requires_auth decorator is applied",
         )
-    return request.state.auth_context
+    return cast(AuthContext, request.state.auth_context)
 
 
-def get_app_config_service(request: Request):
+def get_app_config_service(request: Request) -> AppConfigService:
     """
     Get app config service for FastAPI dependency injection.
 
@@ -333,7 +341,7 @@ def get_app_config_service(request: Request):
         AppConfigService instance for configuration access
     """
     container = get_container(request)
-    return container.app_config_service()
+    return cast(AppConfigService, container.app_config_service())
 
 
 # Export functions
