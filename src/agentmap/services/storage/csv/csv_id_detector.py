@@ -5,7 +5,7 @@ This module provides intelligent detection of ID columns in CSV files,
 supporting various naming conventions and patterns.
 """
 
-from typing import Optional
+from typing import List, Optional, cast
 
 import pandas as pd
 
@@ -40,7 +40,7 @@ class CSVIdDetector:
         if df.empty or len(df.columns) == 0:
             return None
 
-        columns = df.columns.tolist()
+        columns = cast(List[str], df.columns.tolist())
         ends_with_id_candidates = []
         starts_with_id_candidates = []
 

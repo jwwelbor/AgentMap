@@ -12,7 +12,7 @@ Examples:
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
 
 class DocumentPathMixin:
@@ -22,6 +22,8 @@ class DocumentPathMixin:
     This mixin contains methods for working with JSON-path style dot notation
     to access and modify nested data in document structures.
     """
+
+    log_debug: Callable[[str], None]
 
     def _parse_path(self, path: str) -> List[str]:
         """
@@ -285,7 +287,7 @@ class DocumentPathMixin:
             Merged dictionary
         """
         # Create a copy of the first dictionary
-        result = self._deep_copy(dict1)
+        result = cast(Dict[Any, Any], self._deep_copy(dict1))
 
         # Merge in values from the second dictionary
         for key, value in dict2.items():
