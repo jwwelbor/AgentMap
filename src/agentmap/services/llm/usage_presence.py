@@ -56,7 +56,7 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> Dict[str, Any]:
 
 
 def _decode_usage_container(
-    evidence: LLMResponseEvidence, container: str
+    evidence: object, container: str
 ) -> Optional[Dict[str, Any]]:
     """Distinguish unavailable containers from valid optional-field omission."""
     if not isinstance(evidence, LLMResponseEvidence):

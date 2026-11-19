@@ -224,7 +224,7 @@ class OpenAIBatchAdapter:
                 expired=None,
             )
 
-        raw_status = getattr(batch, "status", None)
+        raw_status: Any = getattr(batch, "status", None)
         normalized_status = self._STATUS_MAP.get(raw_status, LLMBatchStatus.FAILED)
         if raw_status not in self._STATUS_MAP:
             self._logger.warning(

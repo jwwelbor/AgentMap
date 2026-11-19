@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional, Tuple
 from agentmap.exceptions import LLMConfigurationError
 from agentmap.models.llm_cost import LLMCostBreakdown, LLMModelRates
 from agentmap.models.llm_execution import LLMUsage
+from agentmap.services.logging_service import LoggingService
 
 _QUANTUM = Decimal("0.000001")
 
@@ -32,7 +33,9 @@ class LLMCostCalculator:
     ``AppConfigService.get_llm_pricing_config()``) and a logging service.
     """
 
-    def __init__(self, pricing_config: Dict[str, Any], logging_service):
+    def __init__(
+        self, pricing_config: Dict[str, Any], logging_service: LoggingService
+    ) -> None:
         """
         Args:
             pricing_config: The ``llm.pricing`` dict, shaped

@@ -1,6 +1,7 @@
 """Validation for batch-only LLM service lifecycle options."""
 
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from agentmap.exceptions import LLMConfigurationError, LLMServiceError
 from agentmap.models.llm_batch import LLMBatchSubmitRequest
@@ -27,7 +28,7 @@ def _validate_batch_request_shape(request: LLMBatchSubmitRequest) -> None:
         _validate_request_spec_shape(spec)
 
 
-def _has_attempt_lifecycle(options: Mapping) -> bool:
+def _has_attempt_lifecycle(options: Mapping[str, Any]) -> bool:
     return bool(options) and "attempt_lifecycle" in options
 
 
