@@ -307,6 +307,35 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         self.assertEqual(payload["task_id"], task_id)
         self.assertEqual(payload["checkpoint_id"], "checkpoint-w")
 
+    def test_put_writes_replaces_corrupt_existing_record_with_new_writes(self):
+        config = self.service.put(
+            config={"configurable": {"thread_id": "thread-write-recovery"}},
+            checkpoint={"state": {}},
+            metadata={},
+            new_versions={},
+        )
+        task_id = "task-recovery"
+        self.service.put_writes(config, [("state", "old")], task_id=task_id)
+        collection = self.service._writes_collection(
+            "thread-write-recovery",
+            "",
+            config["configurable"]["checkpoint_id"],
+        )
+        document_id = self.file_storage.read(collection=collection)[0]
+        self.file_storage.write(
+            collection=collection,
+            data=b"malformed pickle",
+            document_id=document_id,
+            mode=WriteMode.WRITE,
+            binary_mode=True,
+        )
+
+        self.service.put_writes(config, [("state", "new")], task_id=task_id)
+
+        result = self.service.get_tuple(config)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.pending_writes, [(task_id, "state", "new")])
+
     def test_get_tuple_returns_only_pending_writes_for_its_checkpoint(self):
         first_config = self.service.put(
             config={"configurable": {"thread_id": "thread-pending"}},

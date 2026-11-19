@@ -391,12 +391,37 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                     binary_mode=True,
                 )
                 if existing_bytes:
-                    existing_doc = pickle.loads(existing_bytes)
-                    if isinstance(existing_doc, dict):
-                        existing_writes = self.serde.loads_typed(existing_doc["writes"])
-                        for index, (channel, value) in enumerate(existing_writes):
-                            write_index = WRITES_IDX_MAP.get(channel, index)
-                            writes_by_index[write_index] = (channel, value)
+                    try:
+                        existing_doc = pickle.loads(existing_bytes)
+                        if (
+                            not isinstance(existing_doc, dict)
+                            or existing_doc.get("thread_id") != thread_id
+                            or existing_doc.get("checkpoint_ns", "") != checkpoint_ns
+                            or existing_doc.get("checkpoint_id") != checkpoint_id
+                            or existing_doc.get("task_id") != task_id
+                        ):
+                            raise ValueError("existing write identity does not match")
+
+                        writes_typed = existing_doc.get("writes")
+                        if writes_typed is None:
+                            raise ValueError("existing write document has no writes")
+                        existing_writes = self.serde.loads_typed(writes_typed)
+                        if not isinstance(existing_writes, list):
+                            raise ValueError("existing writes must be a list")
+
+                        for index, item in enumerate(existing_writes):
+                            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                                continue
+                            channel, value = item
+                            if isinstance(channel, str):
+                                write_index = WRITES_IDX_MAP.get(channel, index)
+                                writes_by_index[write_index] = (channel, value)
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Skipping malformed existing writes for "
+                            f"thread={thread_id}, task={task_id}, "
+                            f"checkpoint={checkpoint_id}: {e}"
+                        )
 
             for index, (channel, value) in enumerate(writes):
                 write_index = WRITES_IDX_MAP.get(channel, index)
