@@ -34,6 +34,8 @@ class DocumentWriterAgent(DocumentStorageAgent):
             ValueError: If inputs are invalid
         """
         super()._validate_inputs(inputs)
+        if not isinstance(inputs.get("mode", "append"), str):
+            raise ValueError("Write mode must be a string")
 
     def _execute_operation(
         self, collection: str, inputs: Dict[str, Any]
@@ -50,7 +52,14 @@ class DocumentWriterAgent(DocumentStorageAgent):
         """
         # Get required data for non-delete operations
         data = inputs.get("data")
-        mode_str = inputs.get("mode", "append").lower()
+        mode_value = inputs.get("mode", "append")
+        if not isinstance(mode_value, str):
+            return DocumentResult(
+                success=False,
+                file_path=collection,
+                error="Write mode must be a string",
+            )
+        mode_str = mode_value.lower()
 
         # Convert string mode to enum
         mode = WriteMode.from_string(mode_str)

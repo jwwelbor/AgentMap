@@ -86,6 +86,35 @@ def test_check_environment_rejects_mypy_command_drift(monkeypatch):
         mypy_ratchet.check_environment(baseline)
 
 
+def test_check_environment_reports_runtime_and_package_drift_without_blocking(
+    monkeypatch,
+):
+    baseline_environment = {
+        "python_version": "3.11.14",
+        "mypy_version": "mypy 1.19.1",
+        "uv_lock_sha256": "lock",
+        "dependency_manifest_sha256": "linux-packages",
+        "mypy_ini_sha256": "config",
+        "command": '["<python>","-m","mypy","src"]',
+    }
+    current_environment = {
+        **baseline_environment,
+        "python_version": "3.12.0",
+        "dependency_manifest_sha256": "platform-packages",
+    }
+    monkeypatch.setattr(
+        mypy_ratchet, "current_environment", lambda root: current_environment
+    )
+
+    notes = mypy_ratchet.check_environment({"environment": baseline_environment})
+
+    assert notes == [
+        "python_version: baseline='3.11.14', current='3.12.0'",
+        "dependency_manifest_sha256: baseline='linux-packages', "
+        "current='platform-packages'",
+    ]
+
+
 def test_write_baseline_uses_supplied_root(tmp_path, monkeypatch):
     repository_baseline = mypy_ratchet.BASELINE_PATH.read_bytes()
     monkeypatch.setattr(mypy_ratchet, "current_environment", lambda root: {})

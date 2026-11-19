@@ -266,24 +266,29 @@ def write_baseline(diagnostics: list[Diagnostic], root: Path = ROOT) -> None:
     print(f"Updated {baseline_path.relative_to(root)} with {len(diagnostics)} findings")
 
 
-def check_environment(baseline: object, root: Path = ROOT) -> None:
+def check_environment(baseline: object, root: Path = ROOT) -> list[str]:
+    """Validate the locked checker contract and report runtime provenance drift.
+
+    Python patch/minor versions and marker-selected installed packages are
+    recorded with the baseline, but supported runtimes and platforms may
+    legitimately differ. The diagnostic multiset comparison remains the gate
+    for any resulting change in mypy output.
+    """
     if not isinstance(baseline, dict):
         raise ValueError("Mypy baseline root must be an object")
     expected = baseline.get("environment")
     if not isinstance(expected, dict):
         raise ValueError("Baseline must contain environment metadata")
     actual = current_environment(root)
-    keys = (
-        "python_version",
+    required_keys = (
         "mypy_version",
         "uv_lock_sha256",
-        "dependency_manifest_sha256",
         "mypy_ini_sha256",
         "command",
     )
     differences = [
         f"{key}: baseline={expected.get(key)!r}, current={actual[key]!r}"
-        for key in keys
+        for key in required_keys
         if expected.get(key) != actual[key]
     ]
     if differences:
@@ -291,6 +296,12 @@ def check_environment(baseline: object, root: Path = ROOT) -> None:
             "Mypy baseline environment mismatch; review and update the baseline:\n"
             + "\n".join(differences)
         )
+    provenance_keys = ("python_version", "dependency_manifest_sha256")
+    return [
+        f"{key}: baseline={expected.get(key)!r}, current={actual[key]!r}"
+        for key in provenance_keys
+        if expected.get(key) != actual[key]
+    ]
 
 
 def main() -> int:
@@ -312,11 +323,18 @@ def main() -> int:
         return 2
     try:
         baseline = parse_baseline(BASELINE_PATH.read_text(encoding="utf-8"))
-        check_environment(baseline)
+        environment_notes = check_environment(baseline)
         existing = load_diagnostics(baseline)
     except (OSError, RuntimeError, ValueError) as error:
         print(f"Invalid mypy baseline: {error}", file=sys.stderr)
         return 2
+    if environment_notes:
+        print(
+            "Mypy runtime provenance differs from the baseline; diagnostic "
+            "signatures remain enforced:"
+        )
+        for note in environment_notes:
+            print(f"  {note}")
     current = Counter(diagnostics)
     added = find_new_diagnostics(existing, current)
     if added:

@@ -48,13 +48,23 @@ class HumanAgent(SuspendAgent):
         timeout_seconds = interaction_context.get("timeout_seconds")
         default_option = interaction_context.get("default_option")
 
-        try:
-            self.interaction_type = InteractionType(interaction_type.lower())
-        except ValueError:
+        if isinstance(interaction_type, InteractionType):
+            self.interaction_type = interaction_type
+        elif isinstance(interaction_type, str):
+            try:
+                self.interaction_type = InteractionType(interaction_type.lower())
+            except ValueError:
+                # Default to text_input if invalid type provided
+                self.interaction_type = InteractionType.TEXT_INPUT
+                self.log_warning(
+                    f"Invalid interaction type '{interaction_type}', "
+                    "defaulting to 'text_input'"
+                )
+        else:
             # Default to text_input if invalid type provided
             self.interaction_type = InteractionType.TEXT_INPUT
             self.log_warning(
-                f"Invalid interaction type '{interaction_type}', defaulting to 'text_input'"
+                "Interaction type must be a string; defaulting to 'text_input'"
             )
 
         # Store interaction configuration

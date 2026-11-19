@@ -240,6 +240,17 @@ class TestCSVWriterDirectFieldMapping(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(self.write_calls[-1]["kwargs"]["mode"], WriteMode.UPDATE)
 
+    def test_non_string_write_mode_falls_back_to_append(self):
+        """Test that malformed mode values use the CSV append fallback."""
+        agent = self.create_csv_writer_agent()
+
+        result = agent._execute_operation(
+            "test.csv", {"data": {"name": "item"}, "mode": 17}
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(self.write_calls[-1]["kwargs"]["mode"], WriteMode.APPEND)
+
     def test_alternative_file_path_fields_excluded(self):
         """Test that alternative file path fields are excluded from data."""
         agent = self.create_csv_writer_agent()

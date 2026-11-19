@@ -53,6 +53,32 @@ class TestHumanAgent(unittest.TestCase):
         self.mock_execution_tracker.thread_id = "test-thread-123"
         self.agent.set_execution_tracker(self.mock_execution_tracker)
 
+    def test_non_string_interaction_type_defaults_to_text_input(self):
+        """Malformed interaction types should not abort agent construction."""
+        agent = HumanAgent(
+            execution_tracking_service=self.mock_execution_tracking_service,
+            state_adapter_service=self.mock_state_adapter_service,
+            name="invalid_interaction_type_agent",
+            prompt="Please provide input",
+            context={"interaction_type": 17},
+            logger=self.mock_logger,
+        )
+
+        self.assertEqual(agent.interaction_type, InteractionType.TEXT_INPUT)
+
+    def test_interaction_type_enum_is_preserved(self):
+        """Already parsed interaction enums remain valid configuration."""
+        agent = HumanAgent(
+            execution_tracking_service=self.mock_execution_tracking_service,
+            state_adapter_service=self.mock_state_adapter_service,
+            name="enum_interaction_type_agent",
+            prompt="Approve?",
+            context={"interaction_type": InteractionType.APPROVAL},
+            logger=self.mock_logger,
+        )
+
+        self.assertEqual(agent.interaction_type, InteractionType.APPROVAL)
+
     @patch("agentmap.agents.builtins.human_agent.interrupt")
     def test_resume_sets_output_field_on_state(self, mock_interrupt):
         """HumanAgent run() should put resume value into configured output field."""
