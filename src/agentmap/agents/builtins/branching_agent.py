@@ -90,7 +90,7 @@ class BranchingAgent(BaseAgent):
         )
 
         # What to return if field not found or value not in success/failure lists
-        self.default_result = context.get("default_result", True)
+        self.default_result: bool = context.get("default_result", True)
 
         # Fallback fields to check if primary field not found (for backward compatibility)
         self.fallback_fields = context.get(
@@ -203,7 +203,11 @@ class BranchingAgent(BaseAgent):
         # No relevant field found, use default
         return self.default_result, None, None
 
-    def _determine_success(self, inputs: Dict[str, Any], context: dict = None) -> bool:
+    def _determine_success(
+        self,
+        inputs: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """
         Determine whether to succeed or fail based on configured criteria.
 

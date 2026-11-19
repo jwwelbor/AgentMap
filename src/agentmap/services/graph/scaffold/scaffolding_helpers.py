@@ -5,12 +5,12 @@ handling file creation, template composition, and declaration management.
 """
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from agentmap.services.custom_agent_declaration_manager import (
     CustomAgentDeclarationManager,
 )
-from agentmap.services.graph.scaffold.naming_utils import generate_agent_class_name
+from agentmap.services.graph.scaffold.name_utils import generate_agent_class_name
 from agentmap.services.graph.scaffold.service_requirements_parser import (
     ServiceRequirementsParser,
 )
@@ -42,7 +42,11 @@ class ScaffoldingHelpers:
         self.logger = logger.get_class_logger(self)
 
     def scaffold_agent(
-        self, agent_type: str, info: Dict, output_path: Path, overwrite: bool = False
+        self,
+        agent_type: str,
+        info: Dict[str, Any],
+        output_path: Path,
+        overwrite: bool = False,
     ) -> Optional[Path]:
         """Scaffold agent class file with service awareness.
 
@@ -124,7 +128,11 @@ class ScaffoldingHelpers:
             raise
 
     def scaffold_function(
-        self, func_name: str, info: Dict, func_path: Path, overwrite: bool = False
+        self,
+        func_name: str,
+        info: Dict[str, Any],
+        func_path: Path,
+        overwrite: bool = False,
     ) -> Optional[Path]:
         """Create a scaffold file for a function.
 

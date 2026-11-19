@@ -3,7 +3,7 @@ Standardized SummaryAgent with consistent prompt resolution.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
@@ -48,12 +48,12 @@ class SummaryAgent(BaseAgent, LLMCapableAgent):
         self._llm_service = None
 
         # Configuration options
-        self.llm_type = self.context.get("llm")
+        self.llm_type: Optional[str] = self.context.get("llm")
         self.use_llm = bool(self.llm_type)
 
         # Formatting configuration
-        self.format_template = self.context.get("format", "{key}: {value}")
-        self.separator = self.context.get("separator", "\n\n")
+        self.format_template: str = self.context.get("format", "{key}: {value}")
+        self.separator: str = self.context.get("separator", "\n\n")
         self.include_keys = self.context.get("include_keys", True)
 
         # Resolve the prompt using PromptManagerService if available
@@ -105,7 +105,7 @@ class SummaryAgent(BaseAgent, LLMCapableAgent):
         # If we have a prompt manager service, use it to resolve the prompt
         if self.prompt_manager_service:
             try:
-                resolved = self.prompt_manager_service.resolve_prompt(prompt)
+                resolved: str = self.prompt_manager_service.resolve_prompt(prompt)
                 if (
                     resolved != prompt
                 ):  # Only log if resolution actually changed the prompt
@@ -173,7 +173,7 @@ class SummaryAgent(BaseAgent, LLMCapableAgent):
 
             # Use LLM Service
             result = self.llm_service.call_llm(
-                provider=self.llm_type,
+                provider=cast(str, self.llm_type),
                 messages=messages,
                 model=self.context.get("model"),
                 temperature=self.context.get("temperature"),
