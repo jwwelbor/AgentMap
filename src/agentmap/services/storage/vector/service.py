@@ -11,6 +11,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from agentmap.services.config.storage_config_service import StorageConfigService
+from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.types import StorageResult, WriteMode
@@ -43,9 +44,9 @@ class VectorStorageService(BaseStorageService):
         provider_name: str,
         configuration: StorageConfigService,
         logging_service: LoggingService,
-        file_path_service: Any = None,
-        base_directory: str = None,
-        telemetry_service=None,
+        file_path_service: Optional[FilePathService] = None,
+        base_directory: Optional[str] = None,
+        telemetry_service: Optional[Any] = None,
     ):
         """Initialize VectorStorageService with configuration service."""
         super().__init__(
@@ -214,7 +215,7 @@ class VectorStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """Perform similarity search on vector store."""
         try:
@@ -266,8 +267,8 @@ class VectorStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         mode: WriteMode = WriteMode.WRITE,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """Store documents in vector database."""
         try:
             vector_store = self._get_vector_store(collection)
@@ -334,8 +335,8 @@ class VectorStorageService(BaseStorageService):
         collection: str,
         document_id: Optional[str] = None,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """Delete from vector database."""
         try:
             if document_id is None:
@@ -423,8 +424,12 @@ class VectorStorageService(BaseStorageService):
             return []
 
     def similarity_search(
-        self, collection: str, query: str, k: int = None, **kwargs
-    ) -> List[Dict]:
+        self,
+        collection: str,
+        query: str,
+        k: Optional[int] = None,
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
         """Direct similarity search interface."""
         if k is None:
             k = self.client["k"]
@@ -433,13 +438,14 @@ class VectorStorageService(BaseStorageService):
         return result or []
 
     def add_documents(
-        self, collection: str, documents: List[Any], **kwargs
+        self, collection: str, documents: List[Any], **kwargs: Any
     ) -> List[str]:
         """Add documents to vector store."""
         result = self.write(collection=collection, data=documents, **kwargs)
 
-        if result and result.success and hasattr(result, "ids"):
-            return result.ids
+        ids: Optional[List[str]] = getattr(result, "ids", None)
+        if result and result.success and ids is not None:
+            return ids
         return []
 
 
