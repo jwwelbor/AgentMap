@@ -16,8 +16,8 @@ class BundleExtractor:
         self, agent_type: str, bundle: GraphBundle
     ) -> Optional[Dict[str, Any]]:
         """Extract agent information from bundle nodes."""
-        for node_name, node in bundle.nodes.items():
-            if node.agent_type.lower() == agent_type.lower():
+        for node_name, node in (bundle.nodes or {}).items():
+            if node.agent_type and node.agent_type.lower() == agent_type.lower():
                 return {
                     "agent_type": agent_type,
                     "node_name": node_name,
@@ -32,7 +32,7 @@ class BundleExtractor:
     def extract_functions(self, bundle: GraphBundle) -> Dict[str, Dict[str, Any]]:
         """Extract function information from bundle nodes' edges."""
         func_info = {}
-        for node_name, node in bundle.nodes.items():
+        for node_name, node in (bundle.nodes or {}).items():
             for condition, target in node.edges.items():
                 func_name = self.function_service.extract_func_ref(condition)
                 if func_name and func_name not in func_info:
