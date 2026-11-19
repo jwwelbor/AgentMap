@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 
 class RequestParser:
@@ -12,7 +12,7 @@ class RequestParser:
             return {}
 
         try:
-            return json.loads(body)
+            return cast(Dict[str, Any], json.loads(body))
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in request body: {e}")
 
@@ -29,4 +29,5 @@ class RequestParser:
     @staticmethod
     def get_http_method(event: Dict[str, Any]) -> str:
         """Get HTTP method from event."""
-        return event.get("httpMethod", "POST").upper()
+        method: str = event.get("httpMethod", "POST")
+        return method.upper()

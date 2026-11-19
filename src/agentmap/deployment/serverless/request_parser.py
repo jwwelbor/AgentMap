@@ -4,7 +4,7 @@ Request parser for serverless deployment handlers.
 This is a stub implementation to resolve import dependencies.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 
 class RequestParser:
@@ -13,7 +13,7 @@ class RequestParser:
     @staticmethod
     def get_http_method(event: Dict[str, Any]) -> str:
         """Get HTTP method from event."""
-        return event.get("httpMethod", "POST")
+        return cast(str, event.get("httpMethod", "POST"))
 
     @staticmethod
     def parse_json_body(body: str) -> Dict[str, Any]:
@@ -21,7 +21,7 @@ class RequestParser:
         import json
 
         try:
-            return json.loads(body) if body else {}
+            return cast(Dict[str, Any], json.loads(body)) if body else {}
         except (json.JSONDecodeError, TypeError):
             return {}
 

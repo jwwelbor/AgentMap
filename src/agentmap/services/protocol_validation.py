@@ -7,10 +7,12 @@ used by the registry and other components that need protocol validation.
 
 import inspect
 import logging
-from typing import Optional, Type
+from typing import Optional
 
 
-def is_valid_protocol(protocol: Type, logger: Optional[logging.Logger] = None) -> bool:
+def is_valid_protocol(
+    protocol: object, logger: Optional[logging.Logger] = None
+) -> bool:
     """
     Validate that an object is a proper protocol type.
 

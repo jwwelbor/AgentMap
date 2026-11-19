@@ -6,7 +6,7 @@ provider x complexity routing matrix.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from agentmap.services.llm.provider_names import canonicalize_provider
 
@@ -27,7 +27,7 @@ def load_routing_matrix(
     matrix = config.get("routing_matrix", {})
 
     # Normalize complexity keys to lowercase
-    normalized_matrix = {}
+    normalized_matrix: Dict[str, Dict[str, str]] = {}
     for provider, complexity_map in matrix.items():
         if isinstance(complexity_map, dict):
             normalized_complexity_map = {}
@@ -68,7 +68,7 @@ def get_model_for_complexity(
     return provider_matrix.get(complexity.lower())
 
 
-def get_available_providers(routing_matrix: Dict[str, Dict[str, str]]) -> list:
+def get_available_providers(routing_matrix: Dict[str, Dict[str, str]]) -> List[str]:
     """
     Get list of providers configured in the routing matrix.
 
