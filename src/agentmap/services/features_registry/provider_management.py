@@ -5,11 +5,12 @@ This module handles provider availability, validation, and alias resolution.
 Extracted from FeaturesRegistryService for better separation of concerns.
 """
 
-from typing import List
+from typing import List, Optional
 
 from agentmap.models.features_registry import FeaturesRegistry
 from agentmap.services.config.availability_cache_service import AvailabilityCacheService
 from agentmap.services.llm.provider_names import canonicalize_provider
+from agentmap.services.logging_service import TraceLogger
 
 
 class ProviderManager:
@@ -33,7 +34,7 @@ class ProviderManager:
         self,
         features_registry: FeaturesRegistry,
         availability_cache_service: AvailabilityCacheService,
-        logger,
+        logger: TraceLogger,
     ):
         """
         Initialize provider manager.
@@ -130,7 +131,7 @@ class ProviderManager:
         cached = self.availability_cache_service.get_availability("provider", cache_key)
         if cached is not None:
             self.logger.trace(f"[ProviderManager] Cache hit for provider.{cache_key}")
-            return cached.get("available", False)
+            return bool(cached.get("available", False))
 
         # Get from registry
         available, validated = self.features_registry.get_provider_status(
@@ -186,7 +187,7 @@ class ProviderManager:
         cached = self.availability_cache_service.get_availability("provider", cache_key)
         if cached is not None:
             self.logger.trace(f"[ProviderManager] Cache hit for provider.{cache_key}")
-            return cached.get("validated", False)
+            return bool(cached.get("validated", False))
 
         # Get from registry
         _, validated = self.features_registry.get_provider_status(category, provider)
@@ -254,7 +255,9 @@ class ProviderManager:
         """
         return self.KNOWN_PROVIDERS.get(category, [])
 
-    def invalidate_cache(self, category: str = None, provider: str = None) -> None:
+    def invalidate_cache(
+        self, category: Optional[str] = None, provider: Optional[str] = None
+    ) -> None:
         """
         Invalidate cached provider availability data.
 
