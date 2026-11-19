@@ -3,7 +3,20 @@
 Provides detailed service injection status and capabilities analysis.
 """
 
-from typing import Any, Optional
+from typing import Any, Dict, Optional
+
+from agentmap.services.protocols import (
+    BlobStorageCapableAgent,
+    CSVCapableAgent,
+    FileCapableAgent,
+    JSONCapableAgent,
+    LLMCapableAgent,
+    MemoryCapableAgent,
+    OrchestrationCapableAgent,
+    PromptCapableAgent,
+    StorageCapableAgent,
+    VectorCapableAgent,
+)
 
 
 class ServiceStatusAnalyzer:
@@ -41,7 +54,7 @@ class ServiceStatusAnalyzer:
         self.host_protocol_configuration_service = host_protocol_configuration_service
         self.logger = logging_service.get_class_logger(self)
 
-    def get_service_injection_status(self, agent: Any) -> dict:
+    def get_service_injection_status(self, agent: Any) -> Dict[str, Any]:
         """Get detailed service injection status for an agent.
 
         Args:
@@ -50,21 +63,6 @@ class ServiceStatusAnalyzer:
         Returns:
             Dictionary with detailed service injection status
         """
-        from agentmap.services.protocols import (
-            BlobStorageCapableAgent,
-            LLMCapableAgent,
-            OrchestrationCapableAgent,
-            PromptCapableAgent,
-        )
-        from agentmap.services.storage.protocols import (
-            CSVCapableAgent,
-            FileCapableAgent,
-            JSONCapableAgent,
-            MemoryCapableAgent,
-            StorageCapableAgent,
-            VectorCapableAgent,
-        )
-
         agent_name = getattr(agent, "name", "unknown")
         agent_type = type(agent).__name__
 
@@ -148,7 +146,7 @@ class ServiceStatusAnalyzer:
             "can_inject_services": len(injectable_services) > 0,
         }
 
-    def get_service_availability_status(self) -> dict:
+    def get_service_availability_status(self) -> Dict[str, Any]:
         """Get status of service availability.
 
         Returns:

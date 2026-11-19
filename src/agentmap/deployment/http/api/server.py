@@ -6,13 +6,15 @@ providing a clean HTTP interface for workflow operations.
 """
 
 import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agentmap.async_lifecycle import raise_cleanup_error_or_note
@@ -40,11 +42,13 @@ class AgentsInfoResponse(BaseModel):
     install_instructions: Dict[str, str]
 
 
-def create_lifespan(config_file: Optional[str] = None):
+def create_lifespan(
+    config_file: Optional[str] = None,
+) -> Callable[[FastAPI], Any]:
     """Factory function to create lifespan with config file."""
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         """
         FastAPI lifespan hook following SPEC-RUN-002.
 
@@ -147,13 +151,13 @@ class FastAPIServer:
 
         return app
 
-    def _add_exception_handlers(self, app: FastAPI):
+    def _add_exception_handlers(self, app: FastAPI) -> None:
         """Add global exception handlers per SPEC-EXC-000."""
-        from fastapi import Request
-        from fastapi.responses import JSONResponse
 
         @app.exception_handler(GraphNotFound)
-        async def graph_not_found_handler(request: Request, exc: GraphNotFound):
+        async def graph_not_found_handler(
+            request: Request, exc: GraphNotFound
+        ) -> JSONResponse:
             return JSONResponse(
                 status_code=404,
                 content={
@@ -164,7 +168,9 @@ class FastAPIServer:
             )
 
         @app.exception_handler(InvalidInputs)
-        async def invalid_inputs_handler(request: Request, exc: InvalidInputs):
+        async def invalid_inputs_handler(
+            request: Request, exc: InvalidInputs
+        ) -> JSONResponse:
             return JSONResponse(
                 status_code=400,
                 content={
@@ -177,7 +183,7 @@ class FastAPIServer:
         @app.exception_handler(AgentMapNotInitialized)
         async def not_initialized_handler(
             request: Request, exc: AgentMapNotInitialized
-        ):
+        ) -> JSONResponse:
             return JSONResponse(
                 status_code=503,
                 content={
@@ -190,7 +196,7 @@ class FastAPIServer:
         @app.exception_handler(ConfigurationException)
         async def configuration_exception_handler(
             request: Request, exc: ConfigurationException
-        ):
+        ) -> JSONResponse:
             # TD-035: a controlled config error (e.g. invalid http.sse.* values)
             # must surface as a clean JSON error, not an uncontrolled 500
             # traceback (AttributeError/ValueError from downstream consumers).
@@ -239,7 +245,7 @@ Error responses include detailed validation information and suggestions for reso
 4. Get system information: `GET /diagnose`
 """
 
-    def _get_openapi_tags(self) -> list:
+    def _get_openapi_tags(self) -> List[Dict[str, Any]]:
         """Get OpenAPI tags for endpoint organization."""
         return [
             {
@@ -256,7 +262,7 @@ Error responses include detailed validation information and suggestions for reso
             },
         ]
 
-    def _add_routes(self, app: FastAPI):
+    def _add_routes(self, app: FastAPI) -> None:
         """Add facade-based routes to the FastAPI app."""
 
         # Import facade-based route modules (these need to be converted)
@@ -291,7 +297,7 @@ Error responses include detailed validation information and suggestions for reso
             response_description="Health status information",
             tags=["Information & Diagnostics"],
         )
-        async def health_check():
+        async def health_check() -> Dict[str, str]:
             """
             **Basic Health Check**
 
@@ -312,7 +318,7 @@ Error responses include detailed validation information and suggestions for reso
             response_description="API information with links to standard FastAPI documentation",
             tags=["Information & Diagnostics"],
         )
-        async def root():
+        async def root() -> Dict[str, Any]:
             """
             **Get AgentMap API Information**
 
@@ -415,12 +421,12 @@ def create_sub_application(
 
     # Add basic health check and info endpoints
     @app.get("/health")
-    async def health_check():
+    async def health_check() -> Dict[str, str]:
         """Health check endpoint for sub-application."""
         return {"status": "healthy", "service": "agentmap-sub-api"}
 
     @app.get("/")
-    async def sub_app_root():
+    async def sub_app_root() -> Dict[str, str]:
         """Root endpoint for sub-application."""
         return {
             "message": "AgentMap API Sub-Application",
@@ -438,7 +444,7 @@ def run_server(
     port: int = 8000,
     reload: bool = False,
     config_file: Optional[str] = None,
-):
+) -> None:
     """
     Run the FastAPI server using facade pattern.
 
@@ -456,7 +462,7 @@ def run_server(
     uvicorn.run(app, host=host, port=port, reload=reload)
 
 
-def main():
+def main() -> None:
     """Entry point for the AgentMap API server."""
     import argparse
 
