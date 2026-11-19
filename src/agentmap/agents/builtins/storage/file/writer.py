@@ -8,13 +8,16 @@ focusing on text documents, Markdown, and simple text-based formats.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.base_storage_agent import BaseStorageAgent
 from agentmap.models.storage import DocumentResult, WriteMode
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import FileCapableAgent
 from agentmap.services.state_adapter_service import StateAdapterService
+
+if TYPE_CHECKING:
+    from agentmap.services.storage.file_service import FileStorageService
 
 
 class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
@@ -34,7 +37,7 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
         logger: Optional[logging.Logger] = None,
         execution_tracking_service: Optional[ExecutionTrackingService] = None,
         state_adapter_service: Optional[StateAdapterService] = None,
-    ):
+    ) -> None:
         """
         Initialize the file writer agent with new protocol-based pattern.
 
@@ -64,10 +67,10 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
 
         # FileCapableAgent protocol requirement - will be set via dependency injection
         # or initialized in _initialize_client()
-        self.file_service = None
+        self.file_service: Optional[FileStorageService] = None
 
     # Protocol Implementation (Required by FileCapableAgent)
-    def configure_file_service(self, file_service) -> None:
+    def configure_file_service(self, file_service: FileStorageService) -> None:
         """
         Configure file storage service for this agent.
 
@@ -162,7 +165,7 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
 
     def _execute_operation(
         self, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Execute write operation for file using FileStorageService.
         """
@@ -175,6 +178,8 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
         document_id = inputs.get("document_id")
         path = inputs.get("path")
         # Call the FileStorageService write method
+        if self.file_service is None:
+            raise ValueError(f"File service not configured for agent '{self.name}'")
         result = self.file_service.write(
             collection=collection,
             data=data,
@@ -186,7 +191,7 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Handle file write operation errors.
 
@@ -213,22 +218,22 @@ class FileWriterAgent(BaseStorageAgent, FileCapableAgent):
 
         return super()._handle_operation_error(error, collection, inputs)
 
-    def _write_document(self, *args, **kwargs):
+    def _write_document(self, *args: Any, **kwargs: Any) -> None:
         raise NotImplementedError(
             "Direct document writing is now handled by FileStorageService."
         )
 
-    def _prepare_content(self, *args, **kwargs):
+    def _prepare_content(self, *args: Any, **kwargs: Any) -> None:
         raise NotImplementedError(
             "Content preparation is now handled by FileStorageService."
         )
 
-    def _is_text_file(self, *args, **kwargs):
+    def _is_text_file(self, *args: Any, **kwargs: Any) -> None:
         raise NotImplementedError(
             "File type checking is now handled by FileStorageService."
         )
 
-    def _write_text_file(self, *args, **kwargs):
+    def _write_text_file(self, *args: Any, **kwargs: Any) -> None:
         raise NotImplementedError(
             "Text file writing is now handled by FileStorageService."
         )
