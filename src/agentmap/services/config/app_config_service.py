@@ -11,7 +11,7 @@ import logging
 import math
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypeVar, Union, overload
+from typing import Any, Dict, List, Optional, Union
 
 from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.services.config.config_managers import (
@@ -24,8 +24,6 @@ from agentmap.services.config.config_managers import (
     TelemetryConfigManager,
 )
 from agentmap.services.config.config_service import ConfigService
-
-T = TypeVar("T")
 
 
 class AppConfigService:
@@ -153,23 +151,11 @@ class AppConfigService:
                 manager._logger = logger
 
     # Core access methods
-    @overload
-    def get_section(self, section: str) -> Optional[Dict[str, Any]]: ...
-
-    @overload
-    def get_section(self, section: str, default: T) -> Union[Dict[str, Any], T]: ...
-
     def get_section(self, section: str, default: Any = None) -> Any:
         """Get a configuration section."""
         if self._config_data is None:
             raise ConfigurationException("Configuration not loaded")
         return self._config_data.get(section, default)
-
-    @overload
-    def get_value(self, path: str) -> Any: ...
-
-    @overload
-    def get_value(self, path: str, default: T) -> T: ...
 
     def get_value(self, path: str, default: Any = None) -> Any:
         """Get a specific configuration value using dot notation."""
@@ -203,12 +189,12 @@ class AppConfigService:
         return self._path_manager.get_csv_repository_path()
 
     # Logging accessors
-    def get_logging_config(self) -> Dict[str, Any]:
+    def get_logging_config(self) -> Any:
         """Get the logging configuration."""
         return self.get_section("logging", {})
 
     # LLM accessors
-    def get_llm_config(self, provider: str) -> Dict[str, Any]:
+    def get_llm_config(self, provider: str) -> Any:
         """Get configuration for a specific LLM provider."""
         return self._llm_manager.get_provider_config(provider)
 
@@ -285,7 +271,7 @@ class AppConfigService:
         return self._telemetry_manager.get_telemetry_config()
 
     # Prompts accessors
-    def get_prompts_config(self) -> Dict[str, Any]:
+    def get_prompts_config(self) -> Any:
         """Get the prompt configuration."""
         return self.get_section("prompts", {})
 
@@ -302,11 +288,11 @@ class AppConfigService:
         )
 
     # Execution accessors
-    def get_execution_config(self) -> Dict[str, Any]:
+    def get_execution_config(self) -> Any:
         """Get execution configuration."""
         return self.get_section("execution", {})
 
-    def get_tracking_config(self) -> Dict[str, Any]:
+    def get_tracking_config(self) -> Any:
         """Get tracking configuration."""
         return self.get_value("execution.tracking", {})
 
@@ -374,41 +360,41 @@ class AppConfigService:
 
         return merged_config
 
-    def is_authentication_enabled(self) -> bool:
+    def is_authentication_enabled(self) -> Any:
         """Check if authentication is enabled."""
         return self.get_value("authentication.enabled", True)
 
-    def get_api_keys_config(self) -> Dict[str, Any]:
+    def get_api_keys_config(self) -> Any:
         """Get API keys configuration."""
         return self.get_value("authentication.api_keys", {})
 
-    def get_jwt_config(self) -> Dict[str, Any]:
+    def get_jwt_config(self) -> Any:
         """Get JWT authentication configuration."""
         return self.get_value(
             "authentication.jwt",
             {"secret": None, "algorithm": "HS256", "expiry_hours": 24},
         )
 
-    def get_supabase_auth_config(self) -> Dict[str, Any]:
+    def get_supabase_auth_config(self) -> Any:
         """Get Supabase authentication configuration."""
         return self.get_value(
             "authentication.supabase", {"url": None, "anon_key": None}
         )
 
-    def get_public_endpoints(self) -> List[str]:
+    def get_public_endpoints(self) -> Any:
         """Get list of public endpoints that don't require authentication."""
         return self.get_value(
             "authentication.public_endpoints",
             ["/", "/health", "/docs", "/openapi.json", "/redoc", "/favicon.ico"],
         )
 
-    def get_embedded_mode_config(self) -> Dict[str, Any]:
+    def get_embedded_mode_config(self) -> Any:
         """Get embedded mode configuration."""
         return self.get_value(
             "authentication.embedded_mode", {"enabled": True, "bypass_auth": True}
         )
 
-    def get_auth_permissions_config(self) -> Dict[str, Any]:
+    def get_auth_permissions_config(self) -> Any:
         """Get authentication permissions configuration."""
         return self.get_value(
             "authentication.permissions",
@@ -785,7 +771,7 @@ class AppConfigService:
 
         return merged_config
 
-    def get_host_configuration_section(self, section_name: str) -> Dict[str, Any]:
+    def get_host_configuration_section(self, section_name: str) -> Any:
         """
         Get a specific configuration section from host application config.
 
@@ -895,7 +881,7 @@ class AppConfigService:
             "summary": summary,
         }
 
-    def is_host_application_enabled(self) -> bool:
+    def is_host_application_enabled(self) -> Any:
         """
         Check if host application support is enabled.
 
@@ -986,7 +972,7 @@ class AppConfigService:
 
         return host_paths
 
-    def is_host_declarations_enabled(self) -> bool:
+    def is_host_declarations_enabled(self) -> Any:
         """
         Check if host declarations are enabled.
 
@@ -995,7 +981,7 @@ class AppConfigService:
         """
         return self.get_value("declarations.host.enabled", False)
 
-    def get_host_declarations_namespace(self) -> Optional[str]:
+    def get_host_declarations_namespace(self) -> Any:
         """
         Get the namespace for host declarations.
 

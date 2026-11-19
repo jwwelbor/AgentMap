@@ -20,7 +20,7 @@ class LLMConfigManager(BaseConfigManager):
     (retry + circuit breaker).
     """
 
-    def get_provider_config(self, provider: str) -> Dict[str, Any]:
+    def get_provider_config(self, provider: str) -> Any:
         """
         Get configuration for a specific LLM provider.
 

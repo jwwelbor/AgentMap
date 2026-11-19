@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from agentmap.services.config.config_managers.base_config_manager import (
     BaseConfigManager,
@@ -98,7 +98,7 @@ class DeclarationConfigManager(BaseConfigManager):
 
         return host_paths
 
-    def is_host_declarations_enabled(self) -> bool:
+    def is_host_declarations_enabled(self) -> Any:
         """
         Check if host declarations are enabled.
 
@@ -107,7 +107,7 @@ class DeclarationConfigManager(BaseConfigManager):
         """
         return self.get_value("declarations.host.enabled", False)
 
-    def get_host_declarations_namespace(self) -> Optional[str]:
+    def get_host_declarations_namespace(self) -> Any:
         """
         Get the namespace for host declarations.
 

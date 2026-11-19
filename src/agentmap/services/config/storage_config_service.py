@@ -10,7 +10,7 @@ exception-based failure when storage configuration is unavailable.
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, TypeVar, Union, overload
+from typing import Any, Dict, Optional, Union
 
 from agentmap.exceptions.service_exceptions import (
     StorageConfigurationNotAvailableException,
@@ -21,8 +21,6 @@ from agentmap.services.config._availability_cache_manager import (
 from agentmap.services.config._path_resolver import PathResolver
 from agentmap.services.config._storage_type_handlers import StorageTypeHandlers
 from agentmap.services.config.config_service import ConfigService
-
-T = TypeVar("T")
 
 
 class StorageConfigService:
@@ -247,12 +245,6 @@ class StorageConfigService:
         """
         return self._get_dict_config(provider)
 
-    @overload
-    def get_value(self, path: str) -> Any: ...
-
-    @overload
-    def get_value(self, path: str, default: T) -> T: ...
-
     def get_value(self, path: str, default: Any = None) -> Any:
         """
         Get value by dot notation from storage configuration.
@@ -290,7 +282,7 @@ class StorageConfigService:
             )
         return value
 
-    def get_default_directory(self, storage_type: str) -> str:
+    def get_default_directory(self, storage_type: str) -> Any:
         """
         Get default directory for a storage type.
 
@@ -304,7 +296,7 @@ class StorageConfigService:
             f"{storage_type}.default_directory", f"data/{storage_type}"
         )
 
-    def get_default_provider(self, storage_type: str) -> str:
+    def get_default_provider(self, storage_type: str) -> Any:
         """
         Get default provider for a storage type.
 

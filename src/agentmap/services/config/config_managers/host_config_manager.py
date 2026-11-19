@@ -148,7 +148,7 @@ class HostConfigManager(BaseConfigManager):
 
         return merged_config
 
-    def get_host_configuration_section(self, section_name: str) -> Dict[str, Any]:
+    def get_host_configuration_section(self, section_name: str) -> Any:
         """
         Get a specific configuration section from host application config.
 
@@ -258,7 +258,7 @@ class HostConfigManager(BaseConfigManager):
             "summary": summary,
         }
 
-    def is_host_application_enabled(self) -> bool:
+    def is_host_application_enabled(self) -> Any:
         """
         Check if host application support is enabled.
 

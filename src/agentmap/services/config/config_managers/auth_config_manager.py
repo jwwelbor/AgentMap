@@ -1,6 +1,6 @@
 """Authentication configuration manager."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from agentmap.services.config.config_managers.base_config_manager import (
     BaseConfigManager,
@@ -66,41 +66,41 @@ class AuthConfigManager(BaseConfigManager):
 
         return merged_config
 
-    def is_authentication_enabled(self) -> bool:
+    def is_authentication_enabled(self) -> Any:
         """Check if authentication is enabled."""
         return self.get_value("authentication.enabled", True)
 
-    def get_api_keys_config(self) -> Dict[str, Any]:
+    def get_api_keys_config(self) -> Any:
         """Get API keys configuration."""
         return self.get_value("authentication.api_keys", {})
 
-    def get_jwt_config(self) -> Dict[str, Any]:
+    def get_jwt_config(self) -> Any:
         """Get JWT authentication configuration."""
         return self.get_value(
             "authentication.jwt",
             {"secret": None, "algorithm": "HS256", "expiry_hours": 24},
         )
 
-    def get_supabase_auth_config(self) -> Dict[str, Any]:
+    def get_supabase_auth_config(self) -> Any:
         """Get Supabase authentication configuration."""
         return self.get_value(
             "authentication.supabase", {"url": None, "anon_key": None}
         )
 
-    def get_public_endpoints(self) -> List[str]:
+    def get_public_endpoints(self) -> Any:
         """Get list of public endpoints that don't require authentication."""
         return self.get_value(
             "authentication.public_endpoints",
             ["/", "/health", "/docs", "/openapi.json", "/redoc", "/favicon.ico"],
         )
 
-    def get_embedded_mode_config(self) -> Dict[str, Any]:
+    def get_embedded_mode_config(self) -> Any:
         """Get embedded mode configuration."""
         return self.get_value(
             "authentication.embedded_mode", {"enabled": True, "bypass_auth": True}
         )
 
-    def get_auth_permissions_config(self) -> Dict[str, Any]:
+    def get_auth_permissions_config(self) -> Any:
         """Get authentication permissions configuration."""
         return self.get_value(
             "authentication.permissions",

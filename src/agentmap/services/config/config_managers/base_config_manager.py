@@ -1,11 +1,9 @@
 """Base configuration manager with shared utilities."""
 
 import logging
-from typing import Any, Dict, Optional, TypeVar, overload
+from typing import Any, Dict, Optional
 
 from agentmap.services.config.config_service import ConfigService
-
-T = TypeVar("T")
 
 
 class BaseConfigManager:
@@ -33,21 +31,9 @@ class BaseConfigManager:
         self._config_data = config_data
         self._logger = logger or logging.getLogger(__name__)
 
-    @overload
-    def get_section(self, section: str) -> Any: ...
-
-    @overload
-    def get_section(self, section: str, default: T) -> T: ...
-
     def get_section(self, section: str, default: Any = None) -> Any:
         """Get a configuration section."""
         return self._config_data.get(section, default)
-
-    @overload
-    def get_value(self, path: str) -> Any: ...
-
-    @overload
-    def get_value(self, path: str, default: T) -> T: ...
 
     def get_value(self, path: str, default: Any = None) -> Any:
         """Get a specific configuration value using dot notation."""

@@ -24,3 +24,15 @@ def test_load_messaging_config_reads_messaging_section() -> None:
 
     config_service.get_section.assert_called_once_with("messaging", {})
     assert service.messaging_config == expected_config
+
+
+def test_load_messaging_config_rejects_non_mapping_section() -> None:
+    config_service = Mock(spec=AppConfigService)
+    config_service.get_section.return_value = ["invalid"]
+    logging_service = Mock(spec=LoggingService)
+    logging_service.get_class_logger.return_value = Mock()
+    availability_cache = Mock(spec=AvailabilityCacheService)
+
+    service = MessagingService(config_service, logging_service, availability_cache)
+
+    assert service.messaging_config == {}

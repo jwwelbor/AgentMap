@@ -136,14 +136,16 @@ class AuthService:
                     user_id = key_config.get("user_id", key_name)
                     if not isinstance(user_id, str):
                         user_id = key_name
-                    expires_at = key_config.get("expires_at")
-                    if not isinstance(expires_at, str):
-                        expires_at = None
-                    elif expires_at:
-                        try:
-                            datetime.fromisoformat(expires_at)
-                        except ValueError:
-                            expires_at = None
+                    try:
+                        expires_at = self._parse_expiration(
+                            key_config.get("expires_at")
+                        )
+                    except ValueError:
+                        self.logger.warning(
+                            "[AuthService] Ignoring API key '%s' with invalid expiration",
+                            key_name,
+                        )
+                        continue
                     metadata = key_config.get("metadata", {})
                     if isinstance(metadata, Mapping):
                         metadata = {
@@ -182,6 +184,33 @@ class AuthService:
 
         self.logger.debug(f"[AuthService] Loaded {len(api_keys)} API keys")
         return api_keys
+
+    @staticmethod
+    def _parse_expiration(value: object) -> Optional[datetime]:
+        """Parse a configured expiration, rejecting malformed values."""
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("API key expiration must be an ISO-8601 string")
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("API key expiration must be an ISO-8601 string") from exc
+
+    @staticmethod
+    def _is_expired(expires_at: object) -> bool:
+        """Treat malformed internal expirations as expired and compare like zones."""
+        if expires_at is None:
+            return False
+        if not isinstance(expires_at, datetime):
+            return True
+        if expires_at.tzinfo is not None and expires_at.utcoffset() is not None:
+            now = datetime.now(expires_at.tzinfo)
+        else:
+            now = datetime.now()
+        return now > expires_at
 
     def _hash_api_key(self, api_key: str) -> str:
         """
@@ -238,21 +267,17 @@ class AuthService:
         # Find matching key
         for stored_hash, key_info in self._api_keys.items():
             if self._constant_time_compare(key_hash, stored_hash):
-                # Check expiration
-                if key_info.get("expires_at"):
-                    try:
-                        expires_at = datetime.fromisoformat(key_info["expires_at"])
-                        if datetime.now() > expires_at:
-                            self.logger.warning(
-                                f"[AuthService] Expired API key used: {key_info['name']}"
-                            )
-                            return AuthContext(
-                                authenticated=False, auth_method="api_key"
-                            )
-                    except ValueError:
-                        self.logger.error(
-                            f"[AuthService] Invalid expiration date for key: {key_info['name']}"
-                        )
+                expires_at = key_info.get("expires_at")
+                if expires_at is not None and not isinstance(expires_at, datetime):
+                    self.logger.error(
+                        f"[AuthService] Invalid expiration date for key: {key_info['name']}"
+                    )
+                    return AuthContext(authenticated=False, auth_method="api_key")
+                if self._is_expired(expires_at):
+                    self.logger.warning(
+                        f"[AuthService] Expired API key used: {key_info['name']}"
+                    )
+                    return AuthContext(authenticated=False, auth_method="api_key")
 
                 self.logger.info(
                     f"[AuthService] Successful API key authentication: {key_info['name']}"
@@ -264,11 +289,7 @@ class AuthService:
                     username=key_info["name"],
                     permissions=key_info["permissions"],
                     metadata=key_info["metadata"],
-                    expires_at=(
-                        datetime.fromisoformat(key_info["expires_at"])
-                        if key_info.get("expires_at")
-                        else None
-                    ),
+                    expires_at=expires_at,
                 )
 
         self.logger.warning("[AuthService] Invalid API key provided")
@@ -401,8 +422,7 @@ class AuthService:
         active_keys = sum(
             1
             for key_info in self._api_keys.values()
-            if not key_info.get("expires_at")
-            or datetime.fromisoformat(key_info["expires_at"]) > datetime.now()
+            if not self._is_expired(key_info.get("expires_at"))
         )
 
         return {

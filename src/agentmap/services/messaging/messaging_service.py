@@ -96,6 +96,11 @@ class MessagingService:
                     "message_templates": {},
                     "retry_policy": {"max_retries": 3, "backoff_seconds": [1, 2, 4]},
                 }
+            if not isinstance(config, dict):
+                self.logger.warning(
+                    "Messaging configuration must be a mapping, using defaults"
+                )
+                return {}
             return config
         except Exception as e:
             self.logger.warning(f"Failed to load messaging config: {e}, using defaults")
