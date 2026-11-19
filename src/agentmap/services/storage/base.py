@@ -8,7 +8,6 @@ following the Template Method pattern and established service patterns.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.config_loader import ConfigLoaderMixin
@@ -43,7 +42,7 @@ class BaseStorageService(
     def __init__(
         self,
         provider_name: str,
-        configuration: StorageConfigService,
+        configuration: Any,
         logging_service: LoggingService,
         file_path_service: Optional[FilePathService] = None,
         base_directory: Optional[str] = None,
@@ -54,7 +53,7 @@ class BaseStorageService(
 
         Args:
             provider_name: Name of the storage provider
-            configuration: Storage configuration service for storage-specific config access
+            configuration: StorageConfigService or an inline dict for system storage
             logging_service: Logging service for creating loggers
             file_path_service: Optional file path service for path validation and security
             base_directory: Optional base directory for storage operations (for system storage)

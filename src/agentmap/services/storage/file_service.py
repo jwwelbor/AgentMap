@@ -52,7 +52,7 @@ class FileStorageService(BaseStorageService):
     def __init__(
         self,
         provider_name: str,
-        configuration: StorageConfigService,
+        configuration: Union[StorageConfigService, Dict[str, Any]],
         logging_service: LoggingService,
         file_path_service: FilePathService,
         base_directory: Optional[str] = None,
@@ -112,15 +112,16 @@ class FileStorageService(BaseStorageService):
         # Handle system storage (dict configuration) vs user storage (StorageConfigService)
         if self.provider_name.startswith("system_file"):
             # System storage: use dict access on configuration
-            base_dir = self.configuration["base_directory"]
-            encoding = self.configuration.get("encoding", "utf-8")
-            chunk_size = int(self.configuration.get("chunk_size", 1000))
-            chunk_overlap = int(self.configuration.get("chunk_overlap", 200))
-            should_split = self.configuration.get("should_split", False)
-            include_metadata = self.configuration.get("include_metadata", True)
-            newline = self.configuration.get("newline")
-            allow_binary = self.configuration.get("allow_binary", True)
-            max_file_size = self.configuration.get("max_file_size")
+            system_config = cast(Dict[str, Any], self.configuration)
+            base_dir = system_config["base_directory"]
+            encoding = system_config.get("encoding", "utf-8")
+            chunk_size = int(system_config.get("chunk_size", 1000))
+            chunk_overlap = int(system_config.get("chunk_overlap", 200))
+            should_split = system_config.get("should_split", False)
+            include_metadata = system_config.get("include_metadata", True)
+            newline = system_config.get("newline")
+            allow_binary = system_config.get("allow_binary", True)
+            max_file_size = system_config.get("max_file_size")
         else:
             # User storage: use get_file_config() to get config dict, then dict.get()
             file_config = self.configuration.get_file_config()

@@ -34,14 +34,18 @@ class SystemStorageManager:
         self.file_path_service = file_path_service
 
         # Get cache folder from app config
-        self._cache_folder = app_config.get_cache_path()
+        cache_folder = app_config.get_cache_path()
+        if cache_folder is None:
+            raise ValueError("Cache folder is not configured")
+        self._cache_folder = cache_folder
 
         # Validate cache folder is safe
-        if not self.file_path_service.validate_safe_path(self._cache_folder):
+        if not self.file_path_service.validate_safe_path(str(self._cache_folder)):
             raise ValueError(f"Unsafe cache folder: {self._cache_folder}")
 
         # Storage for service instances
-        self._services: Dict[str, Any] = {}
+        self._json_services: Dict[str, JSONStorageService] = {}
+        self._file_services: Dict[str, FileStorageService] = {}
 
         self._logger.info(
             f"SystemStorageManager initialized with cache_folder: {self._cache_folder}"
@@ -63,21 +67,20 @@ class SystemStorageManager:
 
         cache_key = f"json_{namespace}" if namespace else "json"
 
-        if cache_key not in self._services:
+        if cache_key not in self._json_services:
             # Calculate base directory
             if namespace:
                 base_dir = str(Path(self._cache_folder) / namespace)
             else:
                 base_dir = str(self._cache_folder)
 
-            # Create minimal config for system storage
-            config = {
+            config: Dict[str, Any] = {
                 "base_directory": base_dir,
                 "encoding": "utf-8",
                 "indent": 2,
             }
 
-            self._services[cache_key] = JSONStorageService(
+            self._json_services[cache_key] = JSONStorageService(
                 provider_name=(
                     f"system_json_{namespace}" if namespace else "system_json"
                 ),
@@ -87,7 +90,7 @@ class SystemStorageManager:
                 file_path_service=self.file_path_service,
             )
 
-        return self._services[cache_key]
+        return self._json_services[cache_key]
 
     def get_file_storage(self, namespace: Optional[str] = None) -> FileStorageService:
         """
@@ -105,19 +108,16 @@ class SystemStorageManager:
 
         cache_key = f"file_{namespace}" if namespace else "file"
 
-        if cache_key not in self._services:
+        if cache_key not in self._file_services:
             # Calculate base directory
             if namespace:
                 base_dir = str(Path(self._cache_folder) / namespace)
             else:
                 base_dir = str(self._cache_folder)
 
-            # Create minimal config
-            config = {
-                "base_directory": base_dir,
-            }
+            config: Dict[str, Any] = {"base_directory": base_dir}
 
-            self._services[cache_key] = FileStorageService(
+            self._file_services[cache_key] = FileStorageService(
                 provider_name=(
                     f"system_file_{namespace}" if namespace else "system_file"
                 ),
@@ -127,4 +127,4 @@ class SystemStorageManager:
                 file_path_service=self.file_path_service,
             )
 
-        return self._services[cache_key]
+        return self._file_services[cache_key]

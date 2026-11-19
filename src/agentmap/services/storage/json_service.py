@@ -16,7 +16,7 @@ import contextlib
 import json
 import os
 from collections.abc import Generator
-from typing import IO, Any, Dict, List, Optional, cast
+from typing import IO, Any, Dict, List, Optional, Union, cast
 
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
@@ -42,7 +42,7 @@ class JSONStorageService(BaseStorageService):
     def __init__(
         self,
         provider_name: str,
-        configuration: StorageConfigService,  # StorageConfigService (avoid circular import)
+        configuration: Union[StorageConfigService, Dict[str, Any]],
         logging_service: LoggingService,  # LoggingService (avoid circular import)
         file_path_service: Optional[FilePathService] = None,
         base_directory: Optional[str] = None,
@@ -100,9 +100,10 @@ class JSONStorageService(BaseStorageService):
         # Use StorageConfigService named domain methods for configuration
 
         if self.provider_name.startswith("system_json"):
-            base_dir = self.configuration["base_directory"]
-            encoding = self.configuration["encoding"] or "utf-8"
-            indent = self.configuration["indent"] or 2
+            system_config = cast(Dict[str, Any], self.configuration)
+            base_dir = system_config["base_directory"]
+            encoding = system_config.get("encoding") or "utf-8"
+            indent = system_config.get("indent") or 2
 
         else:
 
