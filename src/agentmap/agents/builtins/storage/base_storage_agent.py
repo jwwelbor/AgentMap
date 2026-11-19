@@ -338,7 +338,7 @@ class BaseStorageAgent(BaseAgent, StorageCapableAgent):
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Handle operation errors.
 

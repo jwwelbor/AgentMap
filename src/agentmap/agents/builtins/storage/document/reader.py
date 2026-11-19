@@ -33,7 +33,7 @@ class DocumentReaderAgent(DocumentStorageAgent):
         Raises:
             ValueError: If inputs are invalid
         """
-        self._validate_reader_inputs(inputs)
+        super()._validate_inputs(inputs)
 
     def _execute_operation(self, collection: str, inputs: Dict[str, Any]) -> Any:
         """
@@ -52,7 +52,7 @@ class DocumentReaderAgent(DocumentStorageAgent):
         path = inputs.get("path")
 
         # Log the operation details
-        self._log_read_operation(collection, document_id, query, path)
+        self.log_info(f"Reading from {collection}")
 
         # Perform the actual read operation
         return self._read_document(collection, document_id, query, path)
@@ -77,7 +77,7 @@ class DocumentReaderAgent(DocumentStorageAgent):
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Handle read operation errors.
 
@@ -89,10 +89,4 @@ class DocumentReaderAgent(DocumentStorageAgent):
         Returns:
             DocumentResult with error information
         """
-        return self._handle_storage_error(
-            error,
-            "read",
-            collection,
-            document_id=inputs.get("document_id"),
-            path=inputs.get("path"),
-        )
+        return super()._handle_operation_error(error, collection, inputs)

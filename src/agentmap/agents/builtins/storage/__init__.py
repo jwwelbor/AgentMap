@@ -5,6 +5,10 @@ These agents provide interfaces to different storage backends,
 including CSV files, JSON documents, Firebase, vector stores, and cloud storage.
 """
 
+from importlib import import_module
+from types import ModuleType
+from typing import Any, Optional
+
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent,
     log_operation,
@@ -38,20 +42,23 @@ from agentmap.agents.builtins.storage.json import (
 # Import types from models (where they belong)
 from agentmap.models.storage import DocumentResult, WriteMode
 
-# Import Vector agents
+# Import Vector agents when the optional dependencies are available.
+_vector_agents: Optional[ModuleType]
 try:
-    from agentmap.agents.builtins.storage.vector import (
-        VectorAgent,
-        VectorReaderAgent,
-        VectorWriterAgent,
-    )
-
-    _vector_available = True
+    _vector_agents = import_module("agentmap.agents.builtins.storage.vector")
 except ImportError:
-    VectorAgent = None
-    VectorReaderAgent = None
-    VectorWriterAgent = None
-    _vector_available = False
+    _vector_agents = None
+
+VectorAgent: Any = (
+    getattr(_vector_agents, "VectorAgent") if _vector_agents is not None else None
+)
+VectorReaderAgent: Any = (
+    getattr(_vector_agents, "VectorReaderAgent") if _vector_agents is not None else None
+)
+VectorWriterAgent: Any = (
+    getattr(_vector_agents, "VectorWriterAgent") if _vector_agents is not None else None
+)
+_vector_available = _vector_agents is not None
 
 # # Conditionally import Firebase agents if firebase-admin is available
 # try:
