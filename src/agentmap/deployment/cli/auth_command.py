@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import typer
+import yaml
 from typer import colors
 
-from agentmap.deployment.cli.auth_types import APIKeyConfiguration, yaml
+from agentmap.deployment.cli.auth_types import APIKeyConfiguration
 
 # Create the auth app with subcommands
 auth_app = typer.Typer(name="auth", help="Authentication management commands")

@@ -1,40 +1,39 @@
 {
   "schema_version": 1,
-  "captured_at_utc": "2026-11-19T00:33:13.425214+00:00",
+  "captured_at_utc": "2026-11-19T00:54:16.777956+00:00",
   "environment": {
     "python_version": "3.11.14",
     "mypy_version": "mypy 1.19.1 (compiled: yes)",
-    "uv_lock_sha256": "fce654dc7bd2392ff9afb9020f6bab606bb844b94c22ed110a7ea32929dab3fd",
-    "dependency_manifest_sha256": "1f2a807f0be7edec33cb10ad1b1242d7d470902c72c4a13c1f39dc04630485ca",
+    "uv_lock_sha256": "effde2c9bd1a6d96c14030df7daa313921ac59ac481aff2211e1bcedccac7dc4",
+    "dependency_manifest_sha256": "7600c6380338a0bdbe5a70c233753440fb3bf570d81d8c25fa7c04b024612eff",
     "mypy_ini_sha256": "6ba1616e17f1cd56f0bb6ae6eac599b2dfa0a7a5bbdff73155a47dd52fe27ebd",
-    "source_sha256": "7c7f9af369c99c58ae0815fb131cf47e3ecdbd45ab8b6ec45553640b33f080b5",
-    "git_commit": "10eda875dead0d6f6ae42a420782516fecfbc7b0",
+    "source_sha256": "a640c5aefb35ce0911573186d54c5275e5cf4f33400306eecc06ef97d0c59ea1",
+    "git_commit": "a6f751ec09c266b70ca0d623885b6e00fc2e9e17",
     "command": "uv run mypy src (non-incremental, machine-readable output)"
   },
   "counts": {
-    "total": 1210,
+    "total": 1077,
     "by_code": {
       "arg-type": 41,
-      "assignment": 66,
-      "attr-defined": 134,
-      "call-arg": 29,
+      "assignment": 62,
+      "attr-defined": 96,
+      "call-arg": 11,
       "dict-item": 1,
       "import-not-found": 4,
-      "import-untyped": 8,
-      "index": 11,
-      "misc": 15,
-      "no-any-return": 142,
-      "no-redef": 3,
-      "no-untyped-def": 361,
+      "import-untyped": 2,
+      "index": 7,
+      "misc": 14,
+      "no-any-return": 136,
+      "no-untyped-def": 335,
       "operator": 9,
       "override": 7,
-      "return-value": 11,
+      "return-value": 9,
       "truthy-function": 3,
-      "type-arg": 183,
+      "type-arg": 171,
       "union-attr": 27,
-      "unreachable": 65,
+      "unreachable": 55,
       "unused-ignore": 3,
-      "valid-type": 4,
+      "valid-type": 1,
       "var-annotated": 83
     },
     "by_file": {
@@ -61,22 +60,6 @@
       "src/agentmap/agents/builtins/summary_agent.py": 3,
       "src/agentmap/agents/builtins/suspend_agent.py": 5,
       "src/agentmap/agents/builtins/tool_agent.py": 9,
-      "src/agentmap/deployment/cli/auth_command.py": 21,
-      "src/agentmap/deployment/cli/config_command.py": 1,
-      "src/agentmap/deployment/cli/diagnose_command.py": 1,
-      "src/agentmap/deployment/cli/display_utils.py": 2,
-      "src/agentmap/deployment/cli/inspect_graph_command.py": 1,
-      "src/agentmap/deployment/cli/main_cli.py": 3,
-      "src/agentmap/deployment/cli/refresh_command.py": 1,
-      "src/agentmap/deployment/cli/resume_command.py": 1,
-      "src/agentmap/deployment/cli/run_command.py": 2,
-      "src/agentmap/deployment/cli/scaffold_command.py": 1,
-      "src/agentmap/deployment/cli/serve_command.py": 1,
-      "src/agentmap/deployment/cli/update_bundle_command.py": 1,
-      "src/agentmap/deployment/cli/utils/cli_presenter.py": 4,
-      "src/agentmap/deployment/cli/utils/cli_utils.py": 4,
-      "src/agentmap/deployment/cli/validate_cache_command.py": 1,
-      "src/agentmap/deployment/cli/validate_command.py": 1,
       "src/agentmap/deployment/http/api/dependencies.py": 13,
       "src/agentmap/deployment/http/api/middleware/auth.py": 17,
       "src/agentmap/deployment/http/api/routes/admin.py": 11,
@@ -114,7 +97,6 @@
       "src/agentmap/services/agent/agent_validator.py": 2,
       "src/agentmap/services/agent/service_configurator_base.py": 4,
       "src/agentmap/services/agent/service_status_analyzer.py": 8,
-      "src/agentmap/services/auth_service.py": 19,
       "src/agentmap/services/cache_manager.py": 5,
       "src/agentmap/services/config/_availability_cache_manager.py": 5,
       "src/agentmap/services/config/_path_resolver.py": 4,
@@ -130,7 +112,7 @@
       "src/agentmap/services/config/config_managers/llm_config_manager.py": 3,
       "src/agentmap/services/config/config_managers/path_config_manager.py": 1,
       "src/agentmap/services/config/config_managers/telemetry_config_manager.py": 4,
-      "src/agentmap/services/config/config_service.py": 13,
+      "src/agentmap/services/config/config_service.py": 12,
       "src/agentmap/services/config/detectors/config_detector.py": 3,
       "src/agentmap/services/config/detectors/environment_detector.py": 2,
       "src/agentmap/services/config/llm_models_config_service.py": 1,
@@ -143,14 +125,13 @@
       "src/agentmap/services/csv_graph_parser/converters.py": 2,
       "src/agentmap/services/csv_graph_parser/service.py": 4,
       "src/agentmap/services/csv_graph_parser/validators.py": 8,
-      "src/agentmap/services/custom_agent_declaration_manager.py": 4,
+      "src/agentmap/services/custom_agent_declaration_manager.py": 3,
       "src/agentmap/services/custom_agent_loader.py": 8,
       "src/agentmap/services/declaration_parser.py": 1,
       "src/agentmap/services/declaration_registry_service.py": 2,
       "src/agentmap/services/declaration_sources/custom_agent_yaml_source.py": 2,
       "src/agentmap/services/declaration_sources/host_service_yaml_source.py": 2,
       "src/agentmap/services/declaration_sources/python_source.py": 3,
-      "src/agentmap/services/declaration_sources/yaml_loader.py": 1,
       "src/agentmap/services/dependency_checker_service.py": 3,
       "src/agentmap/services/dependency_validators.py": 2,
       "src/agentmap/services/embeddings/openai_embedding_service.py": 3,
@@ -191,10 +172,6 @@
       "src/agentmap/services/interaction/__init__.py": 1,
       "src/agentmap/services/interaction/interaction_storage.py": 1,
       "src/agentmap/services/interaction/storage_helpers.py": 5,
-      "src/agentmap/services/interaction_handler/bundle_utils.py": 3,
-      "src/agentmap/services/interaction_handler/request_operations.py": 8,
-      "src/agentmap/services/interaction_handler/storage_helpers.py": 9,
-      "src/agentmap/services/interaction_handler/thread_operations.py": 23,
       "src/agentmap/services/llm/_param_resolution.py": 3,
       "src/agentmap/services/llm/anthropic_batch_adapter.py": 3,
       "src/agentmap/services/llm/batch_lifecycle.py": 1,
@@ -216,7 +193,7 @@
       "src/agentmap/services/messaging/messaging_service.py": 12,
       "src/agentmap/services/orchestrator_algorithm_matching.py": 5,
       "src/agentmap/services/orchestrator_llm_matching.py": 2,
-      "src/agentmap/services/prompt_manager_service.py": 8,
+      "src/agentmap/services/prompt_manager_service.py": 7,
       "src/agentmap/services/protocol_requirements_analyzer.py": 4,
       "src/agentmap/services/protocol_validation.py": 2,
       "src/agentmap/services/protocols/service_protocols.py": 16,
@@ -257,7 +234,6 @@
       "src/agentmap/services/storage/vector/service.py": 13,
       "src/agentmap/services/telemetry/otel_telemetry_service.py": 1,
       "src/agentmap/services/template_loader.py": 2,
-      "src/agentmap/services/validation/config_validation_service.py": 21,
       "src/agentmap/services/validation/csv_validation_service.py": 6,
       "src/agentmap/services/validation/validation_cache_service.py": 2,
       "src/agentmap/services/validation/validation_service.py": 9,
@@ -774,168 +750,6 @@
       "file": "src/agentmap/agents/builtins/tool_agent.py",
       "code": "unreachable",
       "message": "Statement is unreachable",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/auth_command.py",
-      "code": "assignment",
-      "message": "Incompatible default for argument \"expires_days\" (default has type \"None\", argument has type \"int\")",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/auth_command.py",
-      "code": "import-untyped",
-      "message": "Library stubs not installed for \"yaml\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/auth_command.py",
-      "code": "index",
-      "message": "Invalid index type \"str\" for \"str\"; expected type \"SupportsIndex | slice[Any, Any, Any]\"",
-      "count": 4
-    },
-    {
-      "file": "src/agentmap/deployment/cli/auth_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 7
-    },
-    {
-      "file": "src/agentmap/deployment/cli/auth_command.py",
-      "code": "return-value",
-      "message": "Incompatible return value type (got \"tuple[dict[str, dict[str, object]], dict[str, dict[Any, Any]]]\", expected \"dict[Any, Any]\")",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/auth_command.py",
-      "code": "type-arg",
-      "message": "Missing type parameters for generic type \"dict\"",
-      "count": 6
-    },
-    {
-      "file": "src/agentmap/deployment/cli/auth_command.py",
-      "code": "type-arg",
-      "message": "Missing type parameters for generic type \"list\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/config_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/diagnose_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/display_utils.py",
-      "code": "unreachable",
-      "message": "Statement is unreachable",
-      "count": 2
-    },
-    {
-      "file": "src/agentmap/deployment/cli/inspect_graph_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/main_cli.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 3
-    },
-    {
-      "file": "src/agentmap/deployment/cli/refresh_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/resume_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/run_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/run_command.py",
-      "code": "type-arg",
-      "message": "Missing type parameters for generic type \"dict\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/scaffold_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/serve_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/update_bundle_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/utils/cli_presenter.py",
-      "code": "no-redef",
-      "message": "Name \"AgentMapNotInitialized\" already defined (possibly by an import)",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/utils/cli_presenter.py",
-      "code": "no-redef",
-      "message": "Name \"GraphNotFound\" already defined (possibly by an import)",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/utils/cli_presenter.py",
-      "code": "no-redef",
-      "message": "Name \"InvalidInputs\" already defined (possibly by an import)",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/utils/cli_presenter.py",
-      "code": "type-arg",
-      "message": "Missing type parameters for generic type \"dict\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/utils/cli_utils.py",
-      "code": "no-any-return",
-      "message": "Returning Any from function declared to return \"dict[str, Any]\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/utils/cli_utils.py",
-      "code": "type-arg",
-      "message": "Missing type parameters for generic type \"dict\"",
-      "count": 3
-    },
-    {
-      "file": "src/agentmap/deployment/cli/validate_cache_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/deployment/cli/validate_command.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
       "count": 1
     },
     {
@@ -1839,60 +1653,6 @@
       "count": 2
     },
     {
-      "file": "src/agentmap/services/auth_service.py",
-      "code": "assignment",
-      "message": "Incompatible types in assignment (expression has type \"None\", variable has type \"dict[str, str]\")",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/auth_service.py",
-      "code": "assignment",
-      "message": "Incompatible types in assignment (expression has type \"None\", variable has type \"list[str]\")",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/auth_service.py",
-      "code": "attr-defined",
-      "message": "any? has no attribute \"get\"",
-      "count": 4
-    },
-    {
-      "file": "src/agentmap/services/auth_service.py",
-      "code": "attr-defined",
-      "message": "any? has no attribute \"items\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/auth_service.py",
-      "code": "misc",
-      "message": "Generator has incompatible item type \"int\"; expected \"bool\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/auth_service.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/auth_service.py",
-      "code": "unreachable",
-      "message": "Right operand of \"or\" is never evaluated",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/auth_service.py",
-      "code": "unreachable",
-      "message": "Statement is unreachable",
-      "count": 6
-    },
-    {
-      "file": "src/agentmap/services/auth_service.py",
-      "code": "valid-type",
-      "message": "Function \"builtins.any\" is not valid as a type",
-      "count": 3
-    },
-    {
       "file": "src/agentmap/services/cache_manager.py",
       "code": "no-any-return",
       "message": "Returning Any from function declared to return \"bool\"",
@@ -2194,12 +1954,6 @@
     },
     {
       "file": "src/agentmap/services/config/config_service.py",
-      "code": "import-untyped",
-      "message": "Library stubs not installed for \"yaml\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/config/config_service.py",
       "code": "no-any-return",
       "message": "Returning Any from function declared to return \"dict[str, Any]\"",
       "count": 1
@@ -2428,12 +2182,6 @@
     },
     {
       "file": "src/agentmap/services/custom_agent_declaration_manager.py",
-      "code": "import-untyped",
-      "message": "Library stubs not installed for \"yaml\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/custom_agent_declaration_manager.py",
       "code": "no-any-return",
       "message": "Returning Any from function declared to return \"dict[str, Any] | None\"",
       "count": 1
@@ -2527,12 +2275,6 @@
       "code": "no-untyped-def",
       "message": "Function is missing a return type annotation",
       "count": 3
-    },
-    {
-      "file": "src/agentmap/services/declaration_sources/yaml_loader.py",
-      "code": "import-untyped",
-      "message": "Library stubs not installed for \"yaml\"",
-      "count": 1
     },
     {
       "file": "src/agentmap/services/dependency_checker_service.py",
@@ -3261,114 +3003,6 @@
       "count": 2
     },
     {
-      "file": "src/agentmap/services/interaction_handler/bundle_utils.py",
-      "code": "no-any-return",
-      "message": "Returning Any from function declared to return \"str\"",
-      "count": 2
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/bundle_utils.py",
-      "code": "return-value",
-      "message": "Incompatible return value type (got \"str | None\", expected \"str\")",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/request_operations.py",
-      "code": "attr-defined",
-      "message": "\"RequestOperationsMixin\" has no attribute \"_write_collection\"",
-      "count": 2
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/request_operations.py",
-      "code": "attr-defined",
-      "message": "\"RequestOperationsMixin\" has no attribute \"logger\"",
-      "count": 4
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/request_operations.py",
-      "code": "attr-defined",
-      "message": "\"RequestOperationsMixin\" has no attribute \"requests_collection\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/request_operations.py",
-      "code": "attr-defined",
-      "message": "\"RequestOperationsMixin\" has no attribute \"responses_collection\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/storage_helpers.py",
-      "code": "attr-defined",
-      "message": "\"StorageHelpersMixin\" has no attribute \"file_storage\"",
-      "count": 4
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/storage_helpers.py",
-      "code": "attr-defined",
-      "message": "\"StorageHelpersMixin\" has no attribute \"threads_collection\"; maybe \"_read_collection\"?",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/storage_helpers.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a return type annotation",
-      "count": 2
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/storage_helpers.py",
-      "code": "no-untyped-def",
-      "message": "Function is missing a type annotation for one or more arguments",
-      "count": 2
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/thread_operations.py",
-      "code": "assignment",
-      "message": "Incompatible types in assignment (expression has type \"str\", target has type \"float\")",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/thread_operations.py",
-      "code": "attr-defined",
-      "message": "\"ThreadOperationsMixin\" has no attribute \"_find_legacy_thread_file\"",
-      "count": 2
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/thread_operations.py",
-      "code": "attr-defined",
-      "message": "\"ThreadOperationsMixin\" has no attribute \"_read_collection\"",
-      "count": 2
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/thread_operations.py",
-      "code": "attr-defined",
-      "message": "\"ThreadOperationsMixin\" has no attribute \"_write_collection\"",
-      "count": 4
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/thread_operations.py",
-      "code": "attr-defined",
-      "message": "\"ThreadOperationsMixin\" has no attribute \"logger\"",
-      "count": 5
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/thread_operations.py",
-      "code": "attr-defined",
-      "message": "\"ThreadOperationsMixin\" has no attribute \"threads_collection\"",
-      "count": 6
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/thread_operations.py",
-      "code": "no-any-return",
-      "message": "Returning Any from function declared to return \"bool\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/interaction_handler/thread_operations.py",
-      "code": "no-any-return",
-      "message": "Returning Any from function declared to return \"dict[str, Any] | None\"",
-      "count": 2
-    },
-    {
       "file": "src/agentmap/services/llm/_param_resolution.py",
       "code": "no-untyped-def",
       "message": "Function is missing a return type annotation",
@@ -3894,12 +3528,6 @@
       "file": "src/agentmap/services/prompt_manager_service.py",
       "code": "attr-defined",
       "message": "\"Traversable\" has no attribute \"exists\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/prompt_manager_service.py",
-      "code": "import-untyped",
-      "message": "Library stubs not installed for \"yaml\"",
       "count": 1
     },
     {
@@ -4470,42 +4098,6 @@
       "file": "src/agentmap/services/template_loader.py",
       "code": "no-untyped-def",
       "message": "Function is missing a return type annotation",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/validation/config_validation_service.py",
-      "code": "attr-defined",
-      "message": "\"LLMModelsConfigService\" has no attribute \"get_known_models\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/validation/config_validation_service.py",
-      "code": "call-arg",
-      "message": "Unexpected keyword argument \"field\" for \"add_error\" of \"ValidationResult\"",
-      "count": 6
-    },
-    {
-      "file": "src/agentmap/services/validation/config_validation_service.py",
-      "code": "call-arg",
-      "message": "Unexpected keyword argument \"field\" for \"add_info\" of \"ValidationResult\"",
-      "count": 5
-    },
-    {
-      "file": "src/agentmap/services/validation/config_validation_service.py",
-      "code": "call-arg",
-      "message": "Unexpected keyword argument \"field\" for \"add_warning\" of \"ValidationResult\"",
-      "count": 7
-    },
-    {
-      "file": "src/agentmap/services/validation/config_validation_service.py",
-      "code": "import-untyped",
-      "message": "Library stubs not installed for \"yaml\"",
-      "count": 1
-    },
-    {
-      "file": "src/agentmap/services/validation/config_validation_service.py",
-      "code": "unreachable",
-      "message": "Statement is unreachable",
       "count": 1
     },
     {
