@@ -5,6 +5,7 @@ This module provides an Azure-specific implementation of the CloudMessageAdapter
 interface for publishing messages to Azure Service Bus topics or queues.
 """
 
+import importlib
 import json
 from typing import Any, Dict, Optional
 
@@ -47,7 +48,8 @@ class AzureMessageAdapter:
         try:
             # Import Azure SDK
             try:
-                from azure.servicebus import ServiceBusClient
+                service_bus = importlib.import_module("azure.servicebus")
+                ServiceBusClient = service_bus.ServiceBusClient
             except ImportError:
                 raise MessagingConnectionError(
                     "Azure Service Bus SDK not installed. "
@@ -135,7 +137,8 @@ class AzureMessageAdapter:
     ) -> StorageResult:
         """Publish message to Service Bus topic."""
         try:
-            from azure.servicebus import ServiceBusMessage
+            service_bus = importlib.import_module("azure.servicebus")
+            ServiceBusMessage = service_bus.ServiceBusMessage
 
             # Prepare message
             message_body = json.dumps(message)
@@ -179,7 +182,8 @@ class AzureMessageAdapter:
     ) -> StorageResult:
         """Publish message to Service Bus queue."""
         try:
-            from azure.servicebus import ServiceBusMessage
+            service_bus = importlib.import_module("azure.servicebus")
+            ServiceBusMessage = service_bus.ServiceBusMessage
 
             # Prepare message
             message_body = json.dumps(message)

@@ -48,8 +48,10 @@ class AWSMessageAdapter:
         try:
             # Import AWS SDK
             try:
-                import boto3
-                from botocore.exceptions import (
+                # Messaging owner: remove these boundary ignores when typed AWS
+                # SDK packages are included in the locked all-extras environment.
+                import boto3  # type: ignore[import-not-found]
+                from botocore.exceptions import (  # type: ignore[import-not-found]
                     NoCredentialsError,
                 )
             except ImportError:

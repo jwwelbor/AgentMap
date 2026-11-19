@@ -46,8 +46,13 @@ class AWSS3Connector(BlobStorageConnector):
         try:
             # Import boto3
             try:
-                import boto3
-                from botocore.exceptions import ClientError, NoCredentialsError
+                # Storage owner: remove these boundary ignores when typed AWS
+                # SDK packages are included in the locked all-extras environment.
+                import boto3  # type: ignore[import-not-found]
+                from botocore.exceptions import (  # type: ignore[import-not-found]
+                    ClientError,
+                    NoCredentialsError,
+                )
 
                 # Store exception classes for future reference
                 self.boto_exceptions = {

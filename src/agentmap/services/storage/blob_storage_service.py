@@ -7,6 +7,7 @@ and local file storage. It follows AgentMap's service-based architecture pattern
 and leverages existing blob connector infrastructure.
 """
 
+import importlib
 import json
 from typing import Any, Callable, Dict, List, Optional, Type
 
@@ -164,7 +165,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
     def _check_azure_availability() -> bool:
         """Check if Azure Blob Storage SDK is available."""
         try:
-            import azure.storage.blob  # noqa: F401
+            importlib.import_module("azure.storage.blob")
 
             return True
         except ImportError:
@@ -174,7 +175,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
     def _check_s3_availability() -> bool:
         """Check if AWS S3 SDK is available."""
         try:
-            import boto3  # noqa: F401
+            importlib.import_module("boto3")
 
             return True
         except ImportError:
@@ -184,7 +185,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
     def _check_gcs_availability() -> bool:
         """Check if Google Cloud Storage SDK is available."""
         try:
-            import google.cloud.storage  # noqa: F401
+            importlib.import_module("google.cloud.storage")
 
             return True
         except ImportError:

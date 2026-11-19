@@ -5,6 +5,7 @@ This module provides a GCP-specific implementation of the CloudMessageAdapter
 interface for publishing messages to Google Cloud Pub/Sub topics.
 """
 
+import importlib
 import json
 from typing import Any, Dict, Optional
 
@@ -49,7 +50,8 @@ class GCPMessageAdapter:
             try:
                 import google.auth.exceptions
                 from google.auth import default
-                from google.cloud import pubsub_v1
+
+                pubsub_v1 = importlib.import_module("google.cloud.pubsub_v1")
             except ImportError:
                 raise MessagingConnectionError(
                     "Google Cloud Pub/Sub SDK not installed. "

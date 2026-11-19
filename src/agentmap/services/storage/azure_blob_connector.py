@@ -5,6 +5,7 @@ This module provides an Azure-specific implementation of the BlobStorageConnecto
 interface for reading and writing JSON files in Azure Blob Storage.
 """
 
+import importlib
 from typing import Any, Dict, Optional, cast
 
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
@@ -46,7 +47,8 @@ class AzureBlobConnector(BlobStorageConnector):
         try:
             # Import Azure SDK
             try:
-                from azure.storage.blob import BlobServiceClient
+                azure_blob = importlib.import_module("azure.storage.blob")
+                BlobServiceClient = azure_blob.BlobServiceClient
             except ImportError:
                 raise StorageConnectionError(
                     "Azure Blob Storage SDK not installed. "

@@ -1,5 +1,6 @@
 # src/agentmap/services/messaging_service.py
 
+import importlib
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol
@@ -194,7 +195,7 @@ class MessagingService:
     def _check_gcp_availability() -> bool:
         """Check if GCP messaging SDK is available."""
         try:
-            import google.cloud.pubsub_v1  # noqa: F401
+            importlib.import_module("google.cloud.pubsub_v1")
 
             return True
         except ImportError:
@@ -204,7 +205,7 @@ class MessagingService:
     def _check_aws_availability() -> bool:
         """Check if AWS messaging SDK is available."""
         try:
-            import boto3  # noqa: F401
+            importlib.import_module("boto3")
 
             return True
         except ImportError:
@@ -214,7 +215,7 @@ class MessagingService:
     def _check_azure_availability() -> bool:
         """Check if Azure messaging SDK is available."""
         try:
-            import azure.servicebus  # noqa: F401
+            importlib.import_module("azure.servicebus")
 
             return True
         except ImportError:
