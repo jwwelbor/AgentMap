@@ -17,14 +17,16 @@ import re
 import threading
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, Optional, Tuple
 
 from langgraph.errors import GraphInterrupt
 
 from agentmap.exceptions.agent_exceptions import ExecutionInterruptedException
 from agentmap.exceptions.graph_exceptions import MissingServiceDeclarationError
 from agentmap.models.execution.result import ExecutionResult
+from agentmap.models.execution.tracker import ExecutionTracker
 from agentmap.models.graph_bundle import GraphBundle
+from agentmap.models.node import Node
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.declaration_registry_service import DeclarationRegistryService
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
@@ -138,7 +140,7 @@ class GraphRunnerService:
     def run(
         self,
         bundle: GraphBundle,
-        initial_state: Optional[dict] = None,
+        initial_state: Optional[Dict[str, Any]] = None,
         parent_graph_name: Optional[str] = None,
         parent_tracker: Optional[Any] = None,
         is_subgraph: bool = False,
@@ -206,7 +208,7 @@ class GraphRunnerService:
     def _run_with_telemetry(
         self,
         bundle: GraphBundle,
-        initial_state: dict,
+        initial_state: Dict[str, Any],
         parent_graph_name: Optional[str],
         parent_tracker: Optional[Any],
         is_subgraph: bool,
@@ -319,7 +321,7 @@ class GraphRunnerService:
     def _run_core(
         self,
         bundle: GraphBundle,
-        initial_state: dict,
+        initial_state: Dict[str, Any],
         parent_graph_name: Optional[str],
         parent_tracker: Optional[Any],
         is_subgraph: bool,
@@ -822,14 +824,15 @@ class GraphRunnerService:
                 f"subgraph bundle(s) for graph '{bundle.graph_name}'"
             )
 
-    def _get_raw_context(self, node) -> Optional[str]:
+    def _get_raw_context(self, node: Node) -> Optional[str]:
         """Extract the raw context string from a node's context dict."""
-        if not node.context:
+        context: Any = node.context
+        if not context:
             return None
-        if isinstance(node.context, dict):
-            return node.context.get("context")
-        if isinstance(node.context, str):
-            return node.context
+        if isinstance(context, dict):
+            return context.get("context")
+        if isinstance(context, str):
+            return context
         return None
 
     def _resolve_workflow_ref(
@@ -893,7 +896,7 @@ class GraphRunnerService:
     def _resolve_legacy_subgraph(
         self,
         node_name: str,
-        node,
+        node: Node,
         parent_bundle: GraphBundle,
         subgraph_bundles: Dict[str, GraphBundle],
     ) -> None:
@@ -942,11 +945,11 @@ class GraphRunnerService:
                 return
 
         # Final fallback — try get_or_create with parent CSV path
-        csv_path = self._get_csv_path_from_bundle(parent_bundle)
-        if csv_path:
+        parent_csv_path = self._get_csv_path_from_bundle(parent_bundle)
+        if parent_csv_path:
             try:
                 resolved, _ = self.graph_bundle_service.get_or_create_bundle(
-                    csv_path=csv_path,
+                    csv_path=parent_csv_path,
                     graph_name=subgraph_name,
                 )
                 subgraph_bundles[node_name] = resolved
@@ -978,7 +981,7 @@ class GraphRunnerService:
     async def run_async(
         self,
         bundle: GraphBundle,
-        initial_state: Optional[dict] = None,
+        initial_state: Optional[Dict[str, Any]] = None,
         parent_graph_name: Optional[str] = None,
         parent_tracker: Optional[Any] = None,
         is_subgraph: bool = False,
@@ -1042,7 +1045,7 @@ class GraphRunnerService:
     async def _run_async_with_telemetry(
         self,
         bundle: GraphBundle,
-        initial_state: dict,
+        initial_state: Dict[str, Any],
         parent_graph_name: Optional[str],
         parent_tracker: Optional[Any],
         is_subgraph: bool,
@@ -1169,9 +1172,9 @@ class GraphRunnerService:
     async def _assemble_for_async_run(
         self,
         bundle: GraphBundle,
-        initial_state: dict,
+        initial_state: Dict[str, Any],
         validate_agents: bool,
-    ) -> tuple:
+    ) -> Tuple[Any, ExecutionTracker, Optional[Dict[str, Any]], bool]:
         """Shared assembly helper for async run paths (D-7 extract).
 
         Covers phases 2–5 of the async pipeline — scoped registry creation,
@@ -1328,7 +1331,7 @@ class GraphRunnerService:
     async def _run_core_async(
         self,
         bundle: GraphBundle,
-        initial_state: dict,
+        initial_state: Dict[str, Any],
         parent_graph_name: Optional[str],
         parent_tracker: Optional[Any],
         is_subgraph: bool,
@@ -1575,7 +1578,7 @@ class GraphRunnerService:
     async def run_stream_async(
         self,
         bundle: GraphBundle,
-        initial_state: Optional[dict] = None,
+        initial_state: Optional[Dict[str, Any]] = None,
         *,
         validate_agents: bool = False,
         profile: Optional[str] = None,
