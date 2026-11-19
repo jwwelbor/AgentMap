@@ -187,6 +187,31 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         config = {"configurable": {"thread_id": "missing"}}
         self.assertIsNone(self.service.get_tuple(config))
 
+    def test_get_tuple_skips_corrupt_checkpoint_files(self):
+        config = {"configurable": {"thread_id": "thread-corrupt"}}
+        saved_config = self.service.put(
+            config=config,
+            checkpoint={"state": {"value": "valid"}},
+            metadata={},
+            new_versions={},
+        )
+        self.file_storage.write(
+            collection="",
+            data=b"malformed pickle",
+            document_id="thread-corrupt_corrupt.pkl",
+            mode=WriteMode.WRITE,
+            binary_mode=True,
+        )
+
+        result = self.service.get_tuple(config)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.checkpoint["state"]["value"], "valid")
+        self.assertEqual(
+            result.config["configurable"]["checkpoint_id"],
+            saved_config["configurable"]["checkpoint_id"],
+        )
+
     def test_get_tuple_handles_identical_timestamps(self):
         """Test that when timestamps are identical, latest file wins (insertion order)."""
         config = {"configurable": {"thread_id": "thread-timing"}}

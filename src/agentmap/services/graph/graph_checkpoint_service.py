@@ -182,14 +182,16 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
             latest_timestamp: Optional[str] = None
 
             for filename in thread_files:
-                # Read the file
-                file_data = self.file_storage.read(
-                    collection="", document_id=filename, binary_mode=True
-                )
+                try:
+                    file_data = self.file_storage.read(
+                        collection="", document_id=filename, binary_mode=True
+                    )
+                    if not file_data:
+                        continue
 
-                if file_data:
-                    # Deserialize document
                     checkpoint_doc = pickle.loads(file_data)
+                    if not isinstance(checkpoint_doc, dict):
+                        continue
                     checkpoint_id = checkpoint_doc.get("checkpoint_id")
                     if (
                         not isinstance(checkpoint_id, str)
@@ -204,6 +206,11 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                     if latest_timestamp is None or timestamp >= latest_timestamp:
                         latest_timestamp = timestamp
                         latest_file = checkpoint_doc
+                except Exception as e:
+                    self.logger.warning(
+                        f"Skipping malformed checkpoint for thread={thread_id}, "
+                        f"file={filename}: {e}"
+                    )
 
             if not latest_file:
                 self.logger.debug(f"no files found for thread {thread_id}")
