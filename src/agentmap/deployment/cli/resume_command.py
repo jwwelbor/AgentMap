@@ -33,7 +33,7 @@ def resume_command(
     config_file: Optional[str] = typer.Option(
         None, "--config", "-c", help="Path to custom config file"
     ),
-):
+) -> None:
     """Resume an interrupted workflow by providing thread ID and response data."""
     try:
         # Ensure runtime is initialized

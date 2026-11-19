@@ -105,6 +105,7 @@ from agentmap.services.llm_batch_errors import (
     LLMBatchNotReadyError,
     LLMBatchUnsupportedProviderError,
 )
+from agentmap.services.llm_batch_repository import BatchHandleRepository
 from agentmap.services.llm_client_factory import LLMClientFactory
 from agentmap.services.llm_error_utils import (
     _sanitize_error_message,
@@ -181,7 +182,7 @@ _SAFE_NON_TEXT_BLOCK_TYPES = frozenset(
 # Keys that ``call_llm_async`` accepts as explicit parameters.  If any of these
 # appear in ``LLMRequest.request_options`` they would collide with the explicit
 # keyword arguments in ``_execute_fan_out_item``, causing a TypeError at runtime.
-_RESERVED_KEYS: frozenset = frozenset(
+_RESERVED_KEYS: frozenset[str] = frozenset(
     {
         "messages",
         "provider",
@@ -192,6 +193,12 @@ _RESERVED_KEYS: frozenset = frozenset(
         "attempt_lifecycle",
     }
 )
+
+
+def _metadata_string(metadata: Mapping[str, Any], key: str) -> Optional[str]:
+    """Read a string-valued field from provider-supplied response metadata."""
+    value = metadata.get(key)
+    return value if isinstance(value, str) else None
 
 
 # NOTE: the budget-guard refusal marker (``BudgetGuardRefusal``) lives in
@@ -222,7 +229,7 @@ class LLMService:
         telemetry_service: Optional[Any] = None,
         batch_adapter: Optional[Any] = None,
         batch_adapters: Optional[Dict[str, Any]] = None,
-        batch_repo: Optional[Any] = None,
+        batch_repo: Optional[BatchHandleRepository] = None,
         budget_guard: Optional[LLMBudgetGuardProtocol] = None,
     ):
         """
@@ -251,6 +258,8 @@ class LLMService:
         self.features_registry = features_registry_service
         self.routing_config = routing_config_service
         self._telemetry_service = telemetry_service
+        self._capture_llm_prompts: bool = False
+        self._capture_llm_responses: bool = False
         # E05-F06 REQ-F-003/REQ-F-004: opt-in pre-dispatch budget refusal and
         # post-completion receipt observation. None => no guard-related code
         # path executes (NFR-F-002/AC pre-F06 byte-identical behavior).
@@ -394,7 +403,7 @@ class LLMService:
         self._batch_repo = batch_repo
 
     @property
-    def _clients(self):
+    def _clients(self) -> Dict[str, Any]:
         """Backwards compatibility accessor for client cache."""
         return self._client_factory._clients
 
@@ -440,7 +449,7 @@ class LLMService:
     # inject_cache_metadata returns messages unchanged for these providers;
     # the capability check is skipped so callers do not receive a spurious error.
     # E05-F05 spec: "OpenAI auto-caches at >1024 tokens — no injection needed."
-    _CACHE_SYSTEM_PROMPT_NOOP_PROVIDERS: frozenset = frozenset({"openai"})
+    _CACHE_SYSTEM_PROMPT_NOOP_PROVIDERS: frozenset[str] = frozenset({"openai"})
 
     def _validate_prompt_caching_support(
         self,
@@ -511,7 +520,7 @@ class LLMService:
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
         cache_system_prompt: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """
         Make an LLM call with standardized interface.
@@ -564,7 +573,7 @@ class LLMService:
         tools: Optional[List[Dict[str, Any]]] = None,
         *,
         attempt_lifecycle: Optional[LLMAttemptLifecycleProtocol] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """
         Make an async LLM call and return a rich ``LLMResponse``.
@@ -609,7 +618,7 @@ class LLMService:
         model: Optional[str],
         temperature: Optional[float],
         routing_context: Optional[Dict[str, Any]],
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Dispatch to the telemetry or plain core path and unwrap a refusal.
 
@@ -638,7 +647,7 @@ class LLMService:
         model: Optional[str],
         temperature: Optional[float],
         routing_context: Optional[Dict[str, Any]],
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Call the async core with retry-safe telemetry isolation."""
         assert self._telemetry_service is not None
@@ -675,7 +684,7 @@ class LLMService:
         model: Optional[str],
         temperature: Optional[float],
         routing_context: Optional[Dict[str, Any]],
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """Call the sync core with retry-safe telemetry isolation."""
         assert self._telemetry_service is not None
@@ -710,7 +719,7 @@ class LLMService:
         model: Optional[str],
         temperature: Optional[float],
         routing_context: Optional[Dict[str, Any]],
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """Execute the actual LLM call logic (routing or direct).
 
@@ -756,7 +765,7 @@ class LLMService:
         model: Optional[str],
         temperature: Optional[float],
         routing_context: Optional[Dict[str, Any]],
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Single async seam shared by ``call_llm_async`` and the fan-out path.
 
@@ -781,7 +790,7 @@ class LLMService:
         model: Optional[str],
         temperature: Optional[float],
         routing_context: Optional[Dict[str, Any]],
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Routing-vs-direct branch, split out of ``_call_llm_async_core`` so
         that method's own body stays under the 50-line limit once the
@@ -968,7 +977,7 @@ class LLMService:
         routing_context: Optional[Dict[str, Any]] = None,
         *,
         eligible_providers: Optional[List[str]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """
         Make a direct LLM call to a specific provider without routing.
@@ -1206,7 +1215,7 @@ class LLMService:
         current_model: str,
         tools: Optional[List[Dict[str, Any]]],
         original_messages: List[LLMMessage],
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Classify a direct-call failure and dispatch to the fallback ladder.
 
@@ -1244,7 +1253,7 @@ class LLMService:
         current_model: str,
         original_messages: List[LLMMessage],
         typed_error: Exception,
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Delegate to the fallback handler and normalize its error wrapping.
 
@@ -1280,7 +1289,7 @@ class LLMService:
         routing_context: Optional[Dict[str, Any]] = None,
         *,
         eligible_providers: Optional[List[str]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Async direct provider invocation with resilience and fallback parity."""
         current_model: str = "unknown"
@@ -1696,6 +1705,8 @@ class LLMService:
                     jitter,
                 )
 
+        if last_error is None:
+            raise LLMServiceError("Retry loop ended without a provider attempt.")
         self._raise_terminal_retry_failure(last_error, provider, model)
 
     async def _handle_retry_attempt_failure(
@@ -2255,7 +2266,7 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """Ask the LLM a question about an image.
 
@@ -2343,7 +2354,7 @@ class LLMService:
         temperature: Optional[float] = None,
         routing_context: Optional[Dict[str, Any]] = None,
         cache_prompt: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Async vision call returning a rich ``LLMResponse``.
 
@@ -2426,7 +2437,7 @@ class LLMService:
             **kwargs,
         )
 
-    def ask(self, prompt: str, provider: Optional[str] = None, **kwargs) -> str:
+    def ask(self, prompt: str, provider: Optional[str] = None, **kwargs: Any) -> str:
         """
         Ask the LLM a single plain-string question.
 
@@ -2446,7 +2457,7 @@ class LLMService:
         return self.call_llm(provider=provider, messages=messages, **kwargs)
 
     async def ask_async(
-        self, prompt: str, provider: Optional[str] = None, **kwargs
+        self, prompt: str, provider: Optional[str] = None, **kwargs: Any
     ) -> str:
         """Async convenience wrapper mirroring ``ask()`` behavior."""
         provider = provider or "anthropic"
@@ -2502,7 +2513,7 @@ class LLMService:
             raise LLMServiceError(
                 f"max_concurrency must be an integer >= 1, got {max_concurrency!r}."
             )
-        seen_ids: set = set()
+        seen_ids: set[str] = set()
         for spec in requests:
             if not isinstance(spec.request_id, str) or not spec.request_id:
                 raise LLMServiceError(
@@ -2824,7 +2835,7 @@ class LLMService:
                     "batch-level concern only (one batch = one adapter)."
                 )
 
-        seen_ids: set = set()
+        seen_ids: set[str] = set()
         for spec in request.requests:
             if not isinstance(spec.request_id, str) or not spec.request_id:
                 raise LLMServiceError(
@@ -2919,7 +2930,7 @@ class LLMService:
         )
         return handle
 
-    def restore_batch(self, handle_data: dict) -> LLMBatchHandle:
+    def restore_batch(self, handle_data: Dict[str, Any]) -> LLMBatchHandle:
         """
         Restore a batch handle from a serialized dict.
 
@@ -3576,22 +3587,22 @@ class LLMService:
 
         if provider == "anthropic":
             # Anthropic puts message ID directly in metadata
-            return response_metadata.get("id")
+            return _metadata_string(response_metadata, "id")
 
         if provider == "openai":
             # OpenAI puts request ID in response headers
             headers = response_metadata.get("headers", {})
-            if isinstance(headers, dict):
-                return headers.get("x-request-id")
+            if isinstance(headers, Mapping):
+                return _metadata_string(headers, "x-request-id")
 
         if provider == "google":
-            return response_metadata.get("request_id")
+            return _metadata_string(response_metadata, "request_id")
 
         # Generic fallback: try common keys
         for key in ("id", "request_id", "x-request-id"):
-            val = response_metadata.get(key)
-            if val and isinstance(val, str):
-                return val
+            value = _metadata_string(response_metadata, key)
+            if value:
+                return value
 
         return None
 

@@ -8,7 +8,7 @@ interface between CSV parsing and graph building.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, cast
 
 
 @dataclass
@@ -47,7 +47,9 @@ class NodeSpec:
         Returns:
             True if edge has multiple targets, False otherwise
         """
-        edge_value = getattr(self, edge_type, None)
+        edge_value = cast(
+            Optional[Union[str, List[str]]], getattr(self, edge_type, None)
+        )
         return isinstance(edge_value, list) and len(edge_value) > 1
 
     def get_edge_targets(self, edge_type: str) -> List[str]:
@@ -59,7 +61,9 @@ class NodeSpec:
         Returns:
             List of target node names (may be empty, single, or multiple)
         """
-        edge_value = getattr(self, edge_type, None)
+        edge_value = cast(
+            Optional[Union[str, List[str]]], getattr(self, edge_type, None)
+        )
         if edge_value is None:
             return []
         elif isinstance(edge_value, str):

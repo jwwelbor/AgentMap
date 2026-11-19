@@ -97,6 +97,11 @@ class TestBranchingAgent(unittest.TestCase):
         self.assertFalse(agent.default_result)
         self.assertEqual(agent.fallback_fields, ["result", "outcome"])
 
+    def test_non_boolean_default_result_uses_true_default(self):
+        agent = self.create_branching_agent(default_result="false")
+
+        self.assertIs(agent.default_result, True)
+
     def test_agent_protocol_compliance(self):
         """Test that BranchingAgent correctly implements (or doesn't implement) service protocols."""
         agent = self.create_branching_agent()

@@ -2,7 +2,8 @@
 
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import ModuleType
+from unittest.mock import MagicMock, patch
 
 from agentmap.services.custom_agent_loader import CustomAgentLoader
 
@@ -23,6 +24,16 @@ class TestCustomAgentLoader(unittest.TestCase):
 
         self.assertIsNone(result)
         mock_logger.error.assert_not_called()
+
+    def test_non_class_attribute_is_not_loaded_as_agent(self) -> None:
+        mock_logging = MagicMock()
+        mock_logging.get_class_logger.return_value = MagicMock()
+        loader = CustomAgentLoader(Path("/tmp/custom-agents"), mock_logging)
+        module = ModuleType("bad_agent")
+        module.BadAgent = object()
+
+        with patch.object(loader, "_load_module", return_value=module):
+            self.assertIsNone(loader.load_agent_class("bad_agent.BadAgent"))
 
 
 if __name__ == "__main__":

@@ -4,12 +4,15 @@ Utility functions for graph runner operations.
 Extracted from GraphRunnerService to improve modularity.
 """
 
-from typing import Any, Dict
+import logging
+from typing import Any, Dict, Optional
 
 from agentmap.models.graph_bundle import GraphBundle
 
 
-def create_node_registry_from_bundle(bundle: GraphBundle, logger=None) -> dict:
+def create_node_registry_from_bundle(
+    bundle: GraphBundle, logger: Optional[logging.Logger] = None
+) -> Dict[str, Dict[str, Any]]:
     """
     Create node registry from bundle for orchestrator agents.
 

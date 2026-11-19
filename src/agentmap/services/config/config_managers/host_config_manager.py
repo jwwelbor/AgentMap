@@ -27,7 +27,7 @@ class HostConfigManager(BaseConfigManager):
         Returns:
             Dictionary containing host application configuration
         """
-        host_config = self.get_section("host_application", {})
+        host_config: Dict[str, Any] = self.get_section("host_application", {})
 
         # Default host application configuration
         defaults = {
@@ -73,7 +73,7 @@ class HostConfigManager(BaseConfigManager):
             List of Path objects for protocol discovery folders
         """
         # Get protocol folders from host application config
-        protocol_folders_config = self.get_value(
+        protocol_folders_config: List[str] = self.get_value(
             "host_application.protocol_folders", []
         )
 
@@ -121,7 +121,9 @@ class HostConfigManager(BaseConfigManager):
             return {}
 
         # Get service configuration from host application config
-        service_config = self.get_value(f"host_application.services.{service_name}", {})
+        service_config: Dict[str, Any] = self.get_value(
+            f"host_application.services.{service_name}", {}
+        )
 
         # Provide default service configuration structure
         defaults = {
@@ -146,7 +148,7 @@ class HostConfigManager(BaseConfigManager):
 
         return merged_config
 
-    def get_host_configuration_section(self, section_name: str) -> Dict[str, Any]:
+    def get_host_configuration_section(self, section_name: str) -> Any:
         """
         Get a specific configuration section from host application config.
 
@@ -256,7 +258,7 @@ class HostConfigManager(BaseConfigManager):
             "summary": summary,
         }
 
-    def is_host_application_enabled(self) -> bool:
+    def is_host_application_enabled(self) -> Any:
         """
         Check if host application support is enabled.
 

@@ -242,6 +242,27 @@ class TestModernizedFileWriterAgent(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("invalid_mode", result.error)
 
+    def test_non_string_mode_is_rejected_at_validation_and_execution(self):
+        """Test malformed write modes return clear validation errors."""
+        agent = self.create_file_writer_agent()
+        agent.file_service = self.mock_file_service
+        inputs = {"collection": "test.txt", "data": "content", "mode": 17}
+
+        with self.assertRaisesRegex(ValueError, "Write mode must be a string"):
+            agent._validate_inputs(inputs)
+
+        process_result = agent.process(inputs)
+        self.assertIsInstance(process_result, DocumentResult)
+        self.assertFalse(process_result.success)
+        self.assertIn("Write mode must be a string", process_result.error)
+
+        result = agent._execute_operation("test.txt", inputs)
+
+        self.assertIsInstance(result, DocumentResult)
+        self.assertFalse(result.success)
+        self.assertEqual(result.error, "Write mode must be a string")
+        self.mock_file_service.write.assert_not_called()
+
     # =============================================================================
     # 3. Validation Tests
     # =============================================================================

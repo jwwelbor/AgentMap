@@ -1,7 +1,11 @@
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
+from agentmap.models.execution.summary import (
+    ExecutionSummary,
+)
+from agentmap.models.execution.summary import NodeExecution as SummaryNodeExecution
 from agentmap.models.execution.tracker import ExecutionTracker, NodeExecution
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
@@ -10,7 +14,7 @@ from agentmap.services.logging_service import LoggingService
 class ExecutionTrackingService:
     def __init__(
         self, app_config_service: AppConfigService, logging_service: LoggingService
-    ):
+    ) -> None:
         self.config = app_config_service
         self.logger = logging_service.get_class_logger(self)
         self.logging_service = logging_service
@@ -40,7 +44,7 @@ class ExecutionTrackingService:
         tracker: ExecutionTracker,
         node_name: str,
         inputs: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> None:
         tracker.node_execution_counts[node_name] = (
             tracker.node_execution_counts.get(node_name, 0) + 1
         )
@@ -59,7 +63,7 @@ class ExecutionTrackingService:
         success: bool,
         result: Any = None,
         error: Optional[str] = None,
-    ):
+    ) -> None:
         for node in reversed(tracker.node_executions):
             if node.node_name == node_name and node.success is None:
                 node.success = success
@@ -77,7 +81,7 @@ class ExecutionTrackingService:
         if not success:
             tracker.overall_success = False
 
-    def complete_execution(self, tracker: ExecutionTracker):
+    def complete_execution(self, tracker: ExecutionTracker) -> None:
         tracker.end_time = datetime.utcnow()
 
     def record_subgraph_execution(
@@ -85,7 +89,7 @@ class ExecutionTrackingService:
         tracker: ExecutionTracker,
         subgraph_name: str,
         subgraph_tracker: ExecutionTracker,
-    ):
+    ) -> None:
         for node in reversed(tracker.node_executions):
             if node.success is None:
                 node.subgraph_execution_tracker = subgraph_tracker
@@ -117,7 +121,7 @@ class ExecutionTrackingService:
             # Serialize node executions
             serialized_executions = []
             for node in tracker.node_executions:
-                exec_data = {
+                exec_data: Dict[str, Any] = {
                     "node_name": node.node_name,
                     "start_time": (
                         node.start_time.isoformat() if node.start_time else None
@@ -135,10 +139,7 @@ class ExecutionTrackingService:
                     exec_data["output"] = node.output
 
                 # Handle subgraph tracker recursively
-                if (
-                    hasattr(node, "subgraph_execution_tracker")
-                    and node.subgraph_execution_tracker
-                ):
+                if node.subgraph_execution_tracker is not None:
                     exec_data["subgraph_tracker"] = self.serialize_tracker(
                         node.subgraph_execution_tracker
                     )
@@ -234,23 +235,18 @@ class ExecutionTrackingService:
 
     def to_summary(
         self, tracker: ExecutionTracker, graph_name: str, final_output: Any = None
-    ):
-        from agentmap.models.execution.summary import (
-            ExecutionSummary,
-        )
-        from agentmap.models.execution.summary import (
-            NodeExecution as SummaryNodeExecution,
-        )
-
+    ) -> ExecutionSummary:
         summary_executions = []
+        # Graph runners process node results before creating a summary.
+        # The summary model requires all node completion fields.
         for node in tracker.node_executions:
             summary_executions.append(
                 SummaryNodeExecution(
                     node_name=node.node_name,
-                    success=node.success,
-                    start_time=node.start_time,
-                    end_time=node.end_time,
-                    duration=node.duration,
+                    success=cast(bool, node.success),
+                    start_time=cast(datetime, node.start_time),
+                    end_time=cast(datetime, node.end_time),
+                    duration=cast(float, node.duration),
                     output=node.output,
                     error=node.error,
                 )

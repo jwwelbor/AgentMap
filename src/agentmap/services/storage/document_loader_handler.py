@@ -98,7 +98,7 @@ class DocumentLoaderHandler:
 
         # Define a simple Document class for fallback
         class SimpleDocument:
-            def __init__(self, content: str, metadata: Optional[Dict] = None):
+            def __init__(self, content: str, metadata: Optional[Dict[str, Any]] = None):
                 self.page_content = content
                 self.metadata = metadata or {"source": file_path}
 

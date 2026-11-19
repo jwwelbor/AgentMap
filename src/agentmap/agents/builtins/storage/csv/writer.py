@@ -22,7 +22,7 @@ class CSVWriterAgent(CSVAgent):
 
     def _execute_operation(
         self, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Execute write operation for CSV files by delegating to CSVStorageService.
 
@@ -58,11 +58,14 @@ class CSVWriterAgent(CSVAgent):
             )
 
         # Get write mode
-        mode_str = inputs.get("mode", "append").lower()
+        mode_value = inputs.get("mode", "append")
         try:
+            if not isinstance(mode_value, str):
+                raise ValueError("write mode must be a string")
+            mode_str = mode_value.lower()
             mode = WriteMode.from_string(mode_str)
         except ValueError:
-            self.log_warning(f"Invalid mode '{mode_str}', using 'append' mode")
+            self.log_warning(f"Invalid mode '{mode_value}', using 'append' mode")
             mode = WriteMode.APPEND
 
         # Extract additional parameters

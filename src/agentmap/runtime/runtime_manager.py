@@ -286,7 +286,7 @@ class RuntimeManager(RuntimeLifespanMixin, RuntimeCleanupMixin):
         return cls._current_container() is not None
 
     @classmethod
-    def get_container(cls):
+    def get_container(cls) -> Any:
         """
         Return the DI container or raise if uninitialized.
 

@@ -139,7 +139,7 @@ class GraphStructureAnalyzer:
             - has_parallel: Whether graph contains any parallel routing
         """
         fan_out_nodes = []
-        fan_in_count = {}
+        fan_in_count: Dict[str, int] = {}
         parallel_groups = []
         max_parallelism = 1
 

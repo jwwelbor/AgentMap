@@ -6,7 +6,7 @@ by using only the runtime facade for consistent behavior across all deployment a
 """
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from agentmap.deployment.serverless.base_handler import BaseHandler
 
@@ -14,7 +14,7 @@ from agentmap.deployment.serverless.base_handler import BaseHandler
 class GCPFunctionHandler(BaseHandler):
     """Google Cloud Function handler using facade pattern through BaseHandler."""
 
-    def gcp_handler(self, request) -> Dict[str, Any]:
+    def gcp_handler(self, request: Any) -> Dict[str, Any]:
         """
         Google Cloud Function entry point for HTTP triggers using facade pattern.
 
@@ -34,19 +34,19 @@ class GCPFunctionHandler(BaseHandler):
         if "body" in result:
             try:
                 response_data = json.loads(result["body"])
-                return response_data
+                return response_data if isinstance(response_data, dict) else result
             except json.JSONDecodeError:
                 return result
 
         return result
 
-    def _convert_gcp_request(self, request) -> Dict[str, Any]:
+    def _convert_gcp_request(self, request: Any) -> Dict[str, Any]:
         """Convert GCP Cloud Functions request to standard event format."""
         try:
             if hasattr(request, "method") and request.method == "POST":
                 # Parse JSON body
                 request_json = request.get_json(silent=True)
-                if request_json:
+                if isinstance(request_json, dict) and request_json:
                     return request_json
 
                 # Fallback to form data
@@ -88,7 +88,7 @@ def get_gcp_handler(config_file: Optional[str] = None) -> GCPFunctionHandler:
     return _gcp_handler_instance
 
 
-def gcp_http_handler(request):
+def gcp_http_handler(request: Any) -> Dict[str, Any]:
     """
     Main GCP HTTP Cloud Function handler using facade pattern.
 
@@ -104,7 +104,7 @@ def gcp_http_handler(request):
     return handler.gcp_handler(request)
 
 
-def gcp_pubsub_handler(event, context):
+def gcp_pubsub_handler(event: Any, context: Any) -> None:
     """
     Main GCP Pub/Sub Cloud Function handler using facade pattern.
 
@@ -124,13 +124,15 @@ def gcp_pubsub_handler(event, context):
         # Decode Pub/Sub message
         import base64
 
-        event_data = {}
+        event_data: Dict[str, Any] = {}
         if "data" in event:
             decoded_data = base64.b64decode(event["data"]).decode("utf-8")
-            event_data = json.loads(decoded_data)
+            parsed_data = json.loads(decoded_data)
+            event_data = parsed_data if isinstance(parsed_data, dict) else {}
         else:
             # Fallback to attributes
-            event_data = event.get("attributes", {})
+            attributes = event.get("attributes", {})
+            event_data = attributes if isinstance(attributes, dict) else {}
 
     except Exception:
         event_data = {"graph": "default", "state": {}}
@@ -141,7 +143,7 @@ def gcp_pubsub_handler(event, context):
     print(f"Pub/Sub handler result: {result}")
 
 
-def gcp_storage_handler(event, context):
+def gcp_storage_handler(event: Any, context: Any) -> None:
     """
     Main GCP Cloud Storage Cloud Function handler using facade pattern.
 
@@ -173,7 +175,13 @@ def gcp_storage_handler(event, context):
     print(f"Storage handler result: {result}")
 
 
-def gcp_handler_with_config(config_file: str):
+def gcp_handler_with_config(
+    config_file: str,
+) -> Tuple[
+    Callable[[Any], Dict[str, Any]],
+    Callable[[Any, Any], None],
+    Callable[[Any, Any], None],
+]:
     """
     Create GCP handlers with custom configuration using facade pattern.
 
@@ -185,19 +193,21 @@ def gcp_handler_with_config(config_file: str):
     """
     handler = GCPFunctionHandler(config_file=config_file)
 
-    def configured_http_handler(request):
+    def configured_http_handler(request: Any) -> Dict[str, Any]:
         return handler.gcp_handler(request)
 
-    def configured_pubsub_handler(event, context):
+    def configured_pubsub_handler(event: Any, context: Any) -> None:
         try:
             import base64
 
-            event_data = {}
+            event_data: Dict[str, Any] = {}
             if "data" in event:
                 decoded_data = base64.b64decode(event["data"]).decode("utf-8")
-                event_data = json.loads(decoded_data)
+                parsed_data = json.loads(decoded_data)
+                event_data = parsed_data if isinstance(parsed_data, dict) else {}
             else:
-                event_data = event.get("attributes", {})
+                attributes = event.get("attributes", {})
+                event_data = attributes if isinstance(attributes, dict) else {}
 
         except Exception:
             event_data = {"graph": "default", "state": {}}
@@ -205,7 +215,7 @@ def gcp_handler_with_config(config_file: str):
         result = handler.handle_request_sync(event_data, context)
         print(f"Configured Pub/Sub handler result: {result}")
 
-    def configured_storage_handler(event, context):
+    def configured_storage_handler(event: Any, context: Any) -> None:
         event_data = {"Records": [{"s3": {"object": {"key": event.get("name", "")}}}]}
         result = handler.handle_request_sync(event_data, context)
         print(f"Configured Storage handler result: {result}")
@@ -220,7 +230,7 @@ def gcp_handler_with_config(config_file: str):
 # Example usage patterns for different GCP configurations:
 
 
-def run_graph_gcp_handler(request):
+def run_graph_gcp_handler(request: Any) -> Dict[str, Any]:
     """GCP HTTP handler specifically for graph execution."""
     handler = get_gcp_handler()
 
@@ -233,7 +243,8 @@ def run_graph_gcp_handler(request):
 
     if "body" in result:
         try:
-            return json.loads(result["body"])
+            response_data = json.loads(result["body"])
+            return response_data if isinstance(response_data, dict) else result
         except json.JSONDecodeError:
             return result
     return result

@@ -11,13 +11,28 @@ import importlib.util
 import logging
 import os
 import sys
+from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import IO, Any, Dict, Optional, Union
 
 import yaml
 
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
+
+
+def _open_text_resource(resource: Union[Path, Traversable]) -> IO[str]:
+    """Open filesystem paths and importlib resources as text streams."""
+    if isinstance(resource, Path):
+        return open(resource, "r")
+    return resource.open("r")
+
+
+def _resource_exists(resource: Union[Path, Traversable]) -> bool:
+    """Check for filesystem paths and importlib resources."""
+    if isinstance(resource, Path):
+        return resource.exists()
+    return resource.is_file()
 
 
 class PromptManagerService:
@@ -51,7 +66,7 @@ class PromptManagerService:
         )
         self.enable_cache = prompts_config.get("enable_cache", True)
         self.template_location = "agentmap.templates.system"
-        self._cache = {}
+        self._cache: Dict[str, str] = {}
         self._registry = self._load_registry()
 
         self.prompts_dir.mkdir(parents=True, exist_ok=True)
@@ -69,7 +84,10 @@ class PromptManagerService:
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, "r") as f:
-                    registry = yaml.safe_load(f) or {}
+                    loaded_registry = yaml.safe_load(f)
+                    registry = (
+                        loaded_registry if isinstance(loaded_registry, dict) else {}
+                    )
                     self.logger.debug(
                         f"Loaded {len(registry)} prompts from registry at {self.registry_path}"
                     )
@@ -82,9 +100,12 @@ class PromptManagerService:
         # Try to load from system registry as fallback
         try:
             system_registry = self._find_resource("registry.yaml")
-            if system_registry and system_registry.exists():
-                with open(system_registry, "r") as f:
-                    registry = yaml.safe_load(f) or {}
+            if system_registry is not None and _resource_exists(system_registry):
+                with _open_text_resource(system_registry) as f:
+                    loaded_registry = yaml.safe_load(f)
+                    registry = (
+                        loaded_registry if isinstance(loaded_registry, dict) else {}
+                    )
                     self.logger.debug(
                         f"Loaded {len(registry)} prompts from system registry"
                     )
@@ -102,7 +123,7 @@ class PromptManagerService:
         self.logger.debug("No prompt registry files found, using empty registry")
         return registry
 
-    def _find_resource(self, resource_path: str) -> Optional[Path]:
+    def _find_resource(self, resource_path: str) -> Optional[Union[Path, Traversable]]:
         """Find resource file in local directory or embedded resources."""
         path = Path(resource_path)
         if path.is_absolute() and path.exists():
@@ -114,7 +135,9 @@ class PromptManagerService:
 
         return self._try_get_resource(resource_path)
 
-    def _try_get_resource(self, resource_path: str) -> Optional[Path]:
+    def _try_get_resource(
+        self, resource_path: str
+    ) -> Optional[Union[Path, Traversable]]:
         """Try to find embedded resource using importlib."""
         parts = resource_path.split("/")
         package = self.template_location
@@ -129,7 +152,7 @@ class PromptManagerService:
             if sys.version_info >= (3, 9):
                 try:
                     f = importlib.resources.files(package).joinpath(resource_name)
-                    return f if f.exists() else None
+                    return f if f.is_file() else None
                 except (ImportError, AttributeError, ValueError):
                     pass
 
@@ -202,7 +225,7 @@ class PromptManagerService:
             return f"[Prompt file not found: {file_path}]"
 
         try:
-            with open(path, "r") as f:
+            with _open_text_resource(path) as f:
                 content = f.read().strip()
                 self.logger.debug(
                     f"Loaded prompt from file: {path} ({len(content)} chars)"
@@ -228,7 +251,7 @@ class PromptManagerService:
             return f"[YAML prompt file not found: {file_path}]"
 
         try:
-            with open(path, "r") as f:
+            with _open_text_resource(path) as f:
                 data = yaml.safe_load(f)
 
             keys = key_path.split(".")
@@ -332,7 +355,7 @@ class PromptManagerService:
 
 
 # Global singleton instance for backward compatibility
-_prompt_manager = None
+_prompt_manager: Optional[PromptManagerService] = None
 
 
 def get_prompt_manager(
@@ -345,12 +368,17 @@ def get_prompt_manager(
             from agentmap.runtime.runtime_manager import RuntimeManager
 
             if not RuntimeManager.is_initialized():
-                RuntimeManager.initialize(config_file=config_path)
+                normalized_config_path = (
+                    str(config_path) if config_path is not None else None
+                )
+                RuntimeManager.initialize(config_file=normalized_config_path)
             _prompt_manager = RuntimeManager.get_container().prompt_manager_service()
         except Exception:
             # Fallback for when DI is unavailable or being initialized
             if _prompt_manager is None:
                 raise
+    if _prompt_manager is None:
+        raise RuntimeError("Prompt manager service was not initialized")
     return _prompt_manager
 
 

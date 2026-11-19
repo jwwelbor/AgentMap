@@ -48,12 +48,16 @@ class SummaryAgent(BaseAgent, LLMCapableAgent):
         self._llm_service = None
 
         # Configuration options
-        self.llm_type = self.context.get("llm")
+        self.llm_type: Optional[str] = self.context.get("llm")
         self.use_llm = bool(self.llm_type)
 
         # Formatting configuration
-        self.format_template = self.context.get("format", "{key}: {value}")
-        self.separator = self.context.get("separator", "\n\n")
+        format_template = self.context.get("format", "{key}: {value}")
+        self.format_template: str = (
+            format_template if isinstance(format_template, str) else "{key}: {value}"
+        )
+        separator = self.context.get("separator", "\n\n")
+        self.separator: str = separator if isinstance(separator, str) else "\n\n"
         self.include_keys = self.context.get("include_keys", True)
 
         # Resolve the prompt using PromptManagerService if available
@@ -105,7 +109,7 @@ class SummaryAgent(BaseAgent, LLMCapableAgent):
         # If we have a prompt manager service, use it to resolve the prompt
         if self.prompt_manager_service:
             try:
-                resolved = self.prompt_manager_service.resolve_prompt(prompt)
+                resolved: str = self.prompt_manager_service.resolve_prompt(prompt)
                 if (
                     resolved != prompt
                 ):  # Only log if resolution actually changed the prompt
@@ -160,6 +164,9 @@ class SummaryAgent(BaseAgent, LLMCapableAgent):
         # Check if LLM service is configured first (fail fast for configuration issues)
         if self._llm_service is None:
             raise ValueError(f"LLM service not configured for agent '{self.name}'")
+        provider = self.llm_type
+        if not isinstance(provider, str) or not provider:
+            raise ValueError(f"LLM provider not configured for agent '{self.name}'")
 
         try:
             # Prepare the content to summarize
@@ -173,7 +180,7 @@ class SummaryAgent(BaseAgent, LLMCapableAgent):
 
             # Use LLM Service
             result = self.llm_service.call_llm(
-                provider=self.llm_type,
+                provider=provider,
                 messages=messages,
                 model=self.context.get("model"),
                 temperature=self.context.get("temperature"),

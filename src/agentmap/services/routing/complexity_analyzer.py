@@ -88,7 +88,7 @@ class PromptComplexityAnalyzer:
             ),
         }
 
-    def _compile_patterns(self):
+    def _compile_patterns(self) -> None:
         """Compile regex patterns for prompt structure analysis."""
         self.patterns = {
             "questions": re.compile(
@@ -172,11 +172,11 @@ class PromptComplexityAnalyzer:
     def _analyze_prompt_keywords(self, prompt: str) -> ComplexitySignal:
         """Analyze prompt keywords to determine complexity."""
         prompt.lower()
-        complexity_scores = {
-            TaskComplexity.LOW: 0,
-            TaskComplexity.MEDIUM: 0,
-            TaskComplexity.HIGH: 0,
-            TaskComplexity.CRITICAL: 0,
+        complexity_scores: Dict[TaskComplexity, float] = {
+            TaskComplexity.LOW: 0.0,
+            TaskComplexity.MEDIUM: 0.0,
+            TaskComplexity.HIGH: 0.0,
+            TaskComplexity.CRITICAL: 0.0,
         }
 
         # Check for urgency indicators (critical)

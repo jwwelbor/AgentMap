@@ -6,7 +6,7 @@ specialized configurator modules. This service maintains backward
 compatibility while delegating to focused, single-responsibility modules.
 """
 
-from typing import Any, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 from agentmap.services.agent.core_service_configurator import CoreServiceConfigurator
 from agentmap.services.agent.host_service_configurator import HostServiceConfigurator
@@ -18,7 +18,7 @@ from agentmap.services.host_protocol_configuration_service import (
     HostProtocolConfigurationService,
 )
 from agentmap.services.llm_service import LLMService
-from agentmap.services.logging_service import LoggingService
+from agentmap.services.logging_service import LoggingService, TraceLogger
 from agentmap.services.storage.manager import StorageServiceManager
 
 
@@ -108,12 +108,12 @@ class AgentServiceInjectionService:
         )
 
     @property
-    def logger(self):
+    def logger(self) -> TraceLogger:
         """Get the logger instance."""
         return self._logger
 
     @logger.setter
-    def logger(self, value):
+    def logger(self, value: TraceLogger) -> None:
         """Set the logger and propagate to configurators."""
         self._logger = value
         if hasattr(self, "_core_configurator"):
@@ -222,7 +222,7 @@ class AgentServiceInjectionService:
         agent: Any,
         tracker: Optional[Any] = None,
         required_services: Optional[Set[str]] = None,
-    ) -> dict:
+    ) -> Dict[str, Any]:
         """
         Configure core services, storage services, host services, and execution tracker for an agent.
 
@@ -289,7 +289,7 @@ class AgentServiceInjectionService:
 
         return summary
 
-    def get_service_injection_status(self, agent: Any) -> dict:
+    def get_service_injection_status(self, agent: Any) -> Dict[str, Any]:
         """
         Get detailed service injection status for a specific agent for debugging.
 
@@ -301,7 +301,7 @@ class AgentServiceInjectionService:
         """
         return self._status_analyzer.get_service_injection_status(agent)
 
-    def get_service_availability_status(self) -> dict:
+    def get_service_availability_status(self) -> Dict[str, Any]:
         """
         Get status of service availability for debugging and monitoring.
 

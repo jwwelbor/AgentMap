@@ -10,9 +10,10 @@ import hashlib
 import hmac
 import os
 import secrets
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from agentmap.services.logging_service import LoggingService
 
@@ -25,15 +26,25 @@ class AuthContext:
     auth_method: str
     user_id: Optional[str] = None
     username: Optional[str] = None
-    permissions: List[str] = None
-    metadata: Dict[str, str] = None
+    permissions: List[str] = field(default_factory=list)
+    metadata: Dict[str, str] = field(default_factory=dict)
     expires_at: Optional[datetime] = None
 
-    def __post_init__(self):
-        """Initialize default values."""
-        if self.permissions is None:
+    def __post_init__(self) -> None:
+        permissions: Any = self.permissions
+        if isinstance(permissions, list):
+            self.permissions = [item for item in permissions if isinstance(item, str)]
+        else:
             self.permissions = []
-        if self.metadata is None:
+
+        metadata: Any = self.metadata
+        if isinstance(metadata, dict):
+            self.metadata = {
+                key: value
+                for key, value in metadata.items()
+                if isinstance(key, str) and isinstance(value, str)
+            }
+        else:
             self.metadata = {}
 
 
@@ -45,7 +56,9 @@ class AuthService:
     configurable per-endpoint protection and graceful degradation.
     """
 
-    def __init__(self, auth_config: Dict[str, any], logging_service: LoggingService):
+    def __init__(
+        self, auth_config: Dict[str, Any], logging_service: LoggingService
+    ) -> None:
         """
         Initialize authentication service.
 
@@ -53,47 +66,104 @@ class AuthService:
             auth_config: Authentication configuration dictionary
             logging_service: Logging service for audit trails
         """
-        self.config = auth_config
+        self.config: Dict[str, Any] = auth_config
         self.logger = logging_service.get_class_logger(self)
-        self.enabled = auth_config.get("enabled", True)
+        enabled = auth_config.get("enabled", True)
+        if isinstance(enabled, bool):
+            self.enabled = enabled
+        else:
+            self.enabled = True
+            self.logger.warning(
+                "[AuthService] 'enabled' must be a boolean; defaulting to enabled"
+            )
 
         # Load API keys configuration
-        self._api_keys = self._load_api_keys()
+        self._api_keys: Dict[str, Dict[str, Any]] = self._load_api_keys()
 
         # JWT configuration (for future implementation)
-        self.jwt_secret = auth_config.get("jwt", {}).get("secret")
-        self.jwt_algorithm = auth_config.get("jwt", {}).get("algorithm", "HS256")
+        jwt_config = auth_config.get("jwt", {})
+        if not isinstance(jwt_config, Mapping):
+            jwt_config = {}
+        jwt_secret = jwt_config.get("secret")
+        self.jwt_secret: Optional[str] = (
+            jwt_secret if isinstance(jwt_secret, str) else None
+        )
+        jwt_algorithm = jwt_config.get("algorithm", "HS256")
+        self.jwt_algorithm: str = (
+            jwt_algorithm if isinstance(jwt_algorithm, str) else "HS256"
+        )
 
         # Supabase configuration (for future implementation)
-        self.supabase_url = auth_config.get("supabase", {}).get("url")
-        self.supabase_key = auth_config.get("supabase", {}).get("anon_key")
+        supabase_config = auth_config.get("supabase", {})
+        if not isinstance(supabase_config, Mapping):
+            supabase_config = {}
+        supabase_url = supabase_config.get("url")
+        self.supabase_url: Optional[str] = (
+            supabase_url if isinstance(supabase_url, str) else None
+        )
+        supabase_key = supabase_config.get("anon_key")
+        self.supabase_key: Optional[str] = (
+            supabase_key if isinstance(supabase_key, str) else None
+        )
 
         self.logger.info(
             f"[AuthService] Initialized with {len(self._api_keys)} API keys"
         )
 
-    def _load_api_keys(self) -> Dict[str, Dict[str, any]]:
+    def _load_api_keys(self) -> Dict[str, Dict[str, Any]]:
         """
         Load API keys from configuration and environment variables.
 
         Returns:
             Dictionary mapping API key hashes to key metadata
         """
-        api_keys = {}
+        api_keys: Dict[str, Dict[str, Any]] = {}
 
         # Load from config file
         config_keys = self.config.get("api_keys", {})
+        if not isinstance(config_keys, Mapping):
+            self.logger.warning("[AuthService] API key configuration must be a mapping")
+            config_keys = {}
         for key_name, key_config in config_keys.items():
-            if isinstance(key_config, dict):
+            if isinstance(key_name, str) and isinstance(key_config, Mapping):
                 key_value = key_config.get("key")
-                if key_value:
+                if isinstance(key_value, str) and key_value:
+                    permissions = key_config.get("permissions", [])
+                    if not isinstance(permissions, list) or not all(
+                        isinstance(permission, str) for permission in permissions
+                    ):
+                        permissions = []
+                    user_id = key_config.get("user_id", key_name)
+                    if not isinstance(user_id, str):
+                        user_id = key_name
+                    try:
+                        expires_at = self._parse_expiration(
+                            key_config.get("expires_at")
+                        )
+                    except ValueError:
+                        self.logger.warning(
+                            "[AuthService] Ignoring API key '%s' with invalid expiration",
+                            key_name,
+                        )
+                        continue
+                    metadata = key_config.get("metadata", {})
+                    if isinstance(metadata, Mapping):
+                        metadata = {
+                            metadata_key: metadata_value
+                            for metadata_key, metadata_value in metadata.items()
+                            if isinstance(metadata_key, str)
+                            and isinstance(metadata_value, str)
+                        }
+                    else:
+                        metadata = {}
+
                     key_hash = self._hash_api_key(key_value)
                     api_keys[key_hash] = {
                         "name": key_name,
-                        "permissions": key_config.get("permissions", []),
-                        "user_id": key_config.get("user_id", key_name),
-                        "expires_at": key_config.get("expires_at"),
-                        "metadata": key_config.get("metadata", {}),
+                        "permissions": permissions,
+                        "user_id": user_id,
+                        "expires_at": expires_at,
+                        "metadata": metadata,
                     }
 
         # Load from environment variables (pattern: AGENTMAP_API_KEY_<n>)
@@ -114,6 +184,33 @@ class AuthService:
 
         self.logger.debug(f"[AuthService] Loaded {len(api_keys)} API keys")
         return api_keys
+
+    @staticmethod
+    def _parse_expiration(value: object) -> Optional[datetime]:
+        """Parse a configured expiration, rejecting malformed values."""
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("API key expiration must be an ISO-8601 string")
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("API key expiration must be an ISO-8601 string") from exc
+
+    @staticmethod
+    def _is_expired(expires_at: object) -> bool:
+        """Treat malformed internal expirations as expired and compare like zones."""
+        if expires_at is None:
+            return False
+        if not isinstance(expires_at, datetime):
+            return True
+        if expires_at.tzinfo is not None and expires_at.utcoffset() is not None:
+            now = datetime.now(expires_at.tzinfo)
+        else:
+            now = datetime.now()
+        return now > expires_at
 
     def _hash_api_key(self, api_key: str) -> str:
         """
@@ -170,21 +267,17 @@ class AuthService:
         # Find matching key
         for stored_hash, key_info in self._api_keys.items():
             if self._constant_time_compare(key_hash, stored_hash):
-                # Check expiration
-                if key_info.get("expires_at"):
-                    try:
-                        expires_at = datetime.fromisoformat(key_info["expires_at"])
-                        if datetime.now() > expires_at:
-                            self.logger.warning(
-                                f"[AuthService] Expired API key used: {key_info['name']}"
-                            )
-                            return AuthContext(
-                                authenticated=False, auth_method="api_key"
-                            )
-                    except ValueError:
-                        self.logger.error(
-                            f"[AuthService] Invalid expiration date for key: {key_info['name']}"
-                        )
+                expires_at = key_info.get("expires_at")
+                if expires_at is not None and not isinstance(expires_at, datetime):
+                    self.logger.error(
+                        f"[AuthService] Invalid expiration date for key: {key_info['name']}"
+                    )
+                    return AuthContext(authenticated=False, auth_method="api_key")
+                if self._is_expired(expires_at):
+                    self.logger.warning(
+                        f"[AuthService] Expired API key used: {key_info['name']}"
+                    )
+                    return AuthContext(authenticated=False, auth_method="api_key")
 
                 self.logger.info(
                     f"[AuthService] Successful API key authentication: {key_info['name']}"
@@ -196,11 +289,7 @@ class AuthService:
                     username=key_info["name"],
                     permissions=key_info["permissions"],
                     metadata=key_info["metadata"],
-                    expires_at=(
-                        datetime.fromisoformat(key_info["expires_at"])
-                        if key_info.get("expires_at")
-                        else None
-                    ),
+                    expires_at=expires_at,
                 )
 
         self.logger.warning("[AuthService] Invalid API key provided")
@@ -290,9 +379,15 @@ class AuthService:
         Returns:
             List of public endpoint patterns
         """
-        return self.config.get(
-            "public_endpoints", ["/health", "/docs", "/openapi.json", "/redoc", "/"]
+        endpoints = self.config.get(
+            "public_endpoints",
+            ["/health", "/docs", "/openapi.json", "/redoc", "/"],
         )
+        if isinstance(endpoints, list) and all(
+            isinstance(endpoint, str) for endpoint in endpoints
+        ):
+            return endpoints
+        return ["/health", "/docs", "/openapi.json", "/redoc", "/"]
 
     def validate_permissions(
         self, auth_context: AuthContext, required_permissions: List[str]
@@ -317,7 +412,7 @@ class AuthService:
         # Check if user has all required permissions
         return all(perm in auth_context.permissions for perm in required_permissions)
 
-    def get_auth_stats(self) -> Dict[str, any]:
+    def get_auth_stats(self) -> Dict[str, Any]:
         """
         Get authentication statistics for monitoring.
 
@@ -327,8 +422,7 @@ class AuthService:
         active_keys = sum(
             1
             for key_info in self._api_keys.values()
-            if not key_info.get("expires_at")
-            or datetime.fromisoformat(key_info["expires_at"]) > datetime.now()
+            if not self._is_expired(key_info.get("expires_at"))
         )
 
         return {

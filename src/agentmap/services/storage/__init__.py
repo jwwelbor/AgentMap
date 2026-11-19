@@ -6,7 +6,7 @@ Following the service-oriented architecture pattern, all storage-related functio
 is organized here.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .base import BaseStorageService
 
@@ -104,7 +104,7 @@ __all__ = [
 __all__.append("BlobStorageService")
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """Lazy import for heavy modules to improve startup performance."""
     if name in _LAZY_IMPORTS:
         module_name, attr_name = _LAZY_IMPORTS[name]

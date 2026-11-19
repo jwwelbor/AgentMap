@@ -4,7 +4,7 @@ Function template composition for IndentedTemplateComposer.
 Handles composition of routing function templates with parallel routing support.
 """
 
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 from agentmap.services.logging_service import LoggingService
 
@@ -27,7 +27,7 @@ class FunctionTemplateComposer:
         template_loader: TemplateLoader,
         code_generator: CodeGenerator,
         logging_service: LoggingService,
-        load_template_fn: Callable[[str], str] = None,
+        load_template_fn: Optional[Callable[[str], str]] = None,
     ):
         """
         Initialize function template composer.
@@ -42,7 +42,11 @@ class FunctionTemplateComposer:
         self.code_generator = code_generator
         self.logger = logging_service.get_class_logger(self)
         # Use provided function or default to template_loader.load_template
-        self._load_template = load_template_fn or template_loader.load_template
+        self._load_template = (
+            load_template_fn
+            if load_template_fn is not None
+            else template_loader.load_template
+        )
 
     def compose_function_template(self, func_name: str, info: Dict[str, Any]) -> str:
         """

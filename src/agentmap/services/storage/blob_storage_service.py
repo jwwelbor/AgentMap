@@ -7,6 +7,7 @@ and local file storage. It follows AgentMap's service-based architecture pattern
 and leverages existing blob connector infrastructure.
 """
 
+import importlib
 import json
 from typing import Any, Callable, Dict, List, Optional, Type
 
@@ -142,7 +143,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
             "dependency.storage", provider
         )
         if cached is not None:
-            return cached.get("available", False)
+            return bool(cached.get("available", False))
         try:
             available = check_func()
             self.availability_cache.set_availability(
@@ -164,7 +165,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
     def _check_azure_availability() -> bool:
         """Check if Azure Blob Storage SDK is available."""
         try:
-            import azure.storage.blob  # noqa: F401
+            importlib.import_module("azure.storage.blob")
 
             return True
         except ImportError:
@@ -174,7 +175,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
     def _check_s3_availability() -> bool:
         """Check if AWS S3 SDK is available."""
         try:
-            import boto3  # noqa: F401
+            importlib.import_module("boto3")
 
             return True
         except ImportError:
@@ -184,7 +185,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
     def _check_gcs_availability() -> bool:
         """Check if Google Cloud Storage SDK is available."""
         try:
-            import google.cloud.storage  # noqa: F401
+            importlib.import_module("google.cloud.storage")
 
             return True
         except ImportError:
@@ -221,7 +222,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
             return "gs"
         return "file"
 
-    def read_blob(self, uri: str, **kwargs) -> bytes:
+    def read_blob(self, uri: str, **kwargs: Any) -> bytes:
         """Read blob from storage."""
         self._logger.debug(f"Reading blob: {uri}")
         try:
@@ -235,7 +236,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
             self._logger.error(f"Failed to read blob {uri}: {e}")
             raise StorageOperationError(f"Failed to read blob: {str(e)}") from e
 
-    def write_blob(self, uri: str, data: bytes, **kwargs) -> Dict[str, Any]:
+    def write_blob(self, uri: str, data: bytes, **kwargs: Any) -> Dict[str, Any]:
         """Write blob to storage."""
         self._logger.debug(f"Writing blob: {uri} ({len(data)} bytes)")
         try:
@@ -265,7 +266,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
             self._logger.warning(f"Error checking blob existence {uri}: {e}")
             return False
 
-    def list_blobs(self, prefix: str, **kwargs) -> List[str]:
+    def list_blobs(self, prefix: str, **kwargs: Any) -> List[str]:
         """List blobs with given prefix."""
         self._logger.debug(f"Listing blobs with prefix: {prefix}")
         try:
@@ -281,7 +282,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
             self._logger.error(f"Failed to list blobs with prefix {prefix}: {e}")
             raise StorageOperationError(f"Failed to list blobs: {str(e)}") from e
 
-    def delete_blob(self, uri: str, **kwargs) -> Dict[str, Any]:
+    def delete_blob(self, uri: str, **kwargs: Any) -> Dict[str, Any]:
         """Delete a blob."""
         self._logger.debug(f"Deleting blob: {uri}")
         try:
@@ -301,7 +302,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
             self._logger.error(f"Failed to delete blob {uri}: {e}")
             raise StorageOperationError(f"Failed to delete blob: {str(e)}") from e
 
-    def read_json(self, uri: str, **kwargs) -> Any:
+    def read_json(self, uri: str, **kwargs: Any) -> Any:
         """Read JSON data from blob storage."""
         uri = normalize_json_uri(uri)
         try:
@@ -311,7 +312,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
             self._logger.error(f"Failed to parse JSON from {uri}: {e}")
             raise StorageOperationError(f"Invalid JSON in blob: {str(e)}") from e
 
-    def write_json(self, uri: str, data: Any, **kwargs) -> Dict[str, Any]:
+    def write_json(self, uri: str, data: Any, **kwargs: Any) -> Dict[str, Any]:
         """Write JSON data to blob storage."""
         uri = normalize_json_uri(uri)
         try:
@@ -324,9 +325,14 @@ class BlobStorageService(BlobStorageServiceProtocol):
     def health_check(self) -> Dict[str, Any]:
         """Perform health check on blob storage service."""
         self._logger.debug("Performing blob storage health check")
-        results = {"healthy": True, "providers": {}}
+        providers: Dict[str, Dict[str, Any]] = {}
+        results: Dict[str, Any] = {"healthy": True, "providers": providers}
         for provider, available in self._available_providers.items():
-            health = {"available": available, "configured": False, "healthy": False}
+            health: Dict[str, Any] = {
+                "available": available,
+                "configured": False,
+                "healthy": False,
+            }
             if available:
                 cfg = self.configuration.get_blob_provider_config(provider)
                 if provider in ["file", "local"] or cfg:
@@ -344,7 +350,7 @@ class BlobStorageService(BlobStorageServiceProtocol):
                         self._logger.debug(f"Health check failed for {provider}: {e}")
                         health["healthy"] = False
                         health["error"] = str(e)
-            results["providers"][provider] = health
+            providers[provider] = health
             if health["configured"] and not health["healthy"]:
                 results["healthy"] = False
         self._logger.debug(f"Health check results: {results}")

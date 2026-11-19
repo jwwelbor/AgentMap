@@ -8,12 +8,14 @@ and common error handling patterns used across all API router modules.
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, validator
 
 from agentmap.runtime.workflow_ops import VALID_RESUME_ACTIONS
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 # Common Error Response Models
@@ -341,7 +343,7 @@ class RequestValidator:
             raise HTTPException(status_code=400, detail=f"Invalid JSON data: {e}")
 
         # Check depth (prevent deeply nested structures)
-        def check_depth(obj, depth=0, max_depth=10):
+        def check_depth(obj: Any, depth: int = 0, max_depth: int = 10) -> None:
             if depth > max_depth:
                 raise HTTPException(
                     status_code=400,
@@ -404,11 +406,11 @@ class ValidatedStateExecutionRequest(BaseModel):
     )
 
     @validator("state")
-    def validate_state(cls, v):
+    def validate_state(cls: Any, v: Any) -> Any:
         return RequestValidator.validate_json_data(v, RequestValidator.MAX_JSON_SIZE)
 
     @validator("execution_id")
-    def validate_execution_id(cls, v):
+    def validate_execution_id(cls: Any, v: Any) -> Any:
         return RequestValidator.validate_execution_id(v)
 
 
@@ -422,15 +424,15 @@ class ValidatedResumeWorkflowRequest(BaseModel):
     )
 
     @validator("thread_id")
-    def validate_thread_id(cls, v):
+    def validate_thread_id(cls: Any, v: Any) -> Any:
         return RequestValidator.validate_thread_id(v)
 
     @validator("response_action")
-    def validate_response_action(cls, v):
+    def validate_response_action(cls: Any, v: Any) -> Any:
         return RequestValidator.validate_response_action(v)
 
     @validator("response_data")
-    def validate_response_data(cls, v):
+    def validate_response_data(cls: Any, v: Any) -> Any:
         return RequestValidator.validate_json_data(v, RequestValidator.MAX_JSON_SIZE)
 
 
@@ -509,7 +511,9 @@ class ErrorHandler:
 
 
 # Request size validation middleware utility
-def validate_request_size(max_size: int = 10 * 1024 * 1024):  # 10MB default
+def validate_request_size(
+    max_size: int = 10 * 1024 * 1024,
+) -> Callable[[F], F]:  # 10MB default
     """
     Decorator to validate request content length.
 
@@ -520,7 +524,7 @@ def validate_request_size(max_size: int = 10 * 1024 * 1024):  # 10MB default
         Decorator function
     """
 
-    def decorator(func):
+    def decorator(func: F) -> F:
         # Don't use *args, **kwargs to avoid FastAPI parameter inference issues
         # Just pass the function through - the actual validation can be done
         # in middleware or the endpoint itself

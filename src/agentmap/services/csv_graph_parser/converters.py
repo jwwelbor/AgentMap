@@ -7,13 +7,13 @@ for use in graph building and metadata bundle creation.
 
 import ast
 import json
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from agentmap.models.graph_spec import NodeSpec
 from agentmap.models.node import Node
 
 if TYPE_CHECKING:
-    from agentmap.services.logging_service import LoggingService
+    from agentmap.services.logging_service import TraceLogger
 
 
 class NodeSpecConverter:
@@ -24,7 +24,7 @@ class NodeSpecConverter:
     managing edge information and context transformation.
     """
 
-    def __init__(self, logger: "LoggingService"):
+    def __init__(self, logger: "TraceLogger"):
         """
         Initialize converter with logger.
 
@@ -92,7 +92,7 @@ class NodeSpecConverter:
 
         return nodes_dict
 
-    def _parse_context(self, context: str) -> Dict:
+    def _parse_context(self, context: Optional[str]) -> Dict[str, Any]:
         """
         Parse the raw context string from a CSV cell into a dict.
 

@@ -5,17 +5,23 @@ This module provides validation functions for routing configuration,
 including the routing matrix, task types, and provider settings.
 """
 
-from typing import Any, Dict, List
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Dict, List
 
 from agentmap.services.llm.provider_names import canonicalize_provider
 from agentmap.services.routing.types import get_valid_complexity_levels
 
+if TYPE_CHECKING:
+    from agentmap.services.config.app_config_service import AppConfigService
+    from agentmap.services.logging_service import TraceLogger
+
 
 def validate_routing_config(
-    routing_matrix: Dict[str, Dict[str, str]],
-    task_types: Dict[str, Dict[str, Any]],
+    routing_matrix: Dict[str, Any],
+    task_types: Dict[str, Any],
     complexity_analysis: Dict[str, Any],
-    provider_capabilities: Dict[str, Any] = None,
+    provider_capabilities: Any = None,
 ) -> List[str]:
     """
     Validate the complete routing configuration.
@@ -177,7 +183,9 @@ def validate_activities_config(
 
 
 def validate_provider_routing(
-    routing_matrix: Dict[str, Dict[str, str]], app_config_service, logger
+    routing_matrix: Dict[str, Any],
+    app_config_service: AppConfigService,
+    logger: TraceLogger,
 ) -> List[str]:
     """
     Validate provider routing matrix configuration.

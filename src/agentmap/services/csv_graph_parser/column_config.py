@@ -16,7 +16,7 @@ class CSVColumnConfig:
     including required columns, optional columns, and alias mappings.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize column configuration."""
         # Define expected CSV structure
         self.required_columns: Set[str] = {"GraphName", "Node"}

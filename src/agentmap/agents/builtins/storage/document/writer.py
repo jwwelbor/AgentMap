@@ -33,11 +33,13 @@ class DocumentWriterAgent(DocumentStorageAgent):
         Raises:
             ValueError: If inputs are invalid
         """
-        self._validate_writer_inputs(inputs)
+        super()._validate_inputs(inputs)
+        if not isinstance(inputs.get("mode", "append"), str):
+            raise ValueError("Write mode must be a string")
 
     def _execute_operation(
         self, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Execute write operation.
 
@@ -50,7 +52,14 @@ class DocumentWriterAgent(DocumentStorageAgent):
         """
         # Get required data for non-delete operations
         data = inputs.get("data")
-        mode_str = inputs.get("mode", "append").lower()
+        mode_value = inputs.get("mode", "append")
+        if not isinstance(mode_value, str):
+            return DocumentResult(
+                success=False,
+                file_path=collection,
+                error="Write mode must be a string",
+            )
+        mode_str = mode_value.lower()
 
         # Convert string mode to enum
         mode = WriteMode.from_string(mode_str)
@@ -60,14 +69,14 @@ class DocumentWriterAgent(DocumentStorageAgent):
         path = inputs.get("path")
 
         # Log the operation details
-        self._log_write_operation(collection, mode, document_id, path)
+        self.log_info(f"Writing to {collection} with mode {mode.value}")
 
         # Perform the actual write operation
         return self._write_document(collection, data, document_id, mode, path)
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Handle write operation errors.
 
@@ -79,12 +88,4 @@ class DocumentWriterAgent(DocumentStorageAgent):
         Returns:
             DocumentResult with error information
         """
-        mode_str = inputs.get("mode", "append").lower()
-        return self._handle_storage_error(
-            error,
-            mode_str,
-            collection,
-            mode=mode_str,
-            document_id=inputs.get("document_id"),
-            path=inputs.get("path"),
-        )
+        return super()._handle_operation_error(error, collection, inputs)

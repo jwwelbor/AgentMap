@@ -40,7 +40,8 @@ class MetadataTracker:
         Returns:
             True if tracking is enabled, False otherwise
         """
-        return self._config.get("track_metadata", True)
+        enabled = self._config.get("track_metadata", True)
+        return enabled if isinstance(enabled, bool) else True
 
     def update_metadata(
         self, collection: str, document_id: str, operation: str

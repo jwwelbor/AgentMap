@@ -1,7 +1,7 @@
 # src/agentmap/models/validation/errors.py
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -24,7 +24,7 @@ class ValidationError(BaseModel):
     value: Optional[str] = None
     suggestion: Optional[str] = None
 
-    def __init__(self, **data):
+    def __init__(self, **data: Any) -> None:
         # Handle case where level is passed as a string
         if "level" in data and isinstance(data["level"], str):
             try:
@@ -99,7 +99,7 @@ class ValidationResult(BaseModel):
         field_name: Optional[str] = None,
         value: Optional[str] = None,
         suggestion: Optional[str] = None,
-    ):
+    ) -> None:
         """Add an error to the validation result."""
         error = ValidationError(
             level=ValidationLevel.ERROR,
@@ -119,7 +119,7 @@ class ValidationResult(BaseModel):
         field_name: Optional[str] = None,
         value: Optional[str] = None,
         suggestion: Optional[str] = None,
-    ):
+    ) -> None:
         """Add a warning to the validation result."""
         warning = ValidationError(
             level=ValidationLevel.WARNING,
@@ -138,7 +138,7 @@ class ValidationResult(BaseModel):
         field_name: Optional[str] = None,
         value: Optional[str] = None,
         suggestion: Optional[str] = None,
-    ):
+    ) -> None:
         """Add an info message to the validation result."""
         info = ValidationError(
             level=ValidationLevel.INFO,
@@ -185,7 +185,7 @@ class ValidationResult(BaseModel):
         """Get total number of issues (errors + warnings + info)."""
         return len(self.errors) + len(self.warnings) + len(self.info)
 
-    def raise_if_invalid(self):
+    def raise_if_invalid(self) -> None:
         """Raise ValidationException if validation failed."""
         if not self.is_valid:
             # Import here to avoid circular dependency

@@ -54,7 +54,7 @@ class AgentValidator:
         # Validate LLM service configuration
         if isinstance(agent_instance, LLMCapableAgent):
             try:
-                _ = agent_instance.llm_service  # Will raise if not configured
+                _ = getattr(agent_instance, "llm_service")  # Validate injected service
                 self.logger.debug(f"[AgentValidator] LLM service OK for {node.name}")
             except (ValueError, AttributeError):
                 raise ValueError(
@@ -64,7 +64,7 @@ class AgentValidator:
         # Validate storage service configuration
         if isinstance(agent_instance, StorageCapableAgent):
             try:
-                _ = agent_instance.storage_service  # Will raise if not configured
+                _ = getattr(agent_instance, "storage_service")
                 self.logger.debug(
                     f"[AgentValidator] Storage service OK for {node.name}"
                 )

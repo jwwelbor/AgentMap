@@ -40,9 +40,13 @@ TD-009
 """
 
 import time
-from typing import Any, Dict
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, Dict, Tuple
 
 from langgraph.errors import GraphInterrupt
+
+if TYPE_CHECKING:
+    from agentmap.services.state_adapter_service import StateAdapterService
 
 from agentmap.services.telemetry.constants import (
     AGENT_NAME,
@@ -65,6 +69,48 @@ class AgentLifecycleMixin:
     / ``_record_span_exception``.
     """
 
+    if TYPE_CHECKING:
+        name: str
+        context: Dict[str, Any]
+        input_fields: list[str]
+        output_fields: list[str]
+        _telemetry_service: Any
+        execution_tracking_service: Any
+        current_execution_tracker: Any
+        state_adapter_service: Any
+
+        def require_state_adapter_service(self) -> StateAdapterService: ...
+
+        def log_debug(self, message: str) -> None: ...
+
+        def log_error(self, message: str) -> None: ...
+
+        def log_info(self, message: str) -> None: ...
+
+        def log_trace(self, message: str) -> None: ...
+
+        def log_warning(self, message: str) -> None: ...
+
+        def _validate_multi_output(self, output: Any) -> Dict[str, Any]: ...
+
+        def _record_lifecycle_event(self, span: Any, event: str) -> None: ...
+
+        def _record_span_exception(self, span: Any, error: Exception) -> None: ...
+
+        def _set_span_status_ok(self, span: Any) -> None: ...
+
+        def _pre_process(
+            self, state: Any, inputs: Dict[str, Any]
+        ) -> Tuple[Any, Dict[str, Any]]: ...
+
+        def _post_process(
+            self, state: Any, inputs: Dict[str, Any], output: Any
+        ) -> Tuple[Any, Any]: ...
+
+        def process(self, inputs: Dict[str, Any]) -> Any: ...
+
+        async def process_async(self, inputs: Dict[str, Any]) -> Any: ...
+
     # ------------------------------------------------------------------
     # TD-007: shared helpers used by both the sync and async lifecycles
     # ------------------------------------------------------------------
@@ -85,13 +131,15 @@ class AgentLifecycleMixin:
         """
         if isinstance(output, dict) and "state_updates" in output:
             state_updates = output["state_updates"]
+            if not isinstance(state_updates, Mapping):
+                raise TypeError("Agent state_updates must be a mapping")
+            result = dict(state_updates)
             msg = (
-                f"Async returning multiple state updates: {list(state_updates.keys())}"
+                f"Async returning multiple state updates: {list(result.keys())}"
                 if is_async
-                else f"Returning multiple state updates: {list(state_updates.keys())}"
+                else f"Returning multiple state updates: {list(result.keys())}"
             )
             self.log_debug(msg)
-            result = state_updates
         elif self.output_fields and output is not None:
             if len(self.output_fields) > 1:
                 state_updates = self._validate_multi_output(output)
@@ -316,7 +364,7 @@ class AgentLifecycleMixin:
     # Sync / async lifecycles
     # ------------------------------------------------------------------
 
-    def _lifecycle_start(self, state: Any):
+    def _lifecycle_start(self, state: Any) -> Tuple[Any, Any, Dict[str, Any]]:
         """Resolve tracking service/tracker and extract inputs (shared preamble).
 
         Raises ValueError if no tracker has been distributed to the agent yet.
@@ -329,7 +377,7 @@ class AgentLifecycleMixin:
                 "Tracker must be distributed to agents before graph execution starts."
             )
 
-        inputs = self.state_adapter_service.get_inputs(
+        inputs = self.require_state_adapter_service().get_inputs(
             state,
             self.input_fields,
             expected_params=getattr(self, "expected_params", None),

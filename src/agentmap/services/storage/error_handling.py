@@ -5,7 +5,7 @@ This module provides error handling and result creation functionality
 that can be mixed into storage services.
 """
 
-from typing import Any
+from typing import Any, NoReturn
 
 from agentmap.services.storage.types import (
     StorageProviderError,
@@ -32,7 +32,9 @@ class ErrorHandlerMixin:
     provider_name: str
     _logger: Any
 
-    def _handle_error(self, operation: str, error: Exception, **context) -> None:
+    def _handle_error(
+        self, operation: str, error: Exception, **context: Any
+    ) -> NoReturn:
         """
         Handle storage operation errors consistently.
 
@@ -60,8 +62,8 @@ class ErrorHandlerMixin:
             raise StorageProviderError(error_msg) from error
 
     def _create_error_result(
-        self, operation: str, error: str, **context
-    ) -> StorageResult:
+        self, operation: str, error: str, **context: Any
+    ) -> StorageResult[Any]:
         """
         Create a standardized error result.
 
@@ -75,7 +77,9 @@ class ErrorHandlerMixin:
         """
         return StorageResult(success=False, operation=operation, error=error, **context)
 
-    def _create_success_result(self, operation: str, **context) -> StorageResult:
+    def _create_success_result(
+        self, operation: str, **context: Any
+    ) -> StorageResult[Any]:
         """
         Create a standardized success result.
 

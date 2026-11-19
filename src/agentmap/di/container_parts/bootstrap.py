@@ -2,22 +2,52 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from dependency_injector import containers, providers
+
+if TYPE_CHECKING:
+    from agentmap.models.agent_registry import AgentRegistry
+    from agentmap.models.features_registry import FeaturesRegistry
+    from agentmap.services.agent.agent_registry_service import AgentRegistryService
+    from agentmap.services.csv_graph_parser_service import CSVGraphParserService
+    from agentmap.services.custom_agent_declaration_manager import (
+        CustomAgentDeclarationManager,
+    )
+    from agentmap.services.custom_agent_loader import CustomAgentLoader
+    from agentmap.services.declaration_parser import DeclarationParser
+    from agentmap.services.declaration_registry_service import (
+        DeclarationRegistryService,
+    )
+    from agentmap.services.dependency_checker_service import DependencyCheckerService
+    from agentmap.services.features_registry_service import FeaturesRegistryService
+    from agentmap.services.function_resolution_service import FunctionResolutionService
+    from agentmap.services.indented_template_composer import IndentedTemplateComposer
+    from agentmap.services.static_bundle_analyzer import StaticBundleAnalyzer
+    from agentmap.services.validation.config_validation_service import (
+        ConfigValidationService,
+    )
+    from agentmap.services.validation.csv_validation_service import CSVValidationService
+    from agentmap.services.validation.validation_cache_service import (
+        ValidationCacheService,
+    )
+    from agentmap.services.validation.validation_service import ValidationService
 
 
 class BootstrapContainer(containers.DeclarativeContainer):
     """Provides registry, declaration, and validation services."""
 
-    app_config_service = providers.Dependency()
-    logging_service = providers.Dependency()
-    availability_cache_service = providers.Dependency()
-    custom_agents_config = providers.Dependency()
-    llm_models_config_service = providers.Dependency()
+    # Dependency providers resolve these values dynamically at runtime.
+    app_config_service: Any = providers.Dependency()
+    logging_service: Any = providers.Dependency()
+    availability_cache_service: Any = providers.Dependency()
+    custom_agents_config: Any = providers.Dependency()
+    llm_models_config_service: Any = providers.Dependency()
 
     # --- Registry Models --------------------------------------------------------
 
     @staticmethod
-    def _create_features_registry_model():
+    def _create_features_registry_model() -> FeaturesRegistry:
         from agentmap.models.features_registry import FeaturesRegistry
 
         return FeaturesRegistry()
@@ -25,7 +55,7 @@ class BootstrapContainer(containers.DeclarativeContainer):
     features_registry_model = providers.Singleton(_create_features_registry_model)
 
     @staticmethod
-    def _create_agent_registry_model():
+    def _create_agent_registry_model() -> AgentRegistry:
         from agentmap.models.agent_registry import AgentRegistry
 
         return AgentRegistry()
@@ -35,7 +65,7 @@ class BootstrapContainer(containers.DeclarativeContainer):
     # --- Validation Services ----------------------------------------------------
 
     @staticmethod
-    def _create_validation_cache_service():
+    def _create_validation_cache_service() -> ValidationCacheService:
         from agentmap.services.validation.validation_cache_service import (
             ValidationCacheService,
         )
@@ -45,7 +75,9 @@ class BootstrapContainer(containers.DeclarativeContainer):
     validation_cache_service = providers.Singleton(_create_validation_cache_service)
 
     @staticmethod
-    def _create_function_resolution_service(functions_path):
+    def _create_function_resolution_service(
+        functions_path: Any,
+    ) -> FunctionResolutionService:
         from agentmap.services.function_resolution_service import (
             FunctionResolutionService,
         )
@@ -58,7 +90,7 @@ class BootstrapContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_declaration_parser(logging_service):
+    def _create_declaration_parser(logging_service: Any) -> DeclarationParser:
         from agentmap.services.declaration_parser import DeclarationParser
 
         return DeclarationParser(logging_service)
@@ -69,7 +101,9 @@ class BootstrapContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_declaration_registry_service(app_config_service, logging_service):
+    def _create_declaration_registry_service(
+        app_config_service: Any, logging_service: Any
+    ) -> DeclarationRegistryService:
         from agentmap.services.declaration_parser import DeclarationParser
         from agentmap.services.declaration_registry_service import (
             DeclarationRegistryService,
@@ -101,7 +135,9 @@ class BootstrapContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_csv_graph_parser_service(logging_service, declaration_registry_service):
+    def _create_csv_graph_parser_service(
+        logging_service: Any, declaration_registry_service: Any
+    ) -> CSVGraphParserService:
         from agentmap.services.csv_graph_parser_service import CSVGraphParserService
 
         return CSVGraphParserService(logging_service, declaration_registry_service)
@@ -114,8 +150,10 @@ class BootstrapContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_features_registry_service(
-        features_registry_model, logging_service, availability_cache_service
-    ):
+        features_registry_model: Any,
+        logging_service: Any,
+        availability_cache_service: Any,
+    ) -> FeaturesRegistryService:
         from agentmap.services.features_registry_service import FeaturesRegistryService
 
         return FeaturesRegistryService(
@@ -130,7 +168,9 @@ class BootstrapContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_agent_registry_service(agent_registry_model, logging_service):
+    def _create_agent_registry_service(
+        agent_registry_model: Any, logging_service: Any
+    ) -> AgentRegistryService:
         from agentmap.services.agent.agent_registry_service import AgentRegistryService
 
         return AgentRegistryService(agent_registry_model, logging_service)
@@ -142,7 +182,9 @@ class BootstrapContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_custom_agent_loader(custom_agents_config, logging_service):
+    def _create_custom_agent_loader(
+        custom_agents_config: Any, logging_service: Any
+    ) -> CustomAgentLoader:
         from agentmap.services.custom_agent_loader import CustomAgentLoader
 
         return CustomAgentLoader(custom_agents_config, logging_service)
@@ -154,7 +196,9 @@ class BootstrapContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_indented_template_composer(app_config_service, logging_service):
+    def _create_indented_template_composer(
+        app_config_service: Any, logging_service: Any
+    ) -> IndentedTemplateComposer:
         from agentmap.services.indented_template_composer import (
             IndentedTemplateComposer,
         )
@@ -169,8 +213,10 @@ class BootstrapContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_custom_agent_declaration_manager(
-        app_config_service, logging_service, indented_template_composer
-    ):
+        app_config_service: Any,
+        logging_service: Any,
+        indented_template_composer: Any,
+    ) -> CustomAgentDeclarationManager:
         from agentmap.services.custom_agent_declaration_manager import (
             CustomAgentDeclarationManager,
         )
@@ -188,11 +234,11 @@ class BootstrapContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_static_bundle_analyzer(
-        declaration_registry_service,
-        custom_agent_declaration_manager,
-        csv_graph_parser_service,
-        logging_service,
-    ):
+        declaration_registry_service: Any,
+        custom_agent_declaration_manager: Any,
+        csv_graph_parser_service: Any,
+        logging_service: Any,
+    ) -> StaticBundleAnalyzer:
         from agentmap.services.static_bundle_analyzer import StaticBundleAnalyzer
 
         return StaticBundleAnalyzer(
@@ -212,10 +258,10 @@ class BootstrapContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_dependency_checker_service(
-        logging_service,
-        features_registry_service,
-        availability_cache_service,
-    ):
+        logging_service: Any,
+        features_registry_service: Any,
+        availability_cache_service: Any,
+    ) -> DependencyCheckerService:
         from agentmap.services.dependency_checker_service import (
             DependencyCheckerService,
         )
@@ -234,7 +280,9 @@ class BootstrapContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_config_validation_service(logging_service, llm_models_config_service):
+    def _create_config_validation_service(
+        logging_service: Any, llm_models_config_service: Any
+    ) -> ConfigValidationService:
         from agentmap.services.validation.config_validation_service import (
             ConfigValidationService,
         )
@@ -249,8 +297,10 @@ class BootstrapContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_csv_validation_service(
-        logging_service, function_resolution_service, agent_registry_service
-    ):
+        logging_service: Any,
+        function_resolution_service: Any,
+        agent_registry_service: Any,
+    ) -> CSVValidationService:
         from agentmap.services.validation.csv_validation_service import (
             CSVValidationService,
         )
@@ -268,12 +318,12 @@ class BootstrapContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_validation_service(
-        app_config_service,
-        logging_service,
-        csv_validation_service,
-        config_validation_service,
-        validation_cache_service,
-    ):
+        app_config_service: Any,
+        logging_service: Any,
+        csv_validation_service: Any,
+        config_validation_service: Any,
+        validation_cache_service: Any,
+    ) -> ValidationService:
         from agentmap.services.validation.validation_service import ValidationService
 
         return ValidationService(

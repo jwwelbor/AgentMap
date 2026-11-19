@@ -96,7 +96,7 @@ class AnthropicBatchAdapter:
         """
         # F-HIGH-4: build sanitized id map; raises LLMServiceError on collision
         request_id_map = _build_request_id_map(specs, _CUSTOM_ID_RE)
-        requests = []
+        requests: List[Any] = []
 
         # CR5-2: guard against silent truncation if lists ever misalign
         if len(specs) != len(resolved_params):
@@ -157,8 +157,11 @@ class AnthropicBatchAdapter:
             )
 
         processing_status = getattr(batch, "processing_status", None)
+        processing_status_key = (
+            processing_status if isinstance(processing_status, str) else ""
+        )
         normalized_status = self._STATUS_MAP.get(
-            processing_status, LLMBatchStatus.FAILED
+            processing_status_key, LLMBatchStatus.FAILED
         )
 
         return BatchPollResult(
@@ -207,7 +210,8 @@ class AnthropicBatchAdapter:
         custom_to_spec: Dict[str, str] = {v: k for k, v in request_id_map.items()}
 
         for item in self._client.messages.batches.results(provider_batch_id):
-            custom_id = item.custom_id
+            custom_id_value = item.custom_id
+            custom_id = custom_id_value if isinstance(custom_id_value, str) else ""
             if custom_id not in custom_to_spec:
                 # TD-001/NB-3: the provider returned a custom_id that was never
                 # sent in this batch's request_id_map. Falling through to use
@@ -223,8 +227,7 @@ class AnthropicBatchAdapter:
                     custom_id,
                 )
             request_id = custom_to_spec.get(custom_id, custom_id)
-            result = item.result
-
+            result: Any = item.result
             if result.type == "succeeded":
                 msg = result.message
                 # Extract text content. Anthropic messages can legitimately

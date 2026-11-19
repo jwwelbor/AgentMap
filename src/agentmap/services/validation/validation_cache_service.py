@@ -2,7 +2,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from agentmap.models.validation.validation_models import ValidationResult
 
@@ -120,7 +120,11 @@ class ValidationCacheService:
 
     def _write_cache(self, result: ValidationResult) -> None:
         """Write validation result to cache file with proper JSON serialization."""
-        cache_file = self._get_cache_file_path(Path(result.file_path), result.file_hash)
+        file_hash = result.file_hash
+        if file_hash is None:
+            self.logger.warning("ValidationResult missing file_hash. Skipping cache.")
+            return
+        cache_file = self._get_cache_file_path(Path(result.file_path), file_hash)
 
         # Try different serialization methods for compatibility
         result_data = None
@@ -167,7 +171,7 @@ class ValidationCacheService:
             except Exception:
                 pass
 
-    def _convert_datetime_to_string(self, data):
+    def _convert_datetime_to_string(self, data: Any) -> Any:
         """Recursively convert datetime objects to ISO format strings."""
         if isinstance(data, datetime):
             return data.isoformat()
@@ -202,6 +206,12 @@ class ValidationCacheService:
             try:
                 with open(cache_file, "r") as f:
                     cache_data = json.load(f)
+                if not isinstance(cache_data, dict) or not isinstance(
+                    cache_data.get("cached_at"), str
+                ):
+                    cache_file.unlink(missing_ok=True)
+                    removed_count += 1
+                    continue
                 cached_time = datetime.fromisoformat(cache_data["cached_at"])
                 if datetime.now() - cached_time > self.max_age:
                     cache_file.unlink()
@@ -218,6 +228,11 @@ class ValidationCacheService:
             try:
                 with open(cache_file, "r") as f:
                     cache_data = json.load(f)
+                if not isinstance(cache_data, dict) or not isinstance(
+                    cache_data.get("cached_at"), str
+                ):
+                    stats["corrupted_files"] += 1
+                    continue
                 cached_time = datetime.fromisoformat(cache_data["cached_at"])
                 if datetime.now() - cached_time > self.max_age:
                     stats["expired_files"] += 1

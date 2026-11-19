@@ -2,13 +2,28 @@
 
 import pickle
 import time
-from typing import Any, Dict, Optional
+from logging import Logger
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from agentmap.models.human_interaction import HumanInteractionRequest
-from agentmap.services.storage.types import WriteMode
+from agentmap.models.storage.types import StorageResult, WriteMode
 
 
 class RequestOperationsMixin:
+    if TYPE_CHECKING:
+        logger: Logger
+        requests_collection: str
+        responses_collection: str
+
+        def _write_collection(
+            self,
+            collection: str,
+            data: Any,
+            document_id: Optional[str] = None,
+            mode: WriteMode = WriteMode.WRITE,
+            **kwargs: Any,
+        ) -> StorageResult[Any]: ...
+
     def _store_interaction_request(self, request: HumanInteractionRequest) -> None:
         request_data = {
             "id": str(request.id),

@@ -10,6 +10,9 @@ returning a dict that aliases (and can mutate) the caller's event.
 
 import unittest
 
+from agentmap.deployment.serverless.trigger_strategies.aws_eventbridge_timer_strategy import (
+    AwsEventBridgeTimerStrategy,
+)
 from agentmap.models.serverless_models import TriggerType
 from agentmap.services.serverless.trigger_parser import TriggerParser
 
@@ -129,6 +132,13 @@ class TestTriggerParserDefaultFallback(unittest.TestCase):
         _, data = self.parser.parse(event)
 
         self.assertEqual(data, {"raw": 42})
+
+
+class TestAwsEventBridgeTimerStrategy(unittest.TestCase):
+    def test_matches_returns_false_for_non_string_source(self):
+        strategy = AwsEventBridgeTimerStrategy()
+
+        self.assertFalse(strategy.matches({"source": ["aws.events"]}))
 
 
 if __name__ == "__main__":

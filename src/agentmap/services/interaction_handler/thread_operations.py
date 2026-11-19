@@ -2,16 +2,48 @@
 
 import pickle
 import time
-from typing import Any, Dict, Optional
+from logging import Logger
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, Optional, TypeGuard
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.human_interaction import HumanInteractionRequest
-from agentmap.services.storage.types import WriteMode
+from agentmap.models.storage.types import StorageResult, WriteMode
 
 from .bundle_utils import extract_bundle_info, extract_graph_name
 
 
+def _is_metadata_mapping(value: object) -> TypeGuard[Dict[str, Any]]:
+    return isinstance(value, dict) and all(isinstance(key, str) for key in value)
+
+
+def _deserialize_metadata(data: bytes) -> Dict[str, Any]:
+    metadata: object = pickle.loads(data)
+    if not _is_metadata_mapping(metadata):
+        raise ValueError("Thread metadata must be a string-keyed mapping")
+    return metadata
+
+
 class ThreadOperationsMixin:
+    if TYPE_CHECKING:
+        logger: Logger
+        threads_collection: str
+
+        def _write_collection(
+            self,
+            collection: str,
+            data: Any,
+            document_id: Optional[str] = None,
+            mode: WriteMode = WriteMode.WRITE,
+            **kwargs: Any,
+        ) -> StorageResult[Any]: ...
+
+        def _read_collection(
+            self, collection: str, document_id: Optional[str] = None, **kwargs: Any
+        ) -> Any: ...
+
+        def _find_legacy_thread_file(self, thread_id: str) -> Optional[Path]: ...
+
     def _store_thread_metadata_suspend_only(
         self,
         thread_id: str,
@@ -92,12 +124,14 @@ class ThreadOperationsMixin:
                 binary_mode=True,
             )
             if file_data:
-                return pickle.loads(file_data)
+                if not isinstance(file_data, bytes):
+                    raise TypeError("Stored thread metadata must be bytes")
+                return _deserialize_metadata(file_data)
             legacy_file = self._find_legacy_thread_file(thread_id)
             if legacy_file is None:
                 return None
             with legacy_file.open("rb") as f:
-                thread_data = pickle.load(f)
+                thread_data = _deserialize_metadata(f.read())
             self._write_collection(
                 collection=self.threads_collection,
                 data=pickle.dumps(thread_data),
@@ -130,7 +164,9 @@ class ThreadOperationsMixin:
                     return False
                 with legacy_file.open("rb") as f:
                     file_data = f.read()
-            thread_data = pickle.loads(file_data)
+            if not isinstance(file_data, bytes):
+                raise TypeError("Stored thread metadata must be bytes")
+            thread_data = _deserialize_metadata(file_data)
             thread_data["status"] = new_status
             thread_data["pending_interaction_id"] = None
             if additional_fields:
@@ -150,7 +186,7 @@ class ThreadOperationsMixin:
     def mark_thread_resuming(
         self, thread_id: str, last_response_id: Optional[str] = None
     ) -> bool:
-        fields = {"resumed_at": time.time()}
+        fields: Dict[str, Any] = {"resumed_at": time.time()}
         if last_response_id:
             fields["last_response_id"] = last_response_id
         return self._update_thread_status(thread_id, "resuming", fields)

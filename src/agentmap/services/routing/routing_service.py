@@ -33,7 +33,7 @@ __all__ = ["LLMRoutingService", "ActivityRoutingTable"]
 # Models known to NOT support vision/multimodal input.
 # All current routing-matrix models (Claude 3+, GPT-4o+, Gemini) support vision.
 # Populate this set with text-only model identifiers as needed.
-_NON_VISION_MODELS: frozenset = frozenset()
+_NON_VISION_MODELS: frozenset[str] = frozenset()
 
 
 class LLMRoutingService:
@@ -62,7 +62,7 @@ class LLMRoutingService:
         """
         self.routing_config = llm_routing_config_service
         self._logger = logging_service.get_class_logger(self)
-        self.cache = routing_cache
+        self.cache: Optional[RoutingCache] = routing_cache
 
         # Initialize components
         self.complexity_analyzer = prompt_complexity_analyzer
@@ -75,7 +75,7 @@ class LLMRoutingService:
         if self.routing_config.is_routing_cache_enabled():
             cache_size = self.routing_config.performance.get("max_cache_size", 1000)
             cache_ttl = self.routing_config.get_cache_ttl()
-            self.cache.update_cache_parameters(
+            routing_cache.update_cache_parameters(
                 max_size=cache_size, default_ttl=cache_ttl
             )
         else:
@@ -371,9 +371,6 @@ class LLMRoutingService:
             else:
                 complexity = self.complexity_analyzer.analyze_prompt_complexity(prompt)
 
-        if complexity is None:
-            return []
-
         complexity_key = str(complexity).lower()
         activity_table = ActivityRoutingTable(self.routing_config, self._logger)
         ordered: List[Dict[str, Any]] = []
@@ -541,7 +538,7 @@ class LLMRoutingService:
 
     def get_routing_stats(self) -> Dict[str, Any]:
         """Get routing service statistics."""
-        stats = self._routing_stats.copy()
+        stats: Dict[str, Any] = self._routing_stats.copy()
 
         if self.cache:
             stats["cache_stats"] = self.cache.get_stats()

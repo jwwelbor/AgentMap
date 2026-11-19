@@ -5,7 +5,8 @@ This module provides the base storage class and cleanup utilities
 for the host service registry.
 """
 
-from typing import Any, Dict, List, Type
+import logging
+from typing import Any, Dict, List
 
 
 class RegistryStorageMixin:
@@ -18,13 +19,19 @@ class RegistryStorageMixin:
     Requires the consuming class to have a `self.logger` attribute.
     """
 
+    logger: logging.Logger
+    _service_providers: Dict[str, Any]
+    _protocol_implementations: Dict[type[Any], str]
+    _service_metadata: Dict[str, Dict[str, Any]]
+    _protocol_cache: Dict[str, List[type[Any]]]
+
     def _init_storage(self) -> None:
         """Initialize all storage dictionaries for the registry."""
         # Core storage
         self._service_providers: Dict[str, Any] = {}
-        self._protocol_implementations: Dict[Type, str] = {}
+        self._protocol_implementations: Dict[type[Any], str] = {}
         self._service_metadata: Dict[str, Dict[str, Any]] = {}
-        self._protocol_cache: Dict[str, List[Type]] = {}
+        self._protocol_cache: Dict[str, List[type[Any]]] = {}
 
     def _cleanup_partial_registration(self, service_name: str) -> None:
         """

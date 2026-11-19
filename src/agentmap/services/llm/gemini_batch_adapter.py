@@ -30,7 +30,7 @@ Pattern mirrors ``openai_batch_adapter.py``.
 """
 
 from datetime import datetime
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional, Tuple, cast
 
 from agentmap.exceptions import LLMDependencyError, LLMServiceError
 from agentmap.models.llm_batch import BatchPollResult, LLMBatchResult, LLMBatchStatus
@@ -154,13 +154,15 @@ class GeminiBatchAdapter:
         # batch-level model after conflict resolution; per-spec overrides are
         # identical or absent in the resolved dict).
         batch_model = resolved_params[0].get("model") if resolved_params else None
+        if not isinstance(batch_model, str) or not batch_model:
+            raise LLMServiceError("Gemini batch requires a non-empty model.")
         src = self._build_src(specs, resolved_params, batch_model)
 
         # Real SDK: create(*, model, src, config=None)
         # NOT create(model=, requests=) — the old shape does not exist.
         response = self._client.batches.create(
             model=batch_model,
-            src=src,
+            src=cast(Any, src),
         )
 
         provider_batch_id = getattr(response, "name", None)
@@ -272,8 +274,11 @@ class GeminiBatchAdapter:
         state_obj = getattr(job, "state", None)
         # state is an enum; .name gives the JOB_STATE_* string
         raw_state = getattr(state_obj, "name", None) if state_obj is not None else None
-        normalized_status = self._STATUS_MAP.get(raw_state, LLMBatchStatus.FAILED)
-        if raw_state not in self._STATUS_MAP:
+        raw_state_name = raw_state if isinstance(raw_state, str) else None
+        normalized_status = self._STATUS_MAP.get(
+            raw_state_name or "", LLMBatchStatus.FAILED
+        )
+        if raw_state_name not in self._STATUS_MAP:
             self._logger.warning(
                 "GeminiBatchAdapter.poll: unknown state %r for batch %s — "
                 "mapping to FAILED",

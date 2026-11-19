@@ -5,11 +5,18 @@ This module provides an Azure-specific implementation of the CloudMessageAdapter
 interface for publishing messages to Azure Service Bus topics or queues.
 """
 
+from __future__ import annotations
+
+import importlib
 import json
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from agentmap.exceptions import MessagingConnectionError
 from agentmap.models.storage.types import StorageResult
+from agentmap.services.logging_service import TraceLogger
+
+if TYPE_CHECKING:
+    from agentmap.services.messaging.messaging_service import CloudProvider
 
 
 class AzureMessageAdapter:
@@ -20,7 +27,7 @@ class AzureMessageAdapter:
     Azure Service Bus, supporting both topics and queues.
     """
 
-    def __init__(self, config: Dict[str, Any], logger):
+    def __init__(self, config: Dict[str, Any], logger: TraceLogger) -> None:
         """
         Initialize the Azure messaging adapter.
 
@@ -30,7 +37,7 @@ class AzureMessageAdapter:
         """
         self.config = config or {}
         self.logger = logger
-        self._client = None
+        self._client: Any = None
         self.connection_string = None
         self.service_type = None  # 'topic' or 'queue'
 
@@ -47,7 +54,8 @@ class AzureMessageAdapter:
         try:
             # Import Azure SDK
             try:
-                from azure.servicebus import ServiceBusClient
+                service_bus = importlib.import_module("azure.servicebus")
+                ServiceBusClient = service_bus.ServiceBusClient
             except ImportError:
                 raise MessagingConnectionError(
                     "Azure Service Bus SDK not installed. "
@@ -95,7 +103,7 @@ class AzureMessageAdapter:
         topic: str,
         message: Dict[str, Any],
         attributes: Optional[Dict[str, str]] = None,
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """
         Publish a message to Azure Service Bus topic or queue.
 
@@ -132,10 +140,11 @@ class AzureMessageAdapter:
         topic: str,
         message: Dict[str, Any],
         attributes: Optional[Dict[str, str]] = None,
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """Publish message to Service Bus topic."""
         try:
-            from azure.servicebus import ServiceBusMessage
+            service_bus = importlib.import_module("azure.servicebus")
+            ServiceBusMessage = service_bus.ServiceBusMessage
 
             # Prepare message
             message_body = json.dumps(message)
@@ -176,10 +185,11 @@ class AzureMessageAdapter:
         queue: str,
         message: Dict[str, Any],
         attributes: Optional[Dict[str, str]] = None,
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """Publish message to Service Bus queue."""
         try:
-            from azure.servicebus import ServiceBusMessage
+            service_bus = importlib.import_module("azure.servicebus")
+            ServiceBusMessage = service_bus.ServiceBusMessage
 
             # Prepare message
             message_body = json.dumps(message)
@@ -215,7 +225,7 @@ class AzureMessageAdapter:
                 operation="publish_message",
             )
 
-    async def create_topic(self, topic_name: str) -> StorageResult:
+    async def create_topic(self, topic_name: str) -> StorageResult[Any]:
         """
         Create a topic/queue if it doesn't exist.
 
@@ -249,7 +259,7 @@ class AzureMessageAdapter:
                 operation="create_topic",
             )
 
-    async def _create_topic_entity(self, topic_name: str) -> StorageResult:
+    async def _create_topic_entity(self, topic_name: str) -> StorageResult[Any]:
         """Create Service Bus topic."""
         try:
             # Note: Topic creation requires management operations
@@ -278,7 +288,7 @@ class AzureMessageAdapter:
                 operation="create_topic",
             )
 
-    async def _create_queue_entity(self, queue_name: str) -> StorageResult:
+    async def _create_queue_entity(self, queue_name: str) -> StorageResult[Any]:
         """Create Service Bus queue."""
         try:
             # Note: Queue creation requires management operations
@@ -307,7 +317,7 @@ class AzureMessageAdapter:
                 operation="create_topic",
             )
 
-    def get_provider(self):
+    def get_provider(self) -> CloudProvider:
         """Get the cloud provider type."""
         from agentmap.services.messaging.messaging_service import CloudProvider
 

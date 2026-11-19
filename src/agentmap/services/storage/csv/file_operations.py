@@ -5,7 +5,7 @@ Handles low-level file I/O operations for CSV storage.
 """
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
@@ -42,8 +42,8 @@ class CSVFileOperations:
         file_path: str,
         encoding: str,
         default_options: Dict[str, Any],
-        logger=None,
-        **kwargs,
+        logger: Optional[Any] = None,
+        **kwargs: Any,
     ) -> pd.DataFrame:
         """
         Read CSV file with error handling.
@@ -88,9 +88,9 @@ class CSVFileOperations:
         file_path: str,
         encoding: str,
         mode: str = "w",
-        base_directory: str = None,
-        logger=None,
-        **kwargs,
+        base_directory: Optional[str] = None,
+        logger: Optional[Any] = None,
+        **kwargs: Any,
     ) -> None:
         """
         Write DataFrame to CSV file.

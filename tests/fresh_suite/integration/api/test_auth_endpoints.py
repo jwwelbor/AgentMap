@@ -214,6 +214,28 @@ class TestAuthenticationEndpoints(BaseAPIIntegrationTest):
             else:
                 delattr(self.app.state, "container")
 
+    def test_api_key_with_null_permissions_is_authenticated_without_access(self):
+        """Explicit null permissions normalize safely and grant no permissions."""
+        auth_service = self.create_auth_service_with_config(
+            {
+                "enabled": True,
+                "api_keys": {
+                    "null-permissions": {
+                        "key": self.valid_api_key,
+                        "permissions": None,
+                        "metadata": None,
+                    }
+                },
+            }
+        )
+
+        auth_context = auth_service.validate_api_key(self.valid_api_key)
+
+        self.assertTrue(auth_context.authenticated)
+        self.assertEqual(auth_context.permissions, [])
+        self.assertEqual(auth_context.metadata, {})
+        self.assertFalse(auth_service.validate_permissions(auth_context, ["read"]))
+
     def test_api_key_authentication_failure(self):
         """Test API key authentication failure."""
         # Create auth service with valid API key (but we'll test with invalid one)

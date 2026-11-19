@@ -6,14 +6,20 @@ interface for testing and development purposes. Messages are stored as JSON file
 in a local directory structure.
 """
 
+from __future__ import annotations
+
 import json
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, cast
 
 from agentmap.exceptions import MessagingConnectionError
 from agentmap.models.storage.types import StorageResult
+
+if TYPE_CHECKING:
+    from agentmap.services.messaging.messaging_service import CloudProvider
 
 
 class LocalMessageAdapter:
@@ -25,7 +31,7 @@ class LocalMessageAdapter:
     in a directory structure organized by topic.
     """
 
-    def __init__(self, config: Dict[str, Any], logger):
+    def __init__(self, config: Dict[str, Any], logger: logging.Logger):
         """
         Initialize the local messaging adapter.
 
@@ -35,7 +41,7 @@ class LocalMessageAdapter:
         """
         self.config = config or {}
         self.logger = logger
-        self.storage_path = None
+        self.storage_path: Path = Path("data/messages").resolve()
 
         # Initialize storage
         self._initialize_storage()
@@ -49,10 +55,9 @@ class LocalMessageAdapter:
         """
         try:
             # Get storage path from config
-            self.storage_path = self.config.get("storage_path", "data/messages")
-
-            # Convert to Path object for easier manipulation
-            self.storage_path = Path(self.storage_path).resolve()
+            self.storage_path = Path(
+                self.config.get("storage_path", "data/messages")
+            ).resolve()
 
             # Create storage directory if it doesn't exist
             try:
@@ -86,7 +91,7 @@ class LocalMessageAdapter:
         topic: str,
         message: Dict[str, Any],
         attributes: Optional[Dict[str, str]] = None,
-    ) -> StorageResult:
+    ) -> StorageResult[Dict[str, Any]]:
         """
         Publish a message to local storage.
 
@@ -159,7 +164,7 @@ class LocalMessageAdapter:
                 operation="publish_message",
             )
 
-    async def create_topic(self, topic_name: str) -> StorageResult:
+    async def create_topic(self, topic_name: str) -> StorageResult[Dict[str, Any]]:
         """
         Create a topic directory if it doesn't exist.
 
@@ -218,7 +223,7 @@ class LocalMessageAdapter:
             List of topic names
         """
         try:
-            topics = []
+            topics: list[str] = []
             if self.storage_path.exists():
                 for item in self.storage_path.iterdir():
                     if item.is_dir() and not item.name.startswith("."):
@@ -246,7 +251,7 @@ class LocalMessageAdapter:
             if not topic_dir.exists():
                 return []
 
-            messages = []
+            messages: list[Dict[str, Any]] = []
             message_files = sorted(
                 [
                     f
@@ -266,6 +271,11 @@ class LocalMessageAdapter:
                 try:
                     with open(message_file, "r", encoding="utf-8") as f:
                         message_data = json.load(f)
+                        if not isinstance(message_data, dict):
+                            self.logger.warning(
+                                "Ignoring non-object message file %s", message_file
+                            )
+                            continue
                         messages.append(
                             {
                                 "message_id": message_data.get("message_id"),
@@ -309,8 +319,11 @@ class LocalMessageAdapter:
                     try:
                         with open(message_file, "r", encoding="utf-8") as f:
                             message_data = json.load(f)
-                            if message_data.get("message_id") == message_id:
-                                return message_data
+                            if (
+                                isinstance(message_data, dict)
+                                and message_data.get("message_id") == message_id
+                            ):
+                                return cast(Dict[str, Any], message_data)
                     except Exception as e:
                         self.logger.warning(
                             f"Failed to read message file {message_file}: {str(e)}"
@@ -333,7 +346,7 @@ class LocalMessageAdapter:
             Storage information dictionary
         """
         try:
-            info = {
+            info: Dict[str, Any] = {
                 "storage_path": str(self.storage_path),
                 "topics": [],
                 "total_messages": 0,
@@ -343,7 +356,7 @@ class LocalMessageAdapter:
             if self.storage_path.exists():
                 for topic_dir in self.storage_path.iterdir():
                     if topic_dir.is_dir() and not topic_dir.name.startswith("."):
-                        topic_info = {
+                        topic_info: Dict[str, Any] = {
                             "name": topic_dir.name,
                             "message_count": 0,
                             "size_bytes": 0,
@@ -408,7 +421,7 @@ class LocalMessageAdapter:
             self.logger.error(f"Failed to cleanup messages for topic {topic}: {str(e)}")
             return 0
 
-    def get_provider(self):
+    def get_provider(self) -> CloudProvider:
         """Get the cloud provider type."""
         from agentmap.services.messaging.messaging_service import CloudProvider
 

@@ -7,8 +7,10 @@ from typing import Any, Dict, Optional
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.services.prompt_manager_service import PromptManagerService
-from agentmap.services.protocols import PromptCapableAgent
+from agentmap.services.protocols import (
+    PromptCapableAgent,
+    PromptManagerServiceProtocol,
+)
 from agentmap.services.state_adapter_service import StateAdapterService
 
 
@@ -52,9 +54,14 @@ class EchoAgent(BaseAgent, PromptCapableAgent):
             execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
         )
+        self.prompt_service: Optional[PromptManagerServiceProtocol] = None
 
-    def configure_prompt_service(self, prompt_service):
-        self.prompt_service: PromptManagerService = prompt_service
+    def configure_prompt_service(
+        self, prompt_service: PromptManagerServiceProtocol
+    ) -> None:
+        if not callable(getattr(prompt_service, "format_prompt", None)):
+            raise TypeError("Prompt service must provide format_prompt")
+        self.prompt_service = prompt_service
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """
@@ -69,6 +76,8 @@ class EchoAgent(BaseAgent, PromptCapableAgent):
         if (
             self.prompt and self.prompt.find("{") != -1
         ):  # if there's a prompt with mustache
+            if self.prompt_service is None:
+                raise RuntimeError("Prompt service is not configured")
             result = self.prompt_service.format_prompt(self.prompt, inputs)
             self.log_info(result)
             return result

@@ -1,6 +1,6 @@
 """State schema builder for graph assembly."""
 
-from typing import Any, Optional, TypedDict
+from typing import Any, Optional, Type, TypedDict, cast
 
 from agentmap.models.graph import Graph
 from agentmap.services.config.app_config_service import AppConfigService
@@ -26,7 +26,7 @@ class StateSchemaBuilder:
         self.config = app_config_service
         self.logger = logging_service.get_class_logger(self)
 
-    def get_state_schema_from_config(self):
+    def get_state_schema_from_config(self) -> Type[Any]:
         """Get state schema from configuration."""
         try:
             execution_config = self.config.get_execution_config()
@@ -55,18 +55,19 @@ class StateSchemaBuilder:
             )
             return dict
 
-    def create_dynamic_state_schema(self, graph: Graph) -> type:
+    def create_dynamic_state_schema(self, graph: Graph) -> Type[Any]:
         """Create a TypedDict state schema dynamically from graph structure."""
         field_names = set()
         for node in graph.nodes.values():
             if node.output:
                 field_names.add(node.output)
-            if node.inputs:
-                if isinstance(node.inputs, list):
-                    for field in node.inputs:
+            inputs: Any = node.inputs
+            if inputs:
+                if isinstance(inputs, list):
+                    for field in inputs:
                         field_names.add(self._extract_state_key(field, node.name))
-                elif isinstance(node.inputs, str):
-                    field_names.add(self._extract_state_key(node.inputs, node.name))
+                elif isinstance(inputs, str):
+                    field_names.add(self._extract_state_key(inputs, node.name))
 
         field_names.update(self._SYSTEM_FIELDS)
 
@@ -74,7 +75,11 @@ class StateSchemaBuilder:
             return dict
 
         state_fields = {name: Any for name in field_names}
-        return TypedDict(f"{graph.name}State", state_fields, total=False)
+        typed_dict_factory: Any = TypedDict
+        dynamic_schema = typed_dict_factory(
+            f"{graph.name}State", state_fields, total=False
+        )
+        return cast(Type[Any], dynamic_schema)
 
     def _extract_state_key(self, field: str, node_name: str) -> str:
         """Extract the state-side key from a field string, validating mapped syntax.
@@ -133,7 +138,7 @@ class StateSchemaBuilder:
 
         return source_key
 
-    def get_schema_for_graph(self, graph: Optional[Graph] = None) -> type:
+    def get_schema_for_graph(self, graph: Optional[Graph] = None) -> Type[Any]:
         """Get the appropriate state schema for a graph."""
         if graph is not None:
             try:

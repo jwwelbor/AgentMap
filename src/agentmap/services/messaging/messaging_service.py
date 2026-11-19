@@ -1,5 +1,6 @@
 # src/agentmap/services/messaging_service.py
 
+import importlib
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol
@@ -39,11 +40,11 @@ class CloudMessageAdapter(Protocol):
         topic: str,
         message: Dict[str, Any],
         attributes: Optional[Dict[str, str]] = None,
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """Publish message to cloud topic."""
         ...
 
-    async def create_topic(self, topic_name: str) -> StorageResult:
+    async def create_topic(self, topic_name: str) -> StorageResult[Any]:
         """Create topic if it doesn't exist."""
         ...
 
@@ -83,24 +84,27 @@ class MessagingService:
 
     def _load_messaging_config(self) -> Dict[str, Any]:
         """Load messaging configuration from app config."""
+        default_config = {
+            "default_provider": "local",
+            "providers": {"local": {"enabled": True, "storage_path": "data/messages"}},
+            "message_templates": {},
+            "retry_policy": {"max_retries": 3, "backoff_seconds": [1, 2, 4]},
+        }
         try:
-            config = self.config.get_messaging_config()
+            config = self.config.get_section("messaging", {})
             if not config:
-                # Default configuration
-                config = {
-                    "default_provider": "local",
-                    "providers": {
-                        "local": {"enabled": True, "storage_path": "data/messages"}
-                    },
-                    "message_templates": {},
-                    "retry_policy": {"max_retries": 3, "backoff_seconds": [1, 2, 4]},
-                }
+                return default_config
+            if not isinstance(config, dict):
+                self.logger.warning(
+                    "Messaging configuration must be a mapping, using defaults"
+                )
+                return default_config
             return config
         except Exception as e:
             self.logger.warning(f"Failed to load messaging config: {e}, using defaults")
             return {}
 
-    def _initialize_adapters(self):
+    def _initialize_adapters(self) -> None:
         """Initialize cloud-specific adapters based on configuration and availability."""
         providers_config = self.messaging_config.get("providers", {})
 
@@ -156,7 +160,7 @@ class MessagingService:
         )
 
         if cached_result is not None:
-            return cached_result.get("available", False)
+            return bool(cached_result.get("available", False))
 
         # Not in cache, perform actual check
         try:
@@ -188,13 +192,12 @@ class MessagingService:
             return self._check_azure_availability()
         elif provider == CloudProvider.LOCAL:
             return True  # Local always available
-        return False
 
     @staticmethod
     def _check_gcp_availability() -> bool:
         """Check if GCP messaging SDK is available."""
         try:
-            import google.cloud.pubsub_v1  # noqa: F401
+            importlib.import_module("google.cloud.pubsub_v1")
 
             return True
         except ImportError:
@@ -204,7 +207,7 @@ class MessagingService:
     def _check_aws_availability() -> bool:
         """Check if AWS messaging SDK is available."""
         try:
-            import boto3  # noqa: F401
+            importlib.import_module("boto3")
 
             return True
         except ImportError:
@@ -214,7 +217,7 @@ class MessagingService:
     def _check_azure_availability() -> bool:
         """Check if Azure messaging SDK is available."""
         try:
-            import azure.servicebus  # noqa: F401
+            importlib.import_module("azure.servicebus")
 
             return True
         except ImportError:
@@ -252,8 +255,6 @@ class MessagingService:
             self.logger.error(f"Failed to create {provider.value} adapter: {e}")
             return None
 
-        return None
-
     async def publish_message(
         self,
         topic: str,
@@ -263,7 +264,7 @@ class MessagingService:
         provider: Optional[CloudProvider] = None,
         priority: MessagePriority = MessagePriority.NORMAL,
         thread_id: Optional[str] = None,
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """
         Publish a message to a cloud topic.
 
@@ -351,7 +352,7 @@ class MessagingService:
         topic: str,
         message: Dict[str, Any],
         attributes: Dict[str, str],
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """Publish message with retry logic."""
         retry_config = self.messaging_config.get("retry_policy", {})
         max_retries = retry_config.get("max_retries", 3)
@@ -410,7 +411,7 @@ class MessagingService:
         templates = self.messaging_config.get("message_templates", {})
         template = templates.get(template_name)
 
-        if not template:
+        if not isinstance(template, dict):
             self.logger.warning(f"Template '{template_name}' not found")
             return variables
 
@@ -420,7 +421,7 @@ class MessagingService:
 
         result = copy.deepcopy(template)
 
-        def replace_vars(obj):
+        def replace_vars(obj: Any) -> Any:
             """Recursively replace template variables."""
             if isinstance(obj, str):
                 template_obj = string.Template(obj)
@@ -431,7 +432,8 @@ class MessagingService:
                 return [replace_vars(item) for item in obj]
             return obj
 
-        return replace_vars(result)
+        replaced = replace_vars(result)
+        return replaced if isinstance(replaced, dict) else variables
 
     def get_service_info(self) -> Dict[str, Any]:
         """Get service information for debugging."""

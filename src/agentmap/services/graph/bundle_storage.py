@@ -1,7 +1,7 @@
 # services/graph/bundle_storage.py
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.config.app_config_service import AppConfigService
@@ -42,7 +42,9 @@ class BundleStorage:
         self.file_path_service = file_path_service
         self.app_config_service = app_config_service
 
-    def save_bundle(self, bundle: GraphBundle, path: Path) -> Optional[StorageResult]:
+    def save_bundle(
+        self, bundle: GraphBundle, path: Path
+    ) -> Optional[StorageResult[Any]]:
         """Persist the bundle to disk in appropriate format.
 
         Saves metadata-only bundles as JSON. Uses SystemStorageManager for system bundles
@@ -193,7 +195,7 @@ class BundleStorage:
             return False
 
         try:
-            cache_folder = Path(self.app_config_service.get_cache_folder())
+            cache_folder = self.app_config_service.get_cache_path()
             return cache_folder in path.parents or path.parent == cache_folder
         except Exception as e:
             self.logger.debug(f"Could not determine if path is in cache folder: {e}")

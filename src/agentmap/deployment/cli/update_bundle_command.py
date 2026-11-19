@@ -37,7 +37,7 @@ def update_bundle_command(
     force: bool = typer.Option(
         False, "--force", help="Force update even if no changes detected"
     ),
-):
+) -> None:
     """
     Update existing bundle with current agent declaration mappings.
 

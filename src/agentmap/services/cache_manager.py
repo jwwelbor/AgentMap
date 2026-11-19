@@ -2,11 +2,20 @@
 
 from typing import Any, Dict, Optional
 
+from agentmap.services.config.availability_cache_service import (
+    AvailabilityCacheService,
+)
+from agentmap.services.logging_service import TraceLogger
+
 
 class CacheHelper:
     """Helper class for cache operations in dependency checking."""
 
-    def __init__(self, logger, availability_cache=None):
+    def __init__(
+        self,
+        logger: TraceLogger,
+        availability_cache: Optional[AvailabilityCacheService] = None,
+    ) -> None:
         """Initialize cache helper with logger and optional cache service."""
         self.logger = logger
         self.availability_cache = availability_cache
@@ -15,7 +24,7 @@ class CacheHelper:
         self, category: str, key: str
     ) -> Optional[Dict[str, Any]]:
         """Get cached availability using unified cache service."""
-        if not self.availability_cache:
+        if self.availability_cache is None:
             return None
 
         try:
@@ -30,7 +39,7 @@ class CacheHelper:
         self, category: str, key: str, result: Dict[str, Any]
     ) -> bool:
         """Set cached availability using unified cache service."""
-        if not self.availability_cache:
+        if self.availability_cache is None:
             return False
 
         try:
@@ -41,14 +50,14 @@ class CacheHelper:
             )
             return False
 
-    def clear_dependency_cache(self, dependency_group: Optional[str] = None):
+    def clear_dependency_cache(self, dependency_group: Optional[str] = None) -> None:
         """
         Clear dependency cache for specific group or all dependencies.
 
         Args:
             dependency_group: Optional specific dependency group to clear
         """
-        if self.availability_cache:
+        if self.availability_cache is not None:
             if dependency_group is None:
                 # Clear all dependency-related cache
                 self.availability_cache.invalidate_cache("dependency")
@@ -74,9 +83,9 @@ class CacheHelper:
                 "[CacheHelper] No availability cache available to clear"
             )
 
-    def invalidate_environment_cache(self):
+    def invalidate_environment_cache(self) -> None:
         """Invalidate cache due to environment changes."""
-        if self.availability_cache:
+        if self.availability_cache is not None:
             self.availability_cache.invalidate_environment_cache()
             self.logger.info(
                 "[CacheHelper] Invalidated availability cache due to environment changes"
@@ -88,7 +97,7 @@ class CacheHelper:
 
     def get_cache_status(self) -> Dict[str, Any]:
         """Get availability cache status and statistics."""
-        if not self.availability_cache:
+        if self.availability_cache is None:
             return {
                 "cache_available": False,
                 "error": "Availability cache not initialized",

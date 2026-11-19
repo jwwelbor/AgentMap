@@ -5,7 +5,7 @@ This module provides fallback strategy management for when preferred
 providers are unavailable or routing fails.
 """
 
-from typing import List
+from typing import Any, Callable, List, Optional
 
 from agentmap.exceptions.service_exceptions import LLMConfigurationError
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
@@ -35,7 +35,7 @@ class FallbackHandler:
     def __init__(
         self,
         routing_config: LLMRoutingConfigService,
-        logger,
+        logger: Any,
     ):
         """
         Initialize the fallback handler.
@@ -53,7 +53,9 @@ class FallbackHandler:
         task_type: str,
         complexity: TaskComplexity,
         routing_context: RoutingContext,
-        select_from_preferred_providers,
+        select_from_preferred_providers: Callable[
+            [List[str], str, TaskComplexity], Optional[RoutingDecision]
+        ],
     ) -> RoutingDecision:
         """
         Apply fallback strategy when preferred providers unavailable.

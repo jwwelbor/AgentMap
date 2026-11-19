@@ -7,6 +7,8 @@ for in-memory document collections.
 
 from typing import Any, Dict
 
+from agentmap.services.storage.sort_utils import get_sort_options, stable_sort_key
+
 
 class QueryEngine:
     """
@@ -71,8 +73,9 @@ class QueryEngine:
         # Extract special query parameters
         limit = query_copy.pop("limit", None)
         offset = query_copy.pop("offset", 0)
-        sort_field = query_copy.pop("sort", None)
-        sort_order = query_copy.pop("order", "asc").lower()
+        sort_field, reverse = get_sort_options(
+            query_copy.pop("sort", None), query_copy.pop("order", "asc")
+        )
 
         # Apply field filtering using helper method
         filtered_data = QueryEngine._filter_by_fields(data, query_copy)
@@ -82,9 +85,10 @@ class QueryEngine:
 
         # Apply sorting
         if sort_field:
-            reverse = sort_order == "desc"
             items.sort(
-                key=lambda x: x[1].get(sort_field) if isinstance(x[1], dict) else None,
+                key=lambda x: stable_sort_key(
+                    x[1].get(sort_field) if isinstance(x[1], dict) else None
+                ),
                 reverse=reverse,
             )
 

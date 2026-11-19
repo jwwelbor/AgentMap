@@ -216,7 +216,7 @@ class ComplexitySignal:
     reasoning: str  # Human-readable explanation
     source: str  # Which analyzer produced this signal
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate signal data."""
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError(

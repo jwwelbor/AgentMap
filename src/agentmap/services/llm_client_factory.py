@@ -5,6 +5,7 @@ Handles the creation of provider-specific LangChain clients (OpenAI, Anthropic, 
 with proper dependency management and client caching.
 """
 
+import importlib
 from threading import RLock
 from typing import Any, Callable, Dict
 
@@ -150,9 +151,12 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         owner: ObservedResources | None = None,
     ) -> Any:
         """Build OpenAI client, with streaming usage or governed observation."""
+        client_class: Any
         try:
             # Try the new langchain-openai package first
             from langchain_openai import ChatOpenAI
+
+            client_class = ChatOpenAI
         except ImportError:
             if governed:
                 raise LLMDependencyError(
@@ -160,12 +164,14 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 )
             # Fall back to legacy import
             try:
-                from langchain.chat_models import ChatOpenAI
+                client_class = getattr(
+                    importlib.import_module("langchain.chat_models"), "ChatOpenAI"
+                )
 
                 self._logger.warning(
                     "Using deprecated LangChain import. Consider upgrading to langchain-openai."
                 )
-            except ImportError:
+            except (ImportError, AttributeError):
                 raise LLMDependencyError(
                     "OpenAI dependencies not found. Install with: pip install langchain-openai"
                 )
@@ -181,7 +187,37 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
             kwargs["max_tokens"] = max_tokens
         if streaming:
             kwargs["stream_options"] = {"include_usage": True}
-        return ChatOpenAI(**kwargs)
+        return client_class(**kwargs)
+
+    def _load_anthropic_client_class(self) -> Any:
+        try:
+            from langchain_anthropic import ChatAnthropic
+
+            return ChatAnthropic
+        except ImportError:
+            try:
+                client_class = getattr(
+                    importlib.import_module("langchain_community.chat_models"),
+                    "ChatAnthropic",
+                )
+                self._logger.warning(
+                    "Using community LangChain import. Consider upgrading to langchain-anthropic."
+                )
+                return client_class
+            except (ImportError, AttributeError):
+                try:
+                    client_class = getattr(
+                        importlib.import_module("langchain.chat_models"),
+                        "ChatAnthropic",
+                    )
+                    self._logger.warning(
+                        "Using legacy LangChain import. Please upgrade your dependencies."
+                    )
+                    return client_class
+                except (ImportError, AttributeError):
+                    raise LLMDependencyError(
+                        "Anthropic dependencies not found. Install with: pip install langchain-anthropic"
+                    )
 
     def _create_anthropic_client(
         self,
@@ -207,29 +243,8 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         if governed:
             return observed_anthropic_client(kwargs, owner)
 
-        try:
-            # Try langchain-anthropic first
-            from langchain_anthropic import ChatAnthropic
-        except ImportError:
-            try:
-                from langchain_community.chat_models import ChatAnthropic
-
-                self._logger.warning(
-                    "Using community LangChain import. Consider upgrading to langchain-anthropic."
-                )
-            except ImportError:
-                try:
-                    from langchain.chat_models import ChatAnthropic
-
-                    self._logger.warning(
-                        "Using legacy LangChain import. Please upgrade your dependencies."
-                    )
-                except ImportError:
-                    raise LLMDependencyError(
-                        "Anthropic dependencies not found. Install with: pip install langchain-anthropic"
-                    )
-
-        return ChatAnthropic(**kwargs)
+        client_class = self._load_anthropic_client_class()
+        return client_class(**kwargs)
 
     def _create_google_client(
         self,
@@ -243,9 +258,12 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         owner: ObservedResources | None = None,
     ) -> Any:
         """Build Google client; streaming has no verified usage opt-in."""
+        client_class: Any
         try:
             # Try langchain-google-genai first
             from langchain_google_genai import ChatGoogleGenerativeAI
+
+            client_class = ChatGoogleGenerativeAI
         except ImportError:
             if governed:
                 raise LLMDependencyError(
@@ -253,12 +271,15 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 )
             try:
                 # Fall back to community package
-                from langchain_community.chat_models import ChatGoogleGenerativeAI
+                client_class = getattr(
+                    importlib.import_module("langchain_community.chat_models"),
+                    "ChatGoogleGenerativeAI",
+                )
 
                 self._logger.warning(
                     "Using community LangChain import. Consider upgrading to langchain-google-genai."
                 )
-            except ImportError:
+            except (ImportError, AttributeError):
                 raise LLMDependencyError(
                     "Google dependencies not found. Install with: pip install langchain-google-genai"
                 )
@@ -272,7 +293,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
             kwargs.update(governed_google_kwargs(owner))
         if max_tokens is not None:
             kwargs["max_output_tokens"] = max_tokens
-        return ChatGoogleGenerativeAI(**kwargs)
+        return client_class(**kwargs)
 
     def clear_cache(self) -> None:
         """Clear the client cache."""

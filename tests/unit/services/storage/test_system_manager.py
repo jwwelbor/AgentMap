@@ -154,6 +154,20 @@ class TestSystemStorageManager(unittest.TestCase):
         # Verify service has correct configuration
         self.assertIsNotNone(json_service)
 
+    def test_system_services_initialize_from_inline_configuration(self):
+        """System JSON and file services accept their inline config mappings."""
+        json_service = self.service.get_json_storage("json_config")
+        file_service = self.service.get_file_storage("file_config")
+
+        self.assertEqual(
+            json_service.client["base_directory"],
+            str(Path(self.cache_folder) / "json_config"),
+        )
+        self.assertEqual(
+            file_service.client["base_directory"],
+            str(Path(self.cache_folder) / "file_config"),
+        )
+
     def test_different_service_types_same_namespace(self):
         """Test different service types in same namespace."""
         namespace = "shared"

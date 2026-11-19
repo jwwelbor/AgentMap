@@ -1,4 +1,5 @@
 import json
+from collections.abc import Mapping
 from typing import Any, Dict
 
 
@@ -12,21 +13,27 @@ class RequestParser:
             return {}
 
         try:
-            return json.loads(body)
+            parsed = json.loads(body)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in request body: {e}")
+        if not isinstance(parsed, dict):
+            raise ValueError("Request body JSON must be an object")
+        return parsed
 
     @staticmethod
     def extract_query_params(event: Dict[str, Any]) -> Dict[str, Any]:
         """Extract query parameters from event."""
-        return event.get("queryStringParameters") or {}
+        params = event.get("queryStringParameters")
+        return dict(params) if isinstance(params, Mapping) else {}
 
     @staticmethod
     def extract_path_params(event: Dict[str, Any]) -> Dict[str, Any]:
         """Extract path parameters from event."""
-        return event.get("pathParameters") or {}
+        params = event.get("pathParameters")
+        return dict(params) if isinstance(params, Mapping) else {}
 
     @staticmethod
     def get_http_method(event: Dict[str, Any]) -> str:
         """Get HTTP method from event."""
-        return event.get("httpMethod", "POST").upper()
+        method = event.get("httpMethod", "POST")
+        return method.upper() if isinstance(method, str) else "POST"

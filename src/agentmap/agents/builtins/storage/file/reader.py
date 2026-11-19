@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent,
@@ -18,6 +18,9 @@ from agentmap.models.storage import DocumentResult
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import FileCapableAgent
 from agentmap.services.state_adapter_service import StateAdapterService
+
+if TYPE_CHECKING:
+    from agentmap.services.storage.file_service import FileStorageService
 
 
 class FileReaderAgent(BaseStorageAgent, FileCapableAgent):
@@ -68,13 +71,13 @@ class FileReaderAgent(BaseStorageAgent, FileCapableAgent):
 
         # FileCapableAgent protocol requirement - will be set via dependency injection
         # or initialized in _initialize_client()
-        self.file_service = None
+        self.file_service: Optional[FileStorageService] = None
 
         # For testing - allows a test to inject a mock loader
         self._test_loader = None
 
     # Protocol Implementation (Required by FileCapableAgent)
-    def configure_file_service(self, file_service) -> None:
+    def configure_file_service(self, file_service: FileStorageService) -> None:
         """
         Configure file storage service for this agent.
 
@@ -146,6 +149,8 @@ class FileReaderAgent(BaseStorageAgent, FileCapableAgent):
         path = inputs.get("path")
         output_format = inputs.get("format", "default")
         # Call the FileStorageService read method
+        if self.file_service is None:
+            raise ValueError(f"File service not configured for agent '{self.name}'")
         result = self.file_service.read(
             collection=collection,
             document_id=document_id,
@@ -157,7 +162,7 @@ class FileReaderAgent(BaseStorageAgent, FileCapableAgent):
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Handle file read operation errors.
 

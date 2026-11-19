@@ -63,7 +63,7 @@ class LLMProviderUtils:
         """
         config = self.configuration.get_llm_config(provider)
 
-        if not config:
+        if not isinstance(config, dict) or not config:
             raise LLMConfigurationError(
                 f"No configuration found for provider: {provider}"
             )

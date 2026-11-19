@@ -8,7 +8,7 @@ generating detailed validation results with errors and warnings.
 from collections import defaultdict
 from difflib import get_close_matches
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
@@ -25,7 +25,10 @@ except ImportError:
     _KNOWN_AGENT_TYPES = None
 
 if TYPE_CHECKING:
-    from agentmap.services.logging_service import LoggingService
+    from agentmap.services.logging_service import TraceLogger
+
+EdgeReference = Tuple[int, str, str, List[str]]
+AgentTypeReference = Tuple[int, str]
 
 
 class CSVStructureValidator:
@@ -36,7 +39,7 @@ class CSVStructureValidator:
     checking structure, required columns, and row content.
     """
 
-    def __init__(self, column_config: CSVColumnConfig, logger: "LoggingService"):
+    def __init__(self, column_config: CSVColumnConfig, logger: "TraceLogger"):
         """
         Initialize validator with column configuration and logger.
 
@@ -146,7 +149,7 @@ class CSVStructureValidator:
 
             try:
                 # Convert row to dict, handling NaN values
-                row_dict = {}
+                row_dict: Dict[str, Optional[str]] = {}
                 for col in df.columns:
                     value = row[col]
                     # Convert NaN to None
@@ -158,7 +161,7 @@ class CSVStructureValidator:
                         )
 
                 # Validate with Pydantic model
-                CSVRowModel(**row_dict)
+                CSVRowModel.model_validate(row_dict)
 
             except PydanticValidationError as e:
                 for error in e.errors():
@@ -169,7 +172,7 @@ class CSVStructureValidator:
                     result.add_error(
                         message=f"Row validation error: {message}",
                         line_number=line_number,
-                        field=str(field) if field else None,
+                        field_name=str(field) if field else None,
                         value=str(value) if value is not None else None,
                     )
             except Exception as e:
@@ -210,9 +213,9 @@ class CSVStructureValidator:
         graph_targets: Dict[str, Set[str]] = defaultdict(set)
         graph_sources: Dict[str, Set[str]] = defaultdict(set)
         # Per-row edge data for target validation (line_number, graph, col, targets)
-        edge_refs: List[tuple] = []
+        edge_refs: List[EdgeReference] = []
         # Agent type data for validation (line_number, agent_type_str)
-        agent_type_refs: List[tuple] = []
+        agent_type_refs: List[AgentTypeReference] = []
 
         for idx, row in df.iterrows():
             line_number = int(idx) + 2
@@ -245,7 +248,7 @@ class CSVStructureValidator:
         self._check_agent_types(agent_type_refs, result, known_agent_types)
 
     @staticmethod
-    def _parse_pipe_field(row, col: str) -> List[str]:
+    def _parse_pipe_field(row: Any, col: str) -> List[str]:
         """Parse a pipe-separated field value into a list of stripped strings."""
         value = row.get(col)
         if pd.isna(value) or not str(value).strip():
@@ -260,7 +263,7 @@ class CSVStructureValidator:
 
     def _check_edge_targets(
         self,
-        edge_refs: List[tuple],
+        edge_refs: List[EdgeReference],
         graph_nodes: Dict[str, Set[str]],
         result: ValidationResult,
     ) -> None:
@@ -316,7 +319,7 @@ class CSVStructureValidator:
 
     @staticmethod
     def _check_agent_types(
-        agent_type_refs: List[tuple],
+        agent_type_refs: List[AgentTypeReference],
         result: ValidationResult,
         known_agent_types: Optional[Set[str]] = None,
     ) -> None:

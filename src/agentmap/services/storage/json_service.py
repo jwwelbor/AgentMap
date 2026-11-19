@@ -16,12 +16,13 @@ import contextlib
 import json
 import os
 from collections.abc import Generator
-from typing import Any, Dict, List, Optional, TextIO
+from typing import IO, Any, Dict, List, Optional, Union, cast
 
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
+from agentmap.services.storage.sort_utils import get_sort_options, stable_sort_key
 from agentmap.services.storage.types import StorageResult, WriteMode
 
 
@@ -42,11 +43,11 @@ class JSONStorageService(BaseStorageService):
     def __init__(
         self,
         provider_name: str,
-        configuration: StorageConfigService,  # StorageConfigService (avoid circular import)
+        configuration: Union[StorageConfigService, Dict[str, Any]],
         logging_service: LoggingService,  # LoggingService (avoid circular import)
         file_path_service: Optional[FilePathService] = None,
         base_directory: Optional[str] = None,
-        telemetry_service=None,
+        telemetry_service: Optional[Any] = None,
     ):
         """
         Initialize JSONStorageService.
@@ -100,9 +101,12 @@ class JSONStorageService(BaseStorageService):
         # Use StorageConfigService named domain methods for configuration
 
         if self.provider_name.startswith("system_json"):
-            base_dir = self.configuration["base_directory"]
-            encoding = self.configuration["encoding"] or "utf-8"
-            indent = self.configuration["indent"] or 2
+            if not isinstance(self.configuration, dict):
+                raise ValueError("System JSON storage configuration must be a mapping")
+            system_config = self.configuration
+            base_dir = system_config["base_directory"]
+            encoding = system_config.get("encoding") or "utf-8"
+            indent = system_config.get("indent") or 2
 
         else:
 
@@ -221,7 +225,7 @@ class JSONStorageService(BaseStorageService):
     @contextlib.contextmanager
     def _open_json_file(
         self, file_path: str, mode: str = "r"
-    ) -> Generator[TextIO, None, None]:
+    ) -> Generator[IO[Any], None, None]:
         """
         Context manager for safely opening JSON files.
 
@@ -257,7 +261,7 @@ class JSONStorageService(BaseStorageService):
             self._logger.error(f"File access error for {file_path}: {str(e)}")
             raise
 
-    def _read_json_file(self, file_path: str, **kwargs) -> Any:
+    def _read_json_file(self, file_path: str, **kwargs: Any) -> Any:
         """
         Read and parse a JSON file.
 
@@ -283,7 +287,7 @@ class JSONStorageService(BaseStorageService):
             self._logger.error(error_msg)
             raise ValueError(error_msg)
 
-    def _write_json_file(self, file_path: str, data: Any, **kwargs) -> None:
+    def _write_json_file(self, file_path: str, data: Any, **kwargs: Any) -> None:
         """
         Write data to a JSON file.
 
@@ -360,6 +364,7 @@ class JSONStorageService(BaseStorageService):
             return value
 
         # Make a copy to avoid modifying original
+        result: Any
         if isinstance(data, dict):
             result = data.copy()
         elif isinstance(data, list):
@@ -443,6 +448,7 @@ class JSONStorageService(BaseStorageService):
             return data
 
         # Make a copy to avoid modifying original
+        result: Any
         if isinstance(data, dict):
             result = data.copy()
         elif isinstance(data, list):
@@ -698,9 +704,7 @@ class JSONStorageService(BaseStorageService):
 
         return data, created_new
 
-    def _merge_documents(
-        self, doc1: Dict[str, Any], doc2: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _merge_documents(self, doc1: Any, doc2: Any) -> Any:
         """
         Merge two documents recursively.
 
@@ -744,8 +748,9 @@ class JSONStorageService(BaseStorageService):
         # Extract special query parameters
         limit = query.pop("limit", None)
         offset = query.pop("offset", 0)
-        sort_field = query.pop("sort", None)
-        sort_order = query.pop("order", "asc").lower()
+        sort_field, reverse = get_sort_options(
+            query.pop("sort", None), query.pop("order", "asc")
+        )
 
         # Handle empty data
         if data is None:
@@ -754,44 +759,49 @@ class JSONStorageService(BaseStorageService):
         # Handle different data structures
         if isinstance(data, list):
             # Apply field filtering
-            result = data
+            list_result = data
             if query:  # Only filter if there are query parameters remaining
-                result = [
+                list_result = [
                     item
-                    for item in result
+                    for item in list_result
                     if isinstance(item, dict)
                     and all(item.get(field) == value for field, value in query.items())
                 ]
 
             # Apply sorting
-            if sort_field and result:
-                reverse = sort_order == "desc"
-                result.sort(
-                    key=lambda x: x.get(sort_field) if isinstance(x, dict) else None,
+            if sort_field and list_result:
+                list_result.sort(
+                    key=lambda x: stable_sort_key(
+                        x.get(sort_field) if isinstance(x, dict) else None
+                    ),
                     reverse=reverse,
                 )
 
             # Apply pagination
             if offset and isinstance(offset, int) and offset > 0:
-                result = result[offset:]
+                list_result = list_result[offset:]
 
             if limit and isinstance(limit, int) and limit > 0:
-                result = result[:limit]
+                list_result = list_result[:limit]
 
-            return {"data": result, "count": len(result), "is_collection": True}
+            return {
+                "data": list_result,
+                "count": len(list_result),
+                "is_collection": True,
+            }
 
         elif isinstance(data, dict):
             # Filter based on field values
-            result = {}
+            dict_result: Dict[str, Any] = {}
             for key, value in data.items():
                 if isinstance(value, dict) and all(
                     value.get(field) == query_value
                     for field, query_value in query.items()
                 ):
-                    result[key] = value
+                    dict_result[key] = value
 
             # Apply pagination to keys
-            keys = list(result.keys())
+            keys = list(dict_result.keys())
 
             if offset and isinstance(offset, int) and offset > 0:
                 keys = keys[offset:]
@@ -801,9 +811,13 @@ class JSONStorageService(BaseStorageService):
 
             # Rebuild filtered dictionary
             if offset or limit:
-                result = {k: result[k] for k in keys}
+                dict_result = {k: dict_result[k] for k in keys}
 
-            return {"data": result, "count": len(result), "is_collection": True}
+            return {
+                "data": dict_result,
+                "count": len(dict_result),
+                "is_collection": True,
+            }
 
         # Other data types can't be filtered
         return {"data": data, "count": 0, "is_collection": False}
@@ -814,7 +828,7 @@ class JSONStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """
         Read data from JSON file.
@@ -883,10 +897,10 @@ class JSONStorageService(BaseStorageService):
         collection: str,
         data: Any,
         document_id: Optional[str] = None,
-        mode: WriteMode = WriteMode.WRITE,
+        mode: WriteMode | str = WriteMode.WRITE,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Write data to JSON file.
 
@@ -957,6 +971,18 @@ class JSONStorageService(BaseStorageService):
                     current_data = self._read_json_file(file_path)
                 except (FileNotFoundError, ValueError):
                     current_data = None
+
+            if current_data is None and mode == WriteMode.APPEND and document_id:
+                current_data = self._create_initial_structure(
+                    data, document_id, id_field
+                )
+                self._write_json_file(file_path, current_data, **kwargs)
+                return self._create_success_result(
+                    "append",
+                    collection=collection,
+                    document_id=document_id,
+                    file_path=file_path,
+                )
 
             if mode == WriteMode.UPDATE:
                 # Update operation - fail if file or document doesn't exist
@@ -1038,7 +1064,7 @@ class JSONStorageService(BaseStorageService):
                 else:
                     current_data = [] if isinstance(data, list) else {}
 
-            elif mode == WriteMode.APPEND:
+            if mode == WriteMode.APPEND:
                 # Append operation
                 if isinstance(current_data, list) and isinstance(data, list):
                     # Append to list
@@ -1088,8 +1114,8 @@ class JSONStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         path: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Delete from JSON file.
 
@@ -1261,7 +1287,7 @@ class JSONStorageService(BaseStorageService):
         collection: str,
         document_id: Optional[str] = None,
         path: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> bool:
         """
         Check if JSON file, document, or path exists.
@@ -1322,7 +1348,7 @@ class JSONStorageService(BaseStorageService):
         collection: str,
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> int:
         """
         Count documents or items in JSON file.
@@ -1357,7 +1383,7 @@ class JSONStorageService(BaseStorageService):
             if query:
                 filtered_result = self._apply_query_filter(data, query)
                 data = filtered_result.get("data", data)
-                return filtered_result.get("count", 0)
+                return cast(int, filtered_result.get("count", 0))
 
             # Count based on data type
             if isinstance(data, list):
@@ -1371,7 +1397,7 @@ class JSONStorageService(BaseStorageService):
             self._logger.debug(f"Error counting items: {e}")
             return 0
 
-    def list_collections(self, **kwargs) -> List[str]:
+    def list_collections(self, **kwargs: Any) -> List[str]:
         """
         List all JSON collections, including both configured collections and discovered files.
 

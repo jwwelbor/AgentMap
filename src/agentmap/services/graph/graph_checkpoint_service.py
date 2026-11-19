@@ -14,13 +14,18 @@ in cache/checkpoints/ namespace. Checkpoint documents are pickled for fast I/O.
 """
 
 import asyncio
+import base64
+import hashlib
 import pickle
 from datetime import datetime
 from typing import Any, Dict, Optional, Sequence, Tuple
 from uuid import uuid4
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
+    WRITES_IDX_MAP,
     BaseCheckpointSaver,
+    ChannelVersions,
     Checkpoint,
     CheckpointMetadata,
     CheckpointTuple,
@@ -31,7 +36,7 @@ from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.system_manager import SystemStorageManager
 
 
-class GraphCheckpointService(BaseCheckpointSaver):
+class GraphCheckpointService(BaseCheckpointSaver[Any]):
     """Service for managing graph execution checkpoints with pickle serialization."""
 
     def __init__(
@@ -61,20 +66,22 @@ class GraphCheckpointService(BaseCheckpointSaver):
 
     def put(
         self,
-        config: Dict[str, Any],
+        config: RunnableConfig,
         checkpoint: Checkpoint,
         metadata: CheckpointMetadata,
-        new_versions: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        new_versions: ChannelVersions,
+    ) -> RunnableConfig:
         """Save a checkpoint (LangGraph interface)."""
-        thread_id = config["configurable"]["thread_id"]
-        checkpoint_id = str(uuid4())
+        configurable = config["configurable"]
+        thread_id = configurable["thread_id"]
+        checkpoint_id = str(checkpoint.get("id") or uuid4())
+        checkpoint_ns = configurable.get("checkpoint_ns", "")
 
         try:
             # NOTE: LangGraph sometimes creates checkpoints with sets in versions_seen.
             # The serde (JsonPlusSerializer) can handle this, but we need to make a copy
             # first to avoid modifying the original checkpoint passed by LangGraph.
-            checkpoint_copy = {**checkpoint}
+            checkpoint_copy = {**checkpoint, "id": checkpoint_id}
 
             # Convert sets to lists in versions_seen for proper serialization
             if "versions_seen" in checkpoint_copy:
@@ -98,7 +105,11 @@ class GraphCheckpointService(BaseCheckpointSaver):
                 "metadata": metadata_typed,  # tuple[str, bytes] from dumps_typed
                 "timestamp": datetime.utcnow().isoformat(),
                 "version": "2.0",
-                "new_versions": new_versions or {},
+                "checkpoint_id": checkpoint_id,
+                "thread_id": thread_id,
+                "parent_checkpoint_id": configurable.get("checkpoint_id"),
+                "checkpoint_ns": checkpoint_ns,
+                "new_versions": new_versions,
             }
 
             # Serialize entire document with pickle
@@ -110,28 +121,40 @@ class GraphCheckpointService(BaseCheckpointSaver):
             result = self.file_storage.write(
                 collection="",  # Use namespace root
                 data=document_bytes,
-                document_id=f"{thread_id}_{checkpoint_id}.pkl",
+                document_id=self._checkpoint_document_id(
+                    thread_id, checkpoint_ns, checkpoint_id
+                ),
                 mode=WriteMode.WRITE,
                 binary_mode=True,
             )
 
-            if result.success:
-                self.logger.debug(
-                    f"Checkpoint saved: thread={thread_id}, id={checkpoint_id}, "
-                    f"size={len(document_bytes)} bytes"
-                )
-                return {"success": True, "checkpoint_id": checkpoint_id}
-            else:
-                raise Exception(f"Checkpoint save failed: {result.error}")
+            if not result.success:
+                raise RuntimeError(f"Checkpoint save failed: {result.error}")
+
+            self.logger.debug(
+                f"Checkpoint saved: thread={thread_id}, id={checkpoint_id}, "
+                f"size={len(document_bytes)} bytes"
+            )
 
         except Exception as e:
             error_msg = f"Failed to save checkpoint: {str(e)}"
             self.logger.error(error_msg)
-            return {"success": False, "error": error_msg}
+            raise RuntimeError(error_msg) from e
 
-    def get_tuple(self, config: Dict[str, Any]) -> Optional[CheckpointTuple]:
+        return {
+            "configurable": {
+                "thread_id": thread_id,
+                "checkpoint_ns": checkpoint_ns,
+                "checkpoint_id": checkpoint_id,
+            }
+        }
+
+    def get_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
         """Load the latest checkpoint for a thread (LangGraph interface)."""
-        thread_id = config["configurable"]["thread_id"]
+        configurable = config["configurable"]
+        thread_id = configurable["thread_id"]
+        checkpoint_ns = configurable.get("checkpoint_ns", "")
+        requested_checkpoint_id = configurable.get("checkpoint_id")
         self.logger.trace(f"Loading checkpoint for thread {thread_id}")
 
         try:
@@ -143,42 +166,105 @@ class GraphCheckpointService(BaseCheckpointSaver):
                 self.logger.trace(f"no files found for thread {thread_id}")
                 return None
 
-            # Filter files by thread_id prefix
-            thread_files = [f for f in files if f.startswith(f"{thread_id}_")]
+            legacy_prefix = f"{thread_id}_"
+            checkpoint_prefix = f"v2.{self._encode_checkpoint_component(thread_id)}."
+            thread_files = [
+                filename
+                for filename in files
+                if isinstance(filename, str)
+                and (
+                    filename.startswith(legacy_prefix)
+                    or filename.startswith(checkpoint_prefix)
+                )
+            ]
+            if requested_checkpoint_id:
+                requested_filenames = {f"{thread_id}_{requested_checkpoint_id}.pkl"}
+                if isinstance(requested_checkpoint_id, str):
+                    requested_filenames.add(
+                        self._checkpoint_document_id(
+                            thread_id, checkpoint_ns, requested_checkpoint_id
+                        )
+                    )
+                thread_files = [
+                    filename
+                    for filename in thread_files
+                    if filename in requested_filenames
+                ]
 
             if not thread_files:
                 self.logger.debug(f"no files found for thread {thread_id}")
                 return None
 
-            # Find the latest checkpoint file
-            # We need to get file metadata to sort by timestamp
-            latest_file = None
-            latest_timestamp = None
+            # Collect candidates first so invalid newer records can fall back
+            # to the latest valid checkpoint.
+            candidates: list[tuple[str, int, Dict[str, Any]]] = []
+            for index, filename in enumerate(thread_files):
+                try:
+                    file_data = self.file_storage.read(
+                        collection="", document_id=filename, binary_mode=True
+                    )
+                    if not file_data:
+                        continue
 
-            for filename in thread_files:
-                # Read the file
-                file_data = self.file_storage.read(
-                    collection="", document_id=filename, binary_mode=True
-                )
-
-                if file_data:
-                    # Deserialize document
                     checkpoint_doc = pickle.loads(file_data)
-                    timestamp = checkpoint_doc.get("timestamp", "")
+                    if not isinstance(checkpoint_doc, dict):
+                        continue
+                    checkpoint_id = checkpoint_doc.get("checkpoint_id")
+                    stored_thread_id = checkpoint_doc.get("thread_id")
+                    is_current_format = (
+                        isinstance(checkpoint_id, str)
+                        and filename
+                        == self._checkpoint_document_id(
+                            thread_id, checkpoint_ns, checkpoint_id
+                        )
+                        and stored_thread_id == thread_id
+                    )
+                    is_unambiguous_legacy_format = (
+                        isinstance(checkpoint_id, str)
+                        and "_" not in checkpoint_id
+                        and filename == f"{thread_id}_{checkpoint_id}.pkl"
+                        and stored_thread_id in (None, thread_id)
+                    )
+                    if (
+                        not (is_current_format or is_unambiguous_legacy_format)
+                        or checkpoint_doc.get("checkpoint_ns", "") != checkpoint_ns
+                    ):
+                        continue
+                    timestamp = str(checkpoint_doc.get("timestamp", ""))
+                    candidates.append((timestamp, index, checkpoint_doc))
+                except Exception as e:
+                    self.logger.warning(
+                        f"Skipping malformed checkpoint for thread={thread_id}, "
+                        f"file={filename}: {e}"
+                    )
 
-                    # Use >= to prefer later files when timestamps are identical
-                    # (files are in insertion order, so later = more recent)
-                    if latest_timestamp is None or timestamp >= latest_timestamp:
-                        latest_timestamp = timestamp
-                        latest_file = checkpoint_doc
+            latest_file: Optional[Dict[str, Any]] = None
+            checkpoint: Any = None
+            metadata: Any = None
+            for _, _, candidate in sorted(candidates, reverse=True):
+                try:
+                    candidate_checkpoint = self.serde.loads_typed(
+                        candidate["checkpoint"]
+                    )
+                    candidate_metadata = self.serde.loads_typed(candidate["metadata"])
+                    if not isinstance(candidate_checkpoint, dict) or not isinstance(
+                        candidate_metadata, dict
+                    ):
+                        raise ValueError("checkpoint and metadata must be mappings")
+                    latest_file = candidate
+                    checkpoint = candidate_checkpoint
+                    metadata = candidate_metadata
+                    break
+                except Exception as e:
+                    self.logger.warning(
+                        f"Skipping checkpoint with malformed payload for "
+                        f"thread={thread_id}, "
+                        f"checkpoint={candidate.get('checkpoint_id')}: {e}"
+                    )
 
-            if not latest_file:
+            if latest_file is None or checkpoint is None or metadata is None:
                 self.logger.debug(f"no files found for thread {thread_id}")
                 return None
-
-            # Deserialize checkpoint and metadata using serde (LangGraph way)
-            checkpoint = self.serde.loads_typed(latest_file["checkpoint"])
-            metadata = self.serde.loads_typed(latest_file["metadata"])
 
             self.logger.trace(f"Loaded checkpoint for thread {thread_id}: {checkpoint}")
             self.logger.trace(f"Loaded metadata for thread {thread_id}: {metadata}")
@@ -194,11 +280,35 @@ class GraphCheckpointService(BaseCheckpointSaver):
                         for k, v in versions_seen.items()
                     }
 
+            checkpoint_id = latest_file.get("checkpoint_id")
+            pending_writes = (
+                self._load_pending_writes(thread_id, checkpoint_ns, checkpoint_id)
+                if isinstance(checkpoint_id, str) and checkpoint_id
+                else []
+            )
+
             return CheckpointTuple(
-                config=config,
+                config={
+                    "configurable": {
+                        "thread_id": thread_id,
+                        "checkpoint_ns": checkpoint_ns,
+                        "checkpoint_id": latest_file.get("checkpoint_id", ""),
+                    }
+                },
                 checkpoint=checkpoint,
                 metadata=metadata,
-                parent_config=None,
+                parent_config=(
+                    {
+                        "configurable": {
+                            "thread_id": thread_id,
+                            "checkpoint_ns": checkpoint_ns,
+                            "checkpoint_id": latest_file["parent_checkpoint_id"],
+                        }
+                    }
+                    if latest_file.get("parent_checkpoint_id")
+                    else None
+                ),
+                pending_writes=pending_writes,
             )
 
         except Exception as e:
@@ -207,9 +317,87 @@ class GraphCheckpointService(BaseCheckpointSaver):
             )
             return None
 
+    @staticmethod
+    def _writes_collection(
+        thread_id: str, checkpoint_ns: str, checkpoint_id: str
+    ) -> str:
+        identity = "\0".join((thread_id, checkpoint_ns, checkpoint_id))
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        return f"writes/{digest}"
+
+    @staticmethod
+    def _encode_checkpoint_component(value: str) -> str:
+        encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii")
+        return encoded.rstrip("=")
+
+    @classmethod
+    def _checkpoint_document_id(
+        cls, thread_id: str, checkpoint_ns: str, checkpoint_id: str
+    ) -> str:
+        components = (
+            cls._encode_checkpoint_component(thread_id),
+            cls._encode_checkpoint_component(checkpoint_ns),
+            cls._encode_checkpoint_component(checkpoint_id),
+        )
+        return f"v2.{components[0]}.{components[1]}.{components[2]}.pkl"
+
+    def _load_pending_writes(
+        self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
+    ) -> list[tuple[str, str, Any]]:
+        collection = self._writes_collection(thread_id, checkpoint_ns, checkpoint_id)
+        filenames = self.file_storage.read(collection=collection) or []
+        if not isinstance(filenames, (list, tuple)):
+            return []
+
+        task_writes: Dict[str, list[tuple[str, Any]]] = {}
+        for filename in filenames:
+            if not isinstance(filename, str):
+                continue
+            try:
+                document_bytes = self.file_storage.read(
+                    collection=collection, document_id=filename, binary_mode=True
+                )
+                if not document_bytes:
+                    continue
+                writes_doc = pickle.loads(document_bytes)
+                if (
+                    not isinstance(writes_doc, dict)
+                    or writes_doc.get("thread_id") != thread_id
+                    or writes_doc.get("checkpoint_ns", "") != checkpoint_ns
+                    or writes_doc.get("checkpoint_id") != checkpoint_id
+                ):
+                    continue
+                task_id = writes_doc.get("task_id")
+                writes_typed = writes_doc.get("writes")
+                if not isinstance(task_id, str) or writes_typed is None:
+                    continue
+                writes = self.serde.loads_typed(writes_typed)
+                if not isinstance(writes, list):
+                    continue
+
+                valid_writes = []
+                for item in writes:
+                    if not isinstance(item, (list, tuple)) or len(item) != 2:
+                        continue
+                    channel, value = item
+                    if isinstance(channel, str):
+                        valid_writes.append((channel, value))
+                task_writes[task_id] = valid_writes
+            except Exception as e:
+                self.logger.warning(
+                    f"Skipping malformed pending writes for thread={thread_id}, "
+                    f"checkpoint={checkpoint_id}, file={filename}: {e}"
+                )
+
+        return [
+            (task_id, channel, value)
+            for task_id in sorted(task_writes)
+            for channel, value in task_writes[task_id]
+        ]
+
     def put_writes(
         self,
-        config: Dict[str, Any],
+        config: RunnableConfig,
         writes: Sequence[Tuple[str, Any]],
         task_id: str,
         task_path: str = "",
@@ -227,33 +415,85 @@ class GraphCheckpointService(BaseCheckpointSaver):
             task_id: Identifier for the task creating the writes
             task_path: Path of the task creating the writes (optional)
         """
-        thread_id = config["configurable"]["thread_id"]
+        configurable = config["configurable"]
+        thread_id = configurable["thread_id"]
+        checkpoint_ns = configurable.get("checkpoint_ns", "")
+        checkpoint_id = configurable.get("checkpoint_id")
 
         try:
-            # Serialize writes using serde (handles complex types)
-            writes_typed = self.serde.dumps_typed(list(writes))
+            if not isinstance(checkpoint_id, str) or not checkpoint_id:
+                raise ValueError("Pending writes require a checkpoint_id")
+            if not isinstance(checkpoint_ns, str):
+                raise ValueError("checkpoint_ns must be a string")
 
-            # Create writes document
+            collection = self._writes_collection(
+                thread_id, checkpoint_ns, checkpoint_id
+            )
+            task_digest = hashlib.sha256(task_id.encode("utf-8")).hexdigest()
+            document_id = f"{task_digest}.pkl"
+            writes_by_index: Dict[int, Tuple[str, Any]] = {}
+
+            if self.file_storage.exists(collection=collection, document_id=document_id):
+                existing_bytes = self.file_storage.read(
+                    collection=collection,
+                    document_id=document_id,
+                    binary_mode=True,
+                )
+                if existing_bytes:
+                    try:
+                        existing_doc = pickle.loads(existing_bytes)
+                        if (
+                            not isinstance(existing_doc, dict)
+                            or existing_doc.get("thread_id") != thread_id
+                            or existing_doc.get("checkpoint_ns", "") != checkpoint_ns
+                            or existing_doc.get("checkpoint_id") != checkpoint_id
+                            or existing_doc.get("task_id") != task_id
+                        ):
+                            raise ValueError("existing write identity does not match")
+
+                        writes_typed = existing_doc.get("writes")
+                        if writes_typed is None:
+                            raise ValueError("existing write document has no writes")
+                        existing_writes = self.serde.loads_typed(writes_typed)
+                        if not isinstance(existing_writes, list):
+                            raise ValueError("existing writes must be a list")
+
+                        for index, item in enumerate(existing_writes):
+                            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                                continue
+                            channel, value = item
+                            if isinstance(channel, str):
+                                write_index = WRITES_IDX_MAP.get(channel, index)
+                                writes_by_index[write_index] = (channel, value)
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Skipping malformed existing writes for "
+                            f"thread={thread_id}, task={task_id}, "
+                            f"checkpoint={checkpoint_id}: {e}"
+                        )
+
+            for index, (channel, value) in enumerate(writes):
+                write_index = WRITES_IDX_MAP.get(channel, index)
+                if write_index >= 0 and write_index in writes_by_index:
+                    continue
+                writes_by_index[write_index] = (channel, value)
+
             writes_doc = {
-                "writes": writes_typed,  # tuple[str, bytes] from dumps_typed
+                "writes": self.serde.dumps_typed(list(writes_by_index.values())),
+                "thread_id": thread_id,
+                "checkpoint_ns": checkpoint_ns,
+                "checkpoint_id": checkpoint_id,
                 "task_id": task_id,
                 "task_path": task_path,
                 "timestamp": datetime.utcnow().isoformat(),
                 "version": "2.0",
             }
-
-            # Serialize document with pickle
             document_bytes = pickle.dumps(writes_doc)
 
-            # Generate unique ID for this writes batch
-            writes_id = str(uuid4())
-
-            # Save to file storage in writes subdirectory
-            # Uses pattern: <thread_id>_writes_<writes_id>.pkl
             result = self.file_storage.write(
-                collection="writes",  # Subdirectory for writes
+                collection=collection,
                 data=document_bytes,
-                document_id=f"{thread_id}_writes_{writes_id}.pkl",
+                document_id=document_id,
                 mode=WriteMode.WRITE,
                 binary_mode=True,
             )
@@ -261,7 +501,7 @@ class GraphCheckpointService(BaseCheckpointSaver):
             if result.success:
                 self.logger.debug(
                     f"Writes saved: thread={thread_id}, task={task_id}, "
-                    f"writes_id={writes_id}, count={len(writes)}"
+                    f"checkpoint={checkpoint_id}, count={len(writes_by_index)}"
                 )
             else:
                 self.logger.error(
@@ -286,17 +526,17 @@ class GraphCheckpointService(BaseCheckpointSaver):
     # We delegate to the sync variants via asyncio.to_thread so the file I/O
     # stays off the event loop without blocking it.
 
-    async def aget_tuple(self, config: Dict[str, Any]) -> Optional[CheckpointTuple]:
+    async def aget_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
         """Async variant of get_tuple. Delegates via worker-thread seam."""
         return await asyncio.to_thread(self.get_tuple, config)
 
     async def aput(
         self,
-        config: Dict[str, Any],
+        config: RunnableConfig,
         checkpoint: Checkpoint,
         metadata: CheckpointMetadata,
-        new_versions: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        new_versions: ChannelVersions,
+    ) -> RunnableConfig:
         """Async variant of put. Delegates via worker-thread seam."""
         return await asyncio.to_thread(
             self.put, config, checkpoint, metadata, new_versions
@@ -304,7 +544,7 @@ class GraphCheckpointService(BaseCheckpointSaver):
 
     async def aput_writes(
         self,
-        config: Dict[str, Any],
+        config: RunnableConfig,
         writes: Sequence[Tuple[str, Any]],
         task_id: str,
         task_path: str = "",

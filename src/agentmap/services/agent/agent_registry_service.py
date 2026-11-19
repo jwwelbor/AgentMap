@@ -5,7 +5,7 @@ Service containing business logic for agent registration and lookup operations.
 This extracts and wraps the core functionality from the original Registry class.
 """
 
-from typing import Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 from agentmap.models.agent_registry import AgentRegistry
 from agentmap.services.logging_service import LoggingService
@@ -25,7 +25,7 @@ class AgentRegistryService:
         self.logger = logging_service.get_class_logger(self)
         self.logger.debug("[AgentRegistryService] Initialized")
 
-    def register_agent(self, agent_type: str, agent_class: Type) -> None:
+    def register_agent(self, agent_type: str, agent_class: Type[Any]) -> None:
         """
         Register an agent class with a given type.
 
@@ -63,8 +63,8 @@ class AgentRegistryService:
             )
 
     def get_agent_class(
-        self, agent_type: str, default: Optional[Type] = None
-    ) -> Optional[Type]:
+        self, agent_type: str, default: Optional[Type[Any]] = None
+    ) -> Optional[Type[Any]]:
         """
         Get an agent class by type, with optional default.
 
@@ -116,7 +116,7 @@ class AgentRegistryService:
         """
         return self.agent_registry.has_agent(agent_type)
 
-    def list_agents(self) -> Dict[str, Type]:
+    def list_agents(self) -> Dict[str, Type[Any]]:
         """
         Get a dictionary of all registered agent types and classes.
 
@@ -129,7 +129,7 @@ class AgentRegistryService:
         )
         return agent_map
 
-    def get_default_agent_class(self) -> Optional[Type]:
+    def get_default_agent_class(self) -> Optional[Type[Any]]:
         """
         Get the default agent class if one is registered.
 
@@ -145,7 +145,7 @@ class AgentRegistryService:
             self.logger.debug("[AgentRegistryService] No default agent class is set")
         return default_agent
 
-    def set_default_agent_class(self, agent_class: Type) -> None:
+    def set_default_agent_class(self, agent_class: Type[Any]) -> None:
         """
         Set the default agent class by registering it with type 'default'.
 

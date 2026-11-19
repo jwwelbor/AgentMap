@@ -5,7 +5,7 @@ This module handles the creation of state schemas for LangGraph graphs,
 supporting dict, pydantic, and dynamic TypedDict schemas.
 """
 
-from typing import Any, Dict, TypedDict
+from typing import Any, Callable, Dict, TypedDict, cast
 
 from agentmap.models.graph import Graph
 from agentmap.services.config.app_config_service import AppConfigService
@@ -102,10 +102,11 @@ class StateSchemaFactory:
                 field_names.add(node.output)
             # Add input fields (nodes may read from initial state)
             if node.inputs:
-                if isinstance(node.inputs, list):
-                    field_names.update(node.inputs)
-                elif isinstance(node.inputs, str):
-                    field_names.add(node.inputs)
+                inputs = cast(Any, node.inputs)
+                if isinstance(inputs, list):
+                    field_names.update(inputs)
+                elif isinstance(inputs, str):
+                    field_names.add(inputs)
 
         # Add system fields that are always needed
         # These are used by the execution service and orchestrator
@@ -129,7 +130,10 @@ class StateSchemaFactory:
         state_fields = {name: Any for name in field_names}
 
         # Create dynamic TypedDict class
-        StateSchema = TypedDict(f"{graph.name}State", state_fields, total=False)
+        typed_dict_factory = cast(Callable[..., type], TypedDict)
+        StateSchema = typed_dict_factory(
+            f"{graph.name}State", state_fields, total=False
+        )
 
         self.logger.debug(
             f"Created dynamic state schema for '{graph.name}' with {len(field_names)} fields: {sorted(field_names)}"

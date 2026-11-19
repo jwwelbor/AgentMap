@@ -74,7 +74,13 @@ class GraphMetadataAnalyzer:
             Dictionary mapping agent types to their class import paths
         """
         try:
-            mappings = self.agent_factory_service.get_agent_class_mappings(agent_types)
+            mappings: Dict[str, str] = {}
+            for agent_type in agent_types:
+                declaration = self.declaration_registry.get_agent_declaration(
+                    agent_type
+                )
+                if declaration is not None:
+                    mappings[agent_type] = declaration.class_path
 
             self.logger.debug(
                 f"Extracted {len(mappings)} agent mappings: {list(mappings.keys())}"
@@ -98,10 +104,13 @@ class GraphMetadataAnalyzer:
         custom_agents = set()
 
         # Standard framework agent types
-        framework_agents = DeclarationRegistryService.get_all_agent_types()
-
         for agent_type in agent_types:
-            if agent_type in framework_agents:
+            declaration = self.declaration_registry.get_agent_declaration(agent_type)
+            is_builtin = declaration is not None and (
+                declaration.source == "builtin"
+                or declaration.class_path.startswith("agentmap.agents.builtins.")
+            )
+            if is_builtin:
                 builtin_agents.add(agent_type)
             else:
                 custom_agents.add(agent_type)
@@ -154,7 +163,7 @@ class GraphMetadataAnalyzer:
             Dictionary mapping protocol names to implementation class names
         """
         try:
-            mappings = self.declaration_registry.get_protocol_implementations()
+            mappings = self.declaration_registry.get_protocol_service_map()
 
             self.logger.debug(f"Extracted {len(mappings)} protocol mappings")
             return mappings

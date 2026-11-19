@@ -8,8 +8,10 @@ allowing agents to be scaffolded and loaded from outside the package structure.
 import importlib.util
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Type
+from types import ModuleType
+from typing import Any, Dict, Optional, Type
 
+from agentmap.services.class_import import require_class
 from agentmap.services.logging_service import LoggingService
 
 
@@ -32,17 +34,17 @@ class CustomAgentLoader:
         """
         self.custom_agents_path = Path(custom_agents_path)
         self.logger = logging_service.get_class_logger(self)
-        self._loaded_modules: Dict[str, any] = {}
+        self._loaded_modules: Dict[str, ModuleType] = {}
         self._ensure_path_in_sys_path()
 
-    def _ensure_path_in_sys_path(self):
+    def _ensure_path_in_sys_path(self) -> None:
         """Ensure the custom agents directory is in sys.path for imports."""
         path_str = str(self.custom_agents_path)
         if path_str not in sys.path:
             sys.path.insert(0, path_str)
             self.logger.debug(f"Added custom agents path to sys.path: {path_str}")
 
-    def load_agent_class(self, class_path: str) -> Optional[Type]:
+    def load_agent_class(self, class_path: str) -> Optional[Type[Any]]:
         """
         Load a custom agent class from its path.
 
@@ -66,15 +68,19 @@ class CustomAgentLoader:
                 module = self._loaded_modules[module_name]
             else:
                 # Load the module
-                module = self._load_module(module_name)
-                if module:
-                    self._loaded_modules[module_name] = module
-                else:
+                loaded_module = self._load_module(module_name)
+                if loaded_module is None:
                     return None
+                module = loaded_module
+                self._loaded_modules[module_name] = module
 
             # Get the class from the module
             if hasattr(module, class_name):
-                agent_class = getattr(module, class_name)
+                agent_class = require_class(
+                    getattr(module, class_name), f"{module_name}.{class_name}"
+                )
+                if not self.validate_agent_class(agent_class):
+                    return None
                 self.logger.debug(f"Successfully loaded custom agent: {class_path}")
                 return agent_class
             else:
@@ -87,7 +93,7 @@ class CustomAgentLoader:
             self.logger.error(f"Failed to load custom agent {class_path}: {e}")
             return None
 
-    def _load_module(self, module_name: str):
+    def _load_module(self, module_name: str) -> Optional[ModuleType]:
         """
         Load a Python module from the custom agents directory.
 
@@ -118,6 +124,9 @@ class CustomAgentLoader:
             if spec is None:
                 self.logger.error(f"Could not create spec for module: {module_name}")
                 return None
+            if spec.loader is None:
+                self.logger.error(f"Could not create loader for module: {module_name}")
+                return None
 
             # Load the module
             module = importlib.util.module_from_spec(spec)
@@ -142,7 +151,7 @@ class CustomAgentLoader:
         Returns:
             Dictionary mapping agent names to their file paths
         """
-        agents = {}
+        agents: Dict[str, str] = {}
 
         if not self.custom_agents_path.exists():
             self.logger.warning(
@@ -160,7 +169,7 @@ class CustomAgentLoader:
         self.logger.debug(f"Found {len(agents)} custom agents")
         return agents
 
-    def validate_agent_class(self, agent_class: Type) -> bool:
+    def validate_agent_class(self, agent_class: Type[Any]) -> bool:
         """
         Validate that a loaded class is a valid agent.
 

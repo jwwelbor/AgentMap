@@ -390,6 +390,14 @@ class TestInteractionHandlerService(unittest.TestCase):
             f"Expected error message not found in calls: {error_calls}",
         )
 
+    def test_get_thread_metadata_rejects_non_mapping_payload(self):
+        """Ignore serialized values that do not match the metadata contract."""
+        self.mock_file_storage.read.return_value = pickle.dumps(["invalid"])
+
+        metadata = self.interaction_service.get_thread_metadata("invalid_thread")
+
+        self.assertIsNone(metadata)
+
     def test_mark_thread_resuming_success(self):
         """Test successfully marking thread as resuming."""
         # Arrange

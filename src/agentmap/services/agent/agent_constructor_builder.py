@@ -24,7 +24,7 @@ class AgentConstructorBuilder:
 
     def build_constructor_args(
         self,
-        agent_class: Type,
+        agent_class: Type[Any],
         node: Any,
         context: Dict[str, Any],
         execution_tracking_service: Optional[Any],

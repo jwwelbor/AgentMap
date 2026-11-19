@@ -164,6 +164,12 @@ class TestStorageConfigService(unittest.TestCase):
 
         self.assertEqual(result, expected)
 
+    def test_get_csv_config_rejects_non_mapping_section(self):
+        self.storage_config_service._config_data["csv"] = ["invalid"]
+
+        with self.assertRaises(StorageConfigurationNotAvailableException):
+            self.storage_config_service.get_csv_config()
+
     def test_get_vector_config(self):
         """Test getting vector storage configuration."""
         result = self.storage_config_service.get_vector_config()
@@ -310,6 +316,12 @@ class TestStorageConfigService(unittest.TestCase):
         # Test non-existing storage type
         result = self.storage_config_service.list_collections("missing")
         self.assertEqual(result, [])
+
+    def test_list_collections_rejects_non_mapping_configuration(self):
+        self.storage_config_service.get_value = Mock(return_value=["users"])
+
+        with self.assertRaises(StorageConfigurationNotAvailableException):
+            self.storage_config_service.list_collections("csv")
 
     def test_has_collection(self):
         """Test checking if collection exists."""

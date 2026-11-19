@@ -5,7 +5,7 @@ This module provides helper functions for selecting optimal models based on
 provider preferences, cost optimization, and availability constraints.
 """
 
-from typing import List, Optional, Sequence
+from typing import Any, Callable, List, Optional, Sequence
 
 from agentmap.services.config.llm_routing_config_service import LLMRoutingConfigService
 from agentmap.services.llm.provider_names import canonicalize_provider
@@ -38,7 +38,7 @@ class ModelSelector:
     def __init__(
         self,
         routing_config: LLMRoutingConfigService,
-        logger,
+        logger: Any,
     ):
         """
         Initialize the model selector.
@@ -55,7 +55,7 @@ class ModelSelector:
         model_override: str,
         complexity: TaskComplexity,
         available_providers: List[str],
-        create_emergency_fallback,
+        create_emergency_fallback: Callable[[List[str], str], RoutingDecision],
     ) -> RoutingDecision:
         """
         Handle explicit model override.

@@ -28,7 +28,7 @@ def validate_command(
     config_file: Optional[str] = typer.Option(
         None, "--config", "-c", help="Path to custom config file"
     ),
-):
+) -> None:
     """
     Validate CSV and graph configuration using bundle analysis.
 

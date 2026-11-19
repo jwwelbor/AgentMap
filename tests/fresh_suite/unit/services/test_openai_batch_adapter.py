@@ -306,6 +306,83 @@ class TestFetchResults:
         mock_resp.iter_lines.return_value = iter(raw_bytes.split(b"\n"))
         ci.files.content.return_value = mock_resp
 
+    def test_fetch_results_skips_non_object_jsonl_records(self):
+        ci = MagicMock()
+        self._setup_files_content(ci, [[]])
+
+        adapter, _ = _make_adapter(client_instance=ci)
+
+        assert (
+            list(
+                adapter.fetch_results("batch-id", {"s1": "cid1"}, result_ref="file-out")
+            )
+            == []
+        )
+
+    @pytest.mark.parametrize(
+        ("record_fields", "expected_status"),
+        [
+            ({"error": ["invalid"]}, None),
+            ({"error": {"code": [], "message": []}}, "errored"),
+            ({"response": ["invalid"]}, None),
+            ({"response": {"body": ["invalid"]}}, None),
+            (
+                {
+                    "response": {
+                        "status_code": 500,
+                        "body": {"error": ["invalid"]},
+                    }
+                },
+                "errored",
+            ),
+            ({"response": {"body": {"choices": {"invalid": True}}}}, "errored"),
+            (
+                {"response": {"body": {"choices": [{"message": ["invalid"]}]}}},
+                "errored",
+            ),
+            (
+                {
+                    "response": {
+                        "body": {"choices": [{"message": {"content": ["invalid"]}}]}
+                    }
+                },
+                "errored",
+            ),
+            (
+                {
+                    "response": {
+                        "body": {
+                            "choices": [{"message": {"content": "ok"}}],
+                            "usage": ["invalid"],
+                        }
+                    }
+                },
+                "succeeded",
+            ),
+        ],
+    )
+    def test_fetch_results_handles_malformed_nested_payload_shapes(
+        self, record_fields, expected_status
+    ):
+        ci = MagicMock()
+        self._setup_files_content(ci, [{"custom_id": "cid1", **record_fields}])
+        adapter, _ = _make_adapter(client_instance=ci)
+
+        results = list(
+            adapter.fetch_results(
+                "batch-id", {"request-1": "cid1"}, result_ref="file-out"
+            )
+        )
+
+        if expected_status is None:
+            assert results == []
+        else:
+            assert len(results) == 1
+            assert results[0].status == expected_status
+            if record_fields.get("error") == {"code": [], "message": []}:
+                assert results[0].error.error_type == "unknown"
+                assert isinstance(results[0].error.message, str)
+
     def test_fetch_results_demuxes_by_custom_id_not_position(self):
         """
         TC-042: Records must be mapped by custom_id back to request_id.

@@ -25,7 +25,7 @@ class CSVFileHandler:
     def __init__(
         self,
         encoding: str = "utf-8",
-        default_options: Dict[str, Any] = None,
+        default_options: Optional[Dict[str, Any]] = None,
         logger: Optional[Any] = None,
     ):
         """
@@ -44,7 +44,7 @@ class CSVFileHandler:
         }
         self._logger = logger
 
-    def read_csv_file(self, file_path: str, **kwargs) -> pd.DataFrame:
+    def read_csv_file(self, file_path: str, **kwargs: Any) -> pd.DataFrame:
         """
         Read CSV file with error handling.
 
@@ -80,7 +80,11 @@ class CSVFileHandler:
             raise
 
     def write_csv_file(
-        self, df: pd.DataFrame, file_path: str, mode: str = "w", **kwargs
+        self,
+        df: pd.DataFrame,
+        file_path: str,
+        mode: str = "w",
+        **kwargs: Any,
     ) -> None:
         """
         Write DataFrame to CSV file.

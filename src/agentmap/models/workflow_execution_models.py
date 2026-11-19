@@ -76,7 +76,7 @@ class WorkflowListResponse(BaseModel):
 # ==========================================
 
 
-def create_workflow_router(_container=None) -> NoReturn:
+def create_workflow_router(_container: Any = None) -> NoReturn:
     """
     TOMBSTONED — this prototype router is retired.
 
@@ -120,7 +120,7 @@ def execute_workflow_from_cli_pattern(
     )
 
 
-def integrate_workflow_routes(_app, _container=None) -> NoReturn:
+def integrate_workflow_routes(_app: Any, _container: Any = None) -> NoReturn:
     """
     TOMBSTONED — do not call this function.
 

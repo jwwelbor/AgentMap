@@ -5,7 +5,7 @@ from typing import Any, Type
 
 def configure_service_strict(
     agent: Any,
-    protocol_class: Type,
+    protocol_class: Type[Any],
     service: Any,
     service_name: str,
     configure_method: str,
@@ -30,7 +30,7 @@ def configure_service_strict(
 
 def configure_storage_service_strict(
     agent: Any,
-    protocol_class: Type,
+    protocol_class: Type[Any],
     storage_manager: Any,
     storage_type: str,
     service_name: str,
@@ -58,7 +58,7 @@ def configure_storage_service_strict(
 class ServiceConfigSpec:
     def __init__(
         self,
-        protocol_class: Type,
+        protocol_class: Type[Any],
         service_attr: str,
         service_name: str,
         configure_method: str,
@@ -72,7 +72,7 @@ class ServiceConfigSpec:
 class StorageServiceConfigSpec:
     def __init__(
         self,
-        protocol_class: Type,
+        protocol_class: Type[Any],
         storage_type: str,
         service_name: str,
         configure_method: str,

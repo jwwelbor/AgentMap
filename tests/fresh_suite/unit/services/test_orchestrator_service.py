@@ -793,6 +793,16 @@ class TestOrchestratorService(unittest.TestCase):
         }
         self.assertEqual(result, expected_nodes)
 
+    def test_apply_node_filter_skips_non_string_node_types(self):
+        service = self.create_orchestrator_service()
+
+        result = service._apply_node_filter(
+            {"bad_type": {"type": 7}, "valid": {"type": "agent"}},
+            "nodeType:agent",
+        )
+
+        self.assertEqual(result, {"valid": {"type": "agent"}})
+
     def test_apply_node_filter_case_insensitive(self):
         """Test node filtering is case insensitive for types."""
         service = self.create_orchestrator_service()

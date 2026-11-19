@@ -78,12 +78,12 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
         self.temperature = float(context.get("temperature", 0.2))
 
         # Business service for delegation (will be injected via protocol)
-        self.orchestrator_service = (
+        self.orchestrator_service: Optional[OrchestratorService] = (
             None  # Will be configured via configure_orchestrator_service()
         )
 
         # Node Registry - will be injected separately (not part of standard protocols yet)
-        self.node_registry = None
+        self.node_registry: Dict[str, Any] = {}
 
         if self._logger:
             self.log_debug(
@@ -104,10 +104,11 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
                 )
             return "tiered"
 
-    def _parse_node_filter(self, context: dict) -> str:
+    def _parse_node_filter(self, context: Dict[str, Any]) -> str:
         """Parse node filter from various context formats."""
         if "nodes" in context:
-            return context["nodes"]
+            nodes = context["nodes"]
+            return nodes if isinstance(nodes, str) else "all"
         elif "node_type" in context:
             return f"nodeType:{context['node_type']}"
         elif "nodeType" in context:
@@ -278,8 +279,10 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
         """Get node dictionary from inputs when available."""
         # First check standard field names for nodes
         for field_name in ["available_nodes", "nodes", "__node_registry"]:
-            if field_name in inputs and isinstance(inputs[field_name], dict):
-                return inputs[field_name]
+            if field_name in inputs:
+                node_registry = self._validated_node_registry(inputs[field_name])
+                if node_registry:
+                    return node_registry
 
         # Then check configured input fields for nodes (skip text fields)
         for field in self.input_fields:
@@ -291,11 +294,22 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
                 "message",
                 "user_input",
             ]:
-                value = inputs[field]
-                if isinstance(value, dict):
-                    return value
+                node_registry = self._validated_node_registry(inputs[field])
+                if node_registry:
+                    return node_registry
 
         return {}
+
+    @staticmethod
+    def _validated_node_registry(value: Any) -> Dict[str, Dict[str, Any]]:
+        """Keep only string-named nodes with mapping metadata."""
+        if not isinstance(value, dict):
+            return {}
+        nodes: Dict[str, Dict[str, Any]] = {}
+        for name, info in value.items():
+            if isinstance(name, str) and isinstance(info, dict):
+                nodes[name] = info
+        return nodes
 
     def get_service_info(self) -> Dict[str, Any]:
         """Get information about agent configuration and service delegation."""

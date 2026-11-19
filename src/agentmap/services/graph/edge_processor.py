@@ -1,7 +1,7 @@
 """Edge processing for graph assembly."""
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Hashable, List, Optional, Tuple, Union
 
 from langgraph.graph import END, StateGraph
 
@@ -53,7 +53,7 @@ class EdgeProcessor:
 
     def process_node_edges(
         self,
-        builder: StateGraph,
+        builder: StateGraph[Any],
         node_name: str,
         edges: Dict[str, Union[str, List[str]]],
         orchestrator_nodes: List[str],
@@ -69,27 +69,36 @@ class EdgeProcessor:
 
     def _try_add_function_edge(
         self,
-        builder: StateGraph,
+        builder: StateGraph[Any],
         node_name: str,
         edges: Dict[str, Union[str, List[str]]],
     ) -> bool:
         """Try to add function-based routing edge."""
-        for target in edges.values():
-            func_ref = self.function_resolution.extract_func_ref(target)
-            if func_ref:
-                func = self.function_resolution.load_function(func_ref)
-                success = edges.get("success")
-                failure = edges.get("failure")
+        for edge_value in edges.values():
+            targets = [edge_value] if isinstance(edge_value, str) else edge_value
+            for target in targets:
+                func_ref = self.function_resolution.extract_func_ref(target)
+                if func_ref:
+                    func: Callable[..., Any] = self.function_resolution.load_function(
+                        func_ref
+                    )
+                    success = edges.get("success")
+                    failure = edges.get("failure")
 
-                def wrapped(state, f=func, s=success, fa=failure):
-                    return f(state, s, fa)
+                    def wrapped(
+                        state: Any,
+                        f: Callable[..., Any] = func,
+                        s: Union[str, List[str], None] = success,
+                        fa: Union[str, List[str], None] = failure,
+                    ) -> Any:
+                        return f(state, s, fa)
 
-                builder.add_conditional_edges(node_name, wrapped)
-                return True
+                    builder.add_conditional_edges(node_name, wrapped)
+                    return True
         return False
 
     def _normalize_edge_value(
-        self, edge_value: Union[str, List[str], None]
+        self, edge_value: Any
     ) -> Tuple[bool, Union[str, List[str], None]]:
         """Normalize edge value and determine if parallel."""
         if edge_value is None:
@@ -138,7 +147,7 @@ class EdgeProcessor:
         self,
         node_name: str,
         edge_type: str,
-        targets: Union[str, List[str]],
+        targets: Union[str, List[str], None],
         is_parallel: bool,
     ) -> None:
         """Log routing information for edges."""
@@ -146,11 +155,15 @@ class EdgeProcessor:
         self.logger.debug(f"[{node_name}] → {prefix}{edge_type} → {targets}")
 
     def _add_success_failure_routing(
-        self, builder: StateGraph, node_name: str, config: EdgeConfig
+        self, builder: StateGraph[Any], node_name: str, config: EdgeConfig
     ) -> None:
         """Add routing when both success and failure edges exist."""
 
-        def branch(state, s=config.success_targets, f=config.failure_targets):
+        def branch(
+            state: Any,
+            s: Union[str, List[str], None] = config.success_targets,
+            f: Union[str, List[str], None] = config.failure_targets,
+        ) -> Any:
             return s if state.get("last_action_success", True) else f
 
         builder.add_conditional_edges(node_name, branch)
@@ -169,11 +182,14 @@ class EdgeProcessor:
         self.logger.debug(f"[{node_name}] → {success_label} / {failure_label}")
 
     def _add_success_routing(
-        self, builder: StateGraph, node_name: str, config: EdgeConfig
+        self, builder: StateGraph[Any], node_name: str, config: EdgeConfig
     ) -> None:
         """Add routing when only success edge exists."""
 
-        def branch(state, t=config.success_targets):
+        def branch(
+            state: Any,
+            t: Union[str, List[str], None] = config.success_targets,
+        ) -> Any:
             return t if state.get("last_action_success", True) else None
 
         builder.add_conditional_edges(node_name, branch)
@@ -182,11 +198,14 @@ class EdgeProcessor:
         )
 
     def _add_failure_routing(
-        self, builder: StateGraph, node_name: str, config: EdgeConfig
+        self, builder: StateGraph[Any], node_name: str, config: EdgeConfig
     ) -> None:
         """Add routing when only failure edge exists."""
 
-        def branch(state, t=config.failure_targets):
+        def branch(
+            state: Any,
+            t: Union[str, List[str], None] = config.failure_targets,
+        ) -> Any:
             return t if not state.get("last_action_success", True) else None
 
         builder.add_conditional_edges(node_name, branch)
@@ -196,7 +215,7 @@ class EdgeProcessor:
 
     def _add_default_routing(
         self,
-        builder: StateGraph,
+        builder: StateGraph[Any],
         node_name: str,
         edges: Dict[str, Union[str, List[str]]],
     ) -> None:
@@ -204,18 +223,21 @@ class EdgeProcessor:
         default_parallel, default_targets = self._normalize_edge_value(edges["default"])
         if default_parallel:
 
-            def branch(state, targets=default_targets):
+            def branch(
+                state: Any,
+                targets: Union[str, List[str], None] = default_targets,
+            ) -> Any:
                 return targets
 
             builder.add_conditional_edges(node_name, branch)
             self._log_routing(node_name, "default", default_targets, True)
-        else:
+        elif isinstance(default_targets, str):
             builder.add_edge(node_name, default_targets)
             self._log_routing(node_name, "default", default_targets, False)
 
     def _add_standard_edges(
         self,
-        builder: StateGraph,
+        builder: StateGraph[Any],
         node_name: str,
         edges: Dict[str, Union[str, List[str]]],
     ) -> None:
@@ -233,9 +255,9 @@ class EdgeProcessor:
 
     def add_dynamic_router(
         self,
-        builder: StateGraph,
+        builder: StateGraph[Any],
         node_name: str,
-        failure_target: Optional[str] = None,
+        failure_target: Optional[Union[str, List[str]]] = None,
         all_node_names: Optional[List[str]] = None,
     ) -> None:
         """Add dynamic routing for orchestrator nodes.
@@ -247,7 +269,7 @@ class EdgeProcessor:
             all_node_names: List of all node names in the graph (for path_map)
         """
 
-        def dynamic_router(state):
+        def dynamic_router(state: Any) -> Any:
             # Check failure condition first
             if failure_target:
                 if not self.state_adapter.get_value(state, "last_action_success", True):
@@ -265,7 +287,7 @@ class EdgeProcessor:
         # Create path_map for LangGraph 1.x compatibility
         # Map each node name to itself so LangGraph knows valid destinations
         # Include None -> END mapping to handle cases where no next node is selected
-        path_map = None
+        path_map: Optional[Dict[Hashable, str]] = None
         if all_node_names:
             path_map = {node: node for node in all_node_names}
             # Add None mapping to END to prevent KeyError when no next node selected

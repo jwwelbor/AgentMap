@@ -6,9 +6,11 @@ like fuzzywuzzy and spaCy.
 Extracted from FeaturesRegistryService for better separation of concerns.
 """
 
+import importlib
 from typing import Any, Dict
 
 from agentmap.services.config.availability_cache_service import AvailabilityCacheService
+from agentmap.services.logging_service import TraceLogger
 
 
 class NLPCapabilityChecker:
@@ -23,7 +25,7 @@ class NLPCapabilityChecker:
     def __init__(
         self,
         availability_cache_service: AvailabilityCacheService,
-        logger,
+        logger: TraceLogger,
     ):
         """
         Initialize NLP capability checker.
@@ -71,15 +73,15 @@ class NLPCapabilityChecker:
             self.logger.trace(
                 "[NLPCapabilityChecker] Cache hit for capability.nlp.fuzzywuzzy"
             )
-            return cached.get("available", False)
+            return bool(cached.get("available", False))
 
         # Perform actual check
         try:
-            from fuzzywuzzy import fuzz
+            fuzz = importlib.import_module("fuzzywuzzy.fuzz")
 
             # Test basic functionality
             test_score = fuzz.ratio("test", "test")
-            available = test_score == 100
+            available = bool(test_score == 100)
 
             # Cache result
             self.availability_cache_service.set_availability(
@@ -118,11 +120,11 @@ class NLPCapabilityChecker:
             self.logger.trace(
                 "[NLPCapabilityChecker] Cache hit for capability.nlp.spacy"
             )
-            return cached.get("available", False)
+            return bool(cached.get("available", False))
 
         # Perform actual check
         try:
-            import spacy
+            spacy = importlib.import_module("spacy")
 
             # Check if English model is available
             nlp = spacy.load("en_core_web_sm")
@@ -166,28 +168,28 @@ class NLPCapabilityChecker:
         Returns:
             Dictionary with NLP library availability and capabilities
         """
-        capabilities = {
-            "fuzzywuzzy_available": self.has_fuzzywuzzy(),
-            "spacy_available": self.has_spacy(),
-            "enhanced_matching": False,
-            "fuzzy_threshold_default": 80,
-            "supported_features": [],
-        }
+        fuzzywuzzy_available = self.has_fuzzywuzzy()
+        spacy_available = self.has_spacy()
+        supported_features = []
 
         # Add supported features based on available libraries
-        if capabilities["fuzzywuzzy_available"]:
-            capabilities["supported_features"].append("fuzzy_string_matching")
-            capabilities["supported_features"].append("typo_tolerance")
+        if fuzzywuzzy_available:
+            supported_features.append("fuzzy_string_matching")
+            supported_features.append("typo_tolerance")
 
-        if capabilities["spacy_available"]:
-            capabilities["supported_features"].append("advanced_tokenization")
-            capabilities["supported_features"].append("keyword_extraction")
-            capabilities["supported_features"].append("lemmatization")
+        if spacy_available:
+            supported_features.append("advanced_tokenization")
+            supported_features.append("keyword_extraction")
+            supported_features.append("lemmatization")
 
         # Enhanced matching available if either library is present
-        capabilities["enhanced_matching"] = (
-            capabilities["fuzzywuzzy_available"] or capabilities["spacy_available"]
-        )
+        capabilities: Dict[str, Any] = {
+            "fuzzywuzzy_available": fuzzywuzzy_available,
+            "spacy_available": spacy_available,
+            "enhanced_matching": fuzzywuzzy_available or spacy_available,
+            "fuzzy_threshold_default": 80,
+            "supported_features": supported_features,
+        }
 
         self.logger.debug(f"[NLPCapabilityChecker] NLP capabilities: {capabilities}")
         return capabilities

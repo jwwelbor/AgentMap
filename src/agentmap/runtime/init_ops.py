@@ -6,15 +6,15 @@ from agentmap.exceptions.runtime_exceptions import AgentMapNotInitialized
 from agentmap.runtime.runtime_manager import RuntimeManager
 
 
-def _is_cache_initialized(container) -> bool:
+def _is_cache_initialized(container: Any) -> bool:
     try:
         availability_cache_service = container.availability_cache_service()
-        return availability_cache_service.is_initialized()
+        return bool(availability_cache_service.is_initialized())
     except Exception:
         return False
 
 
-def _refresh_cache(container) -> None:
+def _refresh_cache(container: Any) -> None:
     try:
         availability_cache_service = container.availability_cache_service()
         availability_cache_service.refresh_cache(container)
@@ -69,7 +69,7 @@ async def release_runtime_lifespan(lease: object) -> None:
     await RuntimeManager.release_lifespan(lease)
 
 
-def get_container():
+def get_container() -> Any:
     return RuntimeManager.get_container()
 
 

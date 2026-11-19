@@ -26,7 +26,7 @@ def serve_command(
     reload: bool = typer.Option(
         False, "--reload", "-r", help="Enable auto-reload for development"
     ),
-):
+) -> None:
     """
     Start the AgentMap HTTP API server.
 

@@ -7,6 +7,8 @@ query filtering, and document management.
 
 from typing import Any, Dict
 
+from agentmap.services.storage.sort_utils import get_sort_options, stable_sort_key
+
 
 class MemoryStorageHelpers:
     """
@@ -109,6 +111,7 @@ class MemoryStorageHelpers:
             return value
 
         # Make a copy to avoid modifying original
+        result: Any
         if isinstance(data, dict):
             result = data.copy()
         elif isinstance(data, list):
@@ -183,11 +186,12 @@ class MemoryStorageHelpers:
         # Extract special query parameters
         limit = query.pop("limit", None)
         offset = query.pop("offset", 0)
-        sort_field = query.pop("sort", None)
-        sort_order = query.pop("order", "asc").lower()
+        sort_field, reverse = get_sort_options(
+            query.pop("sort", None), query.pop("order", "asc")
+        )
 
         # Apply field filtering
-        filtered_data = {}
+        filtered_data: Dict[str, Any] = {}
         for doc_id, doc_data in data.items():
             if not isinstance(doc_data, dict):
                 continue
@@ -206,9 +210,10 @@ class MemoryStorageHelpers:
 
         # Apply sorting
         if sort_field:
-            reverse = sort_order == "desc"
             items.sort(
-                key=lambda x: x[1].get(sort_field) if isinstance(x[1], dict) else None,
+                key=lambda x: stable_sort_key(
+                    x[1].get(sort_field) if isinstance(x[1], dict) else None
+                ),
                 reverse=reverse,
             )
 

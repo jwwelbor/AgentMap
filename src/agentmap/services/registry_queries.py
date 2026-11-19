@@ -4,7 +4,8 @@ Query operations for HostServiceRegistry.
 This module provides mixins for service and protocol lookup operations.
 """
 
-from typing import Any, Dict, List, Optional, Type
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 
 class QueryMixin:
@@ -14,6 +15,13 @@ class QueryMixin:
     Requires RegistryStorageMixin to be present in the class hierarchy.
     Requires the consuming class to have a `self.logger` attribute.
     """
+
+    if TYPE_CHECKING:
+        logger: logging.Logger
+        _service_providers: Dict[str, Any]
+        _protocol_implementations: Dict[type[Any], str]
+        _service_metadata: Dict[str, Dict[str, Any]]
+        _protocol_cache: Dict[str, List[type[Any]]]
 
     def get_service_provider(self, service_name: str) -> Optional[Any]:
         """
@@ -44,7 +52,7 @@ class QueryMixin:
             )
             return None
 
-    def get_protocol_implementation(self, protocol: Type) -> Optional[str]:
+    def get_protocol_implementation(self, protocol: type[Any]) -> Optional[str]:
         """
         Get service name that implements the specified protocol.
 
@@ -73,7 +81,7 @@ class QueryMixin:
             )
             return None
 
-    def discover_services_by_protocol(self, protocol: Type) -> List[str]:
+    def discover_services_by_protocol(self, protocol: type[Any]) -> List[str]:
         """
         Discover all services that implement a specific protocol.
 
@@ -196,7 +204,7 @@ class QueryMixin:
             )
             return False
 
-    def get_service_protocols(self, service_name: str) -> List[Type]:
+    def get_service_protocols(self, service_name: str) -> List[type[Any]]:
         """
         Get all protocols implemented by a service.
 
@@ -237,7 +245,7 @@ class QueryMixin:
         """
         return service_name in self._service_providers
 
-    def is_protocol_implemented(self, protocol: Type) -> bool:
+    def is_protocol_implemented(self, protocol: type[Any]) -> bool:
         """
         Check if a protocol has any implementations.
 

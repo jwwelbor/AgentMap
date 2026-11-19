@@ -9,7 +9,7 @@ import asyncio
 import json
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.models.execution.summary import ExecutionSummary
@@ -28,7 +28,7 @@ _RESUME_PAYLOAD_MAX_BYTES: int = 64 * 1024  # 64 KiB
 
 # Strong references to fire-and-forget background tasks so the GC cannot collect
 # them before they complete (asyncio GC-collection risk, NB-1).
-_BACKGROUND_TASKS: set = set()
+_BACKGROUND_TASKS: Set[asyncio.Task[Any]] = set()
 
 
 def _validate_resume_payload(resume_payload: Any) -> None:
@@ -190,7 +190,7 @@ class CheckpointManager:
             # LangGraph (F-5 / NB-C).
             _validate_resume_payload(resume_payload)
 
-            command_input = Command(resume=resume_payload)
+            command_input: Command[Any] = Command(resume=resume_payload)
 
             final_state = executable_graph.invoke(
                 command_input, config=langgraph_config
@@ -301,7 +301,7 @@ class CheckpointManager:
         start_time = time.time()
         marked_resuming = False
         execution_tracker = None  # sentinel; set after create_tracker() succeeds
-        _thread_future: Optional[asyncio.Future] = None
+        _thread_future: Optional[asyncio.Future[Any]] = None
         _thread_done_event: Optional[threading.Event] = None
 
         try:
@@ -376,7 +376,7 @@ class CheckpointManager:
             # LangGraph (F-5 / NB-C).
             _validate_resume_payload(resume_payload)
 
-            command_input = Command(resume=resume_payload)
+            command_input: Command[Any] = Command(resume=resume_payload)
 
             # Prefer native async invoke; fall back to worker thread.
             # For the to_thread path, keep a reference to the thread future so
@@ -390,7 +390,7 @@ class CheckpointManager:
             else:
                 _thread_done_event = threading.Event()
 
-                def _invoke_and_signal():
+                def _invoke_and_signal() -> Any:
                     try:
                         return executable_graph.invoke(
                             command_input, config=langgraph_config

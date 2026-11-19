@@ -5,11 +5,61 @@ This module provides an AWS-specific implementation of the CloudMessageAdapter
 interface for publishing messages to AWS SNS topics or SQS queues.
 """
 
+from __future__ import annotations
+
 import json
-from typing import Any, Dict, Optional
+import logging
+from collections.abc import Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Dict, Optional, Protocol, cast
 
 from agentmap.exceptions import MessagingConnectionError
 from agentmap.models.storage.types import StorageResult
+
+if TYPE_CHECKING:
+    from agentmap.services.messaging.messaging_service import CloudProvider
+
+
+class _Paginator(Protocol):
+    def paginate(self) -> Iterable[Mapping[str, Any]]: ...
+
+
+class _SNSClient(Protocol):
+    def publish(
+        self,
+        *,
+        TopicArn: str,
+        Message: str,
+        MessageAttributes: Dict[str, Dict[str, str]],
+    ) -> Mapping[str, Any]: ...
+
+    def create_topic(self, *, Name: str) -> Mapping[str, Any]: ...
+
+    def get_paginator(self, operation_name: str) -> _Paginator: ...
+
+
+class _SQSExceptions(Protocol):
+    QueueDoesNotExist: type[BaseException]
+
+
+class _SQSClient(Protocol):
+    exceptions: _SQSExceptions
+
+    def send_message(
+        self,
+        *,
+        QueueUrl: str,
+        MessageBody: str,
+        MessageAttributes: Dict[str, Dict[str, str]],
+    ) -> Mapping[str, Any]: ...
+
+    def create_queue(self, *, QueueName: str) -> Mapping[str, Any]: ...
+
+    def get_queue_url(self, *, QueueName: str) -> Mapping[str, Any]: ...
+
+
+def _response_string(response: Mapping[str, Any], key: str) -> Optional[str]:
+    value = response.get(key)
+    return value if isinstance(value, str) else None
 
 
 class AWSMessageAdapter:
@@ -20,7 +70,7 @@ class AWSMessageAdapter:
     AWS messaging services, supporting both SNS and SQS.
     """
 
-    def __init__(self, config: Dict[str, Any], logger):
+    def __init__(self, config: Dict[str, Any], logger: logging.Logger):
         """
         Initialize the AWS messaging adapter.
 
@@ -30,10 +80,10 @@ class AWSMessageAdapter:
         """
         self.config = config or {}
         self.logger = logger
-        self._sns_client = None
-        self._sqs_client = None
-        self.region_name = None
-        self.service_type = None  # 'sns' or 'sqs'
+        self._sns_client: Optional[_SNSClient] = None
+        self._sqs_client: Optional[_SQSClient] = None
+        self.region_name: Optional[str] = None
+        self.service_type: Optional[str] = None  # 'sns' or 'sqs'
 
         # Initialize clients
         self._initialize_clients()
@@ -48,8 +98,10 @@ class AWSMessageAdapter:
         try:
             # Import AWS SDK
             try:
-                import boto3
-                from botocore.exceptions import (
+                # Messaging owner: remove these boundary ignores when typed AWS
+                # SDK packages are included in the locked all-extras environment.
+                import boto3  # type: ignore[import-not-found]
+                from botocore.exceptions import (  # type: ignore[import-not-found]
                     NoCredentialsError,
                 )
             except ImportError:
@@ -78,15 +130,17 @@ class AWSMessageAdapter:
 
                 # Create clients based on service type
                 if self.service_type == "sns":
-                    self._sns_client = session.client(
-                        "sns", region_name=self.region_name
+                    self._sns_client = cast(
+                        _SNSClient,
+                        session.client("sns", region_name=self.region_name),
                     )
                     self.logger.debug(
                         f"AWS SNS client initialized for region: {self.region_name}"
                     )
                 elif self.service_type == "sqs":
-                    self._sqs_client = session.client(
-                        "sqs", region_name=self.region_name
+                    self._sqs_client = cast(
+                        _SQSClient,
+                        session.client("sqs", region_name=self.region_name),
                     )
                     self.logger.debug(
                         f"AWS SQS client initialized for region: {self.region_name}"
@@ -112,7 +166,7 @@ class AWSMessageAdapter:
         topic: str,
         message: Dict[str, Any],
         attributes: Optional[Dict[str, str]] = None,
-    ) -> StorageResult:
+    ) -> StorageResult[Dict[str, Any]]:
         """
         Publish a message to AWS SNS topic or SQS queue.
 
@@ -149,7 +203,7 @@ class AWSMessageAdapter:
         topic: str,
         message: Dict[str, Any],
         attributes: Optional[Dict[str, str]] = None,
-    ) -> StorageResult:
+    ) -> StorageResult[Dict[str, Any]]:
         """Publish message to SNS topic."""
         try:
             # Get or create topic ARN
@@ -174,7 +228,7 @@ class AWSMessageAdapter:
                     }
 
             # Publish to SNS
-            response = self._sns_client.publish(
+            response = self._require_sns_client().publish(
                 TopicArn=topic_arn,
                 Message=message_body,
                 MessageAttributes=message_attributes,
@@ -202,7 +256,7 @@ class AWSMessageAdapter:
         queue: str,
         message: Dict[str, Any],
         attributes: Optional[Dict[str, str]] = None,
-    ) -> StorageResult:
+    ) -> StorageResult[Dict[str, Any]]:
         """Publish message to SQS queue."""
         try:
             # Get queue URL
@@ -227,7 +281,7 @@ class AWSMessageAdapter:
                     }
 
             # Send to SQS
-            response = self._sqs_client.send_message(
+            response = self._require_sqs_client().send_message(
                 QueueUrl=queue_url,
                 MessageBody=message_body,
                 MessageAttributes=message_attributes,
@@ -250,7 +304,7 @@ class AWSMessageAdapter:
                 operation="publish_message",
             )
 
-    async def create_topic(self, topic_name: str) -> StorageResult:
+    async def create_topic(self, topic_name: str) -> StorageResult[Dict[str, Any]]:
         """
         Create a topic/queue if it doesn't exist.
 
@@ -280,10 +334,10 @@ class AWSMessageAdapter:
                 operation="create_topic",
             )
 
-    async def _create_sns_topic(self, topic_name: str) -> StorageResult:
+    async def _create_sns_topic(self, topic_name: str) -> StorageResult[Dict[str, Any]]:
         """Create SNS topic."""
         try:
-            response = self._sns_client.create_topic(Name=topic_name)
+            response = self._require_sns_client().create_topic(Name=topic_name)
             topic_arn = response["TopicArn"]
 
             self.logger.info(f"Created/verified AWS SNS topic: {topic_name}")
@@ -302,10 +356,10 @@ class AWSMessageAdapter:
                 operation="create_topic",
             )
 
-    async def _create_sqs_queue(self, queue_name: str) -> StorageResult:
+    async def _create_sqs_queue(self, queue_name: str) -> StorageResult[Dict[str, Any]]:
         """Create SQS queue."""
         try:
-            response = self._sqs_client.create_queue(QueueName=queue_name)
+            response = self._require_sqs_client().create_queue(QueueName=queue_name)
             queue_url = response["QueueUrl"]
 
             self.logger.info(f"Created/verified AWS SQS queue: {queue_name}")
@@ -328,17 +382,17 @@ class AWSMessageAdapter:
         """Get SNS topic ARN, creating topic if needed."""
         try:
             # First try to find existing topic
-            paginator = self._sns_client.get_paginator("list_topics")
+            paginator = self._require_sns_client().get_paginator("list_topics")
             for page in paginator.paginate():
                 for topic in page["Topics"]:
-                    arn = topic["TopicArn"]
-                    if arn.endswith(f":{topic_name}"):
+                    arn = _response_string(topic, "TopicArn")
+                    if arn is not None and arn.endswith(f":{topic_name}"):
                         return arn
 
             # Topic not found, create it
             result = await self._create_sns_topic(topic_name)
-            if result.success:
-                return result.data.get("topic_arn")
+            if result.success and result.data is not None:
+                return _response_string(result.data, "topic_arn")
 
             return None
 
@@ -351,20 +405,32 @@ class AWSMessageAdapter:
         try:
             # Try to get existing queue
             try:
-                response = self._sqs_client.get_queue_url(QueueName=queue_name)
-                return response["QueueUrl"]
-            except self._sqs_client.exceptions.QueueDoesNotExist:
+                response = self._require_sqs_client().get_queue_url(
+                    QueueName=queue_name
+                )
+                return _response_string(response, "QueueUrl")
+            except self._require_sqs_client().exceptions.QueueDoesNotExist:
                 # Queue doesn't exist, create it
                 result = await self._create_sqs_queue(queue_name)
-                if result.success:
-                    return result.data.get("queue_url")
+                if result.success and result.data is not None:
+                    return _response_string(result.data, "queue_url")
                 return None
 
         except Exception as e:
             self.logger.error(f"Failed to get queue URL for {queue_name}: {str(e)}")
             return None
 
-    def get_provider(self):
+    def _require_sns_client(self) -> _SNSClient:
+        if self._sns_client is None:
+            raise MessagingConnectionError("AWS SNS client is not initialized")
+        return self._sns_client
+
+    def _require_sqs_client(self) -> _SQSClient:
+        if self._sqs_client is None:
+            raise MessagingConnectionError("AWS SQS client is not initialized")
+        return self._sqs_client
+
+    def get_provider(self) -> CloudProvider:
         """Get the cloud provider type."""
         from agentmap.services.messaging.messaging_service import CloudProvider
 

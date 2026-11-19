@@ -6,12 +6,14 @@ handling both text and binary files with proper encoding and error handling.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from agentmap.services.storage.types import StorageResult, WriteMode
 
 if TYPE_CHECKING:
     from logging import Logger
+
+ResultCreator = Callable[..., StorageResult[Any]]
 
 
 class FileIOHandler:
@@ -26,7 +28,7 @@ class FileIOHandler:
         self,
         encoding: str = "utf-8",
         newline: str | None = None,
-        logger: "Logger" = None,
+        logger: Optional["Logger"] = None,
     ):
         """
         Initialize the file I/O handler.
@@ -78,9 +80,9 @@ class FileIOHandler:
         collection: str,
         encoding: str | None = None,
         newline: str | None = None,
-        error_result_creator=None,
-        success_result_creator=None,
-    ) -> StorageResult:
+        error_result_creator: Optional[ResultCreator] = None,
+        success_result_creator: Optional[ResultCreator] = None,
+    ) -> StorageResult[Any]:
         """
         Write content to text file.
 
@@ -98,6 +100,8 @@ class FileIOHandler:
         Returns:
             StorageResult with operation details
         """
+        if error_result_creator is None or success_result_creator is None:
+            raise ValueError("Storage result creator callbacks are required")
         enc = encoding or self.encoding
         nl = newline if newline is not None else self.newline
 
@@ -168,9 +172,9 @@ class FileIOHandler:
         mode: WriteMode,
         file_exists: bool,
         collection: str,
-        error_result_creator=None,
-        success_result_creator=None,
-    ) -> StorageResult:
+        error_result_creator: Optional[ResultCreator] = None,
+        success_result_creator: Optional[ResultCreator] = None,
+    ) -> StorageResult[Any]:
         """
         Write content to binary file.
 
@@ -186,6 +190,8 @@ class FileIOHandler:
         Returns:
             StorageResult with operation details
         """
+        if error_result_creator is None or success_result_creator is None:
+            raise ValueError("Storage result creator callbacks are required")
         try:
             # Handle different write modes
             if mode == WriteMode.WRITE:

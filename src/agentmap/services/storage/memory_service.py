@@ -38,9 +38,9 @@ class MemoryStorageService(BaseStorageService):
         provider_name: str,
         configuration: Any,
         logging_service: Any,
-        file_path_service: Any = None,
-        base_directory: str = None,
-        telemetry_service=None,
+        file_path_service: Optional[Any] = None,
+        base_directory: Optional[str] = None,
+        telemetry_service: Optional[Any] = None,
     ):
         """Initialize memory storage service."""
         super().__init__(
@@ -60,12 +60,12 @@ class MemoryStorageService(BaseStorageService):
         self._persistence_manager = MemoryPersistenceManager(self._logger)
 
     @property
-    def _metadata(self):
+    def _metadata(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
         """Backwards compatibility accessor for internal metadata."""
         return self._metadata_manager._metadata
 
     @property
-    def _stats(self):
+    def _stats(self) -> Dict[str, Any]:
         """Backwards compatibility accessor for internal stats."""
         return self._metadata_manager._stats
 
@@ -166,7 +166,7 @@ class MemoryStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """
         Read data from memory storage.
@@ -248,8 +248,8 @@ class MemoryStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         mode: WriteMode = WriteMode.WRITE,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Write data to memory storage.
 
@@ -366,12 +366,12 @@ class MemoryStorageService(BaseStorageService):
     def _handle_write_mode(
         self,
         collection: str,
-        collection_data: Dict,
+        collection_data: Dict[str, Any],
         document_id: str,
         data: Any,
         path: Optional[str],
         created_new: bool,
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """Handle WRITE mode operation."""
         if path:
             # Path-based write
@@ -380,7 +380,7 @@ class MemoryStorageService(BaseStorageService):
                     collection_data[document_id], path, data
                 )
             else:
-                new_doc = {}
+                new_doc: Dict[str, Any] = {}
                 collection_data[document_id] = self._helpers.update_path(
                     new_doc, path, data
                 )
@@ -406,11 +406,11 @@ class MemoryStorageService(BaseStorageService):
     def _handle_update_mode(
         self,
         collection: str,
-        collection_data: Dict,
+        collection_data: Dict[str, Any],
         document_id: str,
         data: Any,
         path: Optional[str],
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """Handle UPDATE mode operation."""
         if document_id not in collection_data:
             return self._create_error_result(
@@ -444,11 +444,11 @@ class MemoryStorageService(BaseStorageService):
     def _handle_append_mode(
         self,
         collection: str,
-        collection_data: Dict,
+        collection_data: Dict[str, Any],
         document_id: str,
         data: Any,
         created_new: bool,
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """Handle APPEND mode operation."""
         if document_id not in collection_data:
             # Create new document with data as initial content
@@ -489,8 +489,8 @@ class MemoryStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         path: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Delete from memory storage.
 
@@ -600,7 +600,7 @@ class MemoryStorageService(BaseStorageService):
             )
 
     def exists(
-        self, collection: str, document_id: Optional[str] = None, **kwargs
+        self, collection: str, document_id: Optional[str] = None, **kwargs: Any
     ) -> bool:
         """
         Check if collection or document exists in memory storage.
@@ -631,7 +631,7 @@ class MemoryStorageService(BaseStorageService):
             return False
 
     def count(
-        self, collection: str, query: Optional[Dict[str, Any]] = None, **kwargs
+        self, collection: str, query: Optional[Dict[str, Any]] = None, **kwargs: Any
     ) -> int:
         """
         Count documents in memory storage.
@@ -666,7 +666,7 @@ class MemoryStorageService(BaseStorageService):
             self._logger.debug(f"Error counting documents: {e}")
             return 0
 
-    def list_collections(self, **kwargs) -> List[str]:
+    def list_collections(self, **kwargs: Any) -> List[str]:
         """
         List all collections in memory storage.
 
@@ -691,7 +691,7 @@ class MemoryStorageService(BaseStorageService):
         """
         return self._metadata_manager.get_stats(self._storage)
 
-    def clear_all(self) -> StorageResult:
+    def clear_all(self) -> StorageResult[Any]:
         """
         Clear all data from memory storage.
 
@@ -717,7 +717,7 @@ class MemoryStorageService(BaseStorageService):
         except Exception as e:
             self._handle_error("clear_all", e)
 
-    def save_persistence(self) -> StorageResult:
+    def save_persistence(self) -> StorageResult[Any]:
         """
         Save current storage state to persistence file (if configured).
 

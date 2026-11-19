@@ -87,6 +87,16 @@ class TestConfigService(unittest.TestCase):
         result = self.config_service.load_config(test_file)
         self.assertEqual(result, {})
 
+    def test_load_config_rejects_non_mapping_yaml_roots(self):
+        for index, yaml_root in enumerate((["section"], "section")):
+            with self.subTest(yaml_root=yaml_root):
+                test_file = os.path.join(self.temp_dir, f"root_{index}.yaml")
+                with open(test_file, "w", encoding="utf-8") as stream:
+                    yaml.safe_dump(yaml_root, stream)
+
+                with self.assertRaises(ConfigurationException):
+                    self.config_service.load_config(test_file)
+
     def test_get_value_from_config_simple(self):
         """Test getting simple values from config using dot notation."""
         config_data = {

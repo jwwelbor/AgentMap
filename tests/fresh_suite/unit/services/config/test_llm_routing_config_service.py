@@ -8,6 +8,7 @@ routing configuration, provider selection, and routing logic.
 import unittest
 from unittest.mock import Mock
 
+from agentmap.services.config.llm_routing_matrix import load_routing_matrix
 from src.agentmap.services.config.app_config_service import AppConfigService
 from src.agentmap.services.config.llm_routing_config_service import (
     LLMRoutingConfigService,
@@ -503,6 +504,27 @@ class TestLlmRoutingConfigService(unittest.TestCase):
         self.assertIn("anthropic", service.routing_matrix)
         self.assertIn("low", service.routing_matrix["anthropic"])
         self.assertIn("medium", service.routing_matrix["anthropic"])
+
+    def test_routing_matrix_ignores_values_with_invalid_runtime_shapes(self):
+        logger = Mock()
+
+        result = load_routing_matrix(
+            {
+                "routing_matrix": {
+                    "anthropic": {
+                        "LOW": "claude-haiku",
+                        "MEDIUM": ["not", "a", "model"],
+                        3: "invalid-complexity-key",
+                    },
+                    4: {"low": "invalid-provider-key"},
+                    "openai": ["invalid-provider-matrix"],
+                }
+            },
+            logger,
+        )
+
+        self.assertEqual(result, {"anthropic": {"low": "claude-haiku"}})
+        self.assertGreaterEqual(logger.warning.call_count, 3)
 
     def test_task_type_validation(self):
         """Test task type configuration validation."""

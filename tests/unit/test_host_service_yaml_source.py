@@ -156,6 +156,10 @@ class TestImportClass(unittest.TestCase):
         with self.assertRaises(ImportError):
             _import_class("JustAName")
 
+    def test_import_non_class_module_attribute(self):
+        with self.assertRaisesRegex(ImportError, "does not resolve to a class"):
+            _import_class("agentmap.services.protocol_validation.is_valid_protocol")
+
 
 # ============================================================================
 # _topological_sort tests

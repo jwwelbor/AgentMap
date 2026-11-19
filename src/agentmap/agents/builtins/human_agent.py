@@ -27,10 +27,11 @@ class HumanAgent(SuspendAgent):
         context: Optional[Dict[str, Any]] = None,
         logger: Optional[logging.Logger] = None,
     ):
+        interaction_context = context if context is not None else {}
         super().__init__(  # call into SuspendAgent
             name=name,
             prompt=prompt,
-            context=context,
+            context=interaction_context,
             logger=logger,
             execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
@@ -42,18 +43,28 @@ class HumanAgent(SuspendAgent):
         # timeout_seconds: Optional[int] = None,
         # default_action: Optional[str] = None,
 
-        interaction_type = context.get("interaction_type", "text_input")
-        options = context.get("options")
-        timeout_seconds = context.get("timeout_seconds")
-        default_option = context.get("default_option")
+        interaction_type = interaction_context.get("interaction_type", "text_input")
+        options = interaction_context.get("options")
+        timeout_seconds = interaction_context.get("timeout_seconds")
+        default_option = interaction_context.get("default_option")
 
-        try:
-            self.interaction_type = InteractionType(interaction_type.lower())
-        except ValueError:
+        if isinstance(interaction_type, InteractionType):
+            self.interaction_type = interaction_type
+        elif isinstance(interaction_type, str):
+            try:
+                self.interaction_type = InteractionType(interaction_type.lower())
+            except ValueError:
+                # Default to text_input if invalid type provided
+                self.interaction_type = InteractionType.TEXT_INPUT
+                self.log_warning(
+                    f"Invalid interaction type '{interaction_type}', "
+                    "defaulting to 'text_input'"
+                )
+        else:
             # Default to text_input if invalid type provided
             self.interaction_type = InteractionType.TEXT_INPUT
             self.log_warning(
-                f"Invalid interaction type '{interaction_type}', defaulting to 'text_input'"
+                "Interaction type must be a string; defaulting to 'text_input'"
             )
 
         # Store interaction configuration

@@ -8,7 +8,7 @@ operations to CSVStorageService, keeping agents simple and focused.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from agentmap.agents.builtins.storage.base_storage_agent import (
     BaseStorageAgent,
@@ -17,6 +17,9 @@ from agentmap.models.storage import DocumentResult
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.protocols import CSVCapableAgent
 from agentmap.services.state_adapter_service import StateAdapterService
+
+if TYPE_CHECKING:
+    from agentmap.services.storage.csv_service import CSVStorageService
 
 
 class CSVAgent(BaseStorageAgent, CSVCapableAgent):
@@ -64,10 +67,10 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
         )
 
         # CSV service will be configured via protocol
-        self._csv_service = None
+        self._csv_service: Optional[CSVStorageService] = None
 
     # Protocol Implementation (Required by CSVCapableAgent)
-    def configure_csv_service(self, csv_service) -> None:
+    def configure_csv_service(self, csv_service: CSVStorageService) -> None:
         """
         Configure CSV storage service for this agent.
 
@@ -82,7 +85,7 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
         self.log_debug("CSV service configured")
 
     @property
-    def csv_service(self):
+    def csv_service(self) -> CSVStorageService:
         """Get CSV service, raising clear error if not configured."""
         if self._csv_service is None:
             raise ValueError(f"CSV service not configured for agent '{self.name}'")
@@ -94,16 +97,10 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
         as services are injected via protocols.
         """
         # In the new pattern, services are injected via configure_* methods
-        # This method is kept for compatibility but should not be used
+        # This method is kept for compatibility but should not be used.
         if self._csv_service is None:
-            self.log_warning(
-                "CSV service not configured - using fallback initialization"
-            )
-            # Fallback to create service directly (not recommended)
-            from agentmap.services.storage.csv_service import CSVStorageService
-
-            self._csv_service = CSVStorageService(self.context)
-            self._client = self._csv_service
+            raise ValueError(f"CSV service not configured for agent '{self.name}'")
+        self._client = self._csv_service
 
     def _validate_inputs(self, inputs: Dict[str, Any]) -> None:
         """
@@ -156,7 +153,7 @@ class CSVAgent(BaseStorageAgent, CSVCapableAgent):
 
     def _handle_operation_error(
         self, error: Exception, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Handle CSV operation errors with enhanced context and full paths.
 

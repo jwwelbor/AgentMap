@@ -173,7 +173,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         if eligible_providers is not None:
             candidates = list(eligible_providers)
         else:
-            registered = (
+            registered: Any = (
                 self.features_registry.get_available_providers("llm")
                 if self.features_registry
                 else []
@@ -228,7 +228,7 @@ class LLMFallbackHandler(LLMFallbackAsyncLadderMixin):
         convert_messages_fn: Any,
         *,
         eligible_providers: Optional[Sequence[str]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """
         Attempt tiered fallback strategy when LLM call fails.

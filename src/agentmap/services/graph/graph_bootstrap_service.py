@@ -12,8 +12,10 @@ from typing import Any, Dict, Optional, Set
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.agent.agent_registry_service import AgentRegistryService
+from agentmap.services.class_import import require_class
 from agentmap.services.config.agent_config_service import AgentConfigService
 from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.dependency_checker_service import DependencyCheckerService
 from agentmap.services.features_registry_service import FeaturesRegistryService
 from agentmap.services.logging_service import LoggingService
 
@@ -31,19 +33,19 @@ class GraphBootstrapService:
         self,
         agent_registry_service: AgentRegistryService,
         features_registry_service: FeaturesRegistryService,
-        # dependency_checker_service: DependencyCheckerService,
         app_config_service: AppConfigService,
         logging_service: LoggingService,
+        dependency_checker_service: Optional[DependencyCheckerService] = None,
     ):
         """Initialize with same dependencies as ApplicationBootstrapService."""
         self.agent_registry = agent_registry_service
         self.features_registry = features_registry_service
-        # self.dependency_checker = dependency_checker_service
+        self.dependency_checker = dependency_checker_service
         self.app_config = app_config_service
         self.logger = logging_service.get_class_logger(self)
 
         # Track what we've loaded for this graph
-        self._loaded_agents = set()
+        self._loaded_agents: Set[str] = set()
 
         self.logger.info(
             "[GraphBootstrapService] Initialized for minimal graph-specific bootstrap"
@@ -78,31 +80,29 @@ class GraphBootstrapService:
 
         # The bundle's required_services are already filtered by GraphBundleService
         # We trust the bundle and don't need additional filtering
+        required_agents = bundle.required_agents or set()
+        required_services = bundle.required_services or set()
         self.logger.debug(
-            f"[GraphBootstrapService] Loading {len(bundle.required_agents)} agents, "
-            f"{len(bundle.required_services)} services for graph"
+            f"[GraphBootstrapService] Loading {len(required_agents)} agents, "
+            f"{len(required_services)} services for graph"
         )
 
         # Step 1: Register required core agents
-        self._register_required_core_agents(bundle.required_agents)
+        self._register_required_core_agents(required_agents)
 
         # Step 2: Register required LLM agents if needed
-        self._register_required_llm_agents(
-            bundle.required_agents, bundle.agent_mappings
-        )
+        self._register_required_llm_agents(required_agents, bundle.agent_mappings)
 
         # Step 3: Register required storage agents if needed
-        self._register_required_storage_agents(
-            bundle.required_agents, bundle.agent_mappings
-        )
+        self._register_required_storage_agents(required_agents, bundle.agent_mappings)
 
         # Step 4: Register any custom agents from mappings
         self._register_custom_agents_from_mappings(
-            bundle.required_agents, bundle.agent_mappings
+            required_agents, bundle.agent_mappings
         )
 
         # Step 5: Verify all required agents were loaded
-        missing_agents = bundle.required_agents - self._loaded_agents
+        missing_agents = required_agents - self._loaded_agents
         if missing_agents:
             error_msg = (
                 f"Failed to register required agents: {sorted(missing_agents)}. "
@@ -180,9 +180,7 @@ class GraphBootstrapService:
         self.features_registry.enable_feature("llm")
 
         # Discover available providers TODO: Should this be FeatureRegistryService?
-        available_providers = self.dependency_checker.discover_and_validate_providers(
-            "llm"
-        )
+        available_providers = self._discover_and_validate_providers("llm")
 
         # Map agent types to providers for availability checking
         agent_to_provider = AgentConfigService.get_llm_agent_to_provider()
@@ -251,9 +249,7 @@ class GraphBootstrapService:
         self.features_registry.enable_feature("storage")
 
         # Discover available storage types
-        available_storage_types = (
-            self.dependency_checker.discover_and_validate_providers("storage")
-        )
+        available_storage_types = self._discover_and_validate_providers("storage")
 
         registered_count = 0
 
@@ -348,7 +344,15 @@ class GraphBootstrapService:
             )
             return False
 
-    def _import_agent_class(self, class_path: str):
+    def _discover_and_validate_providers(self, category: str) -> Dict[str, bool]:
+        """Return provider availability from the injected dependency checker."""
+        if self.dependency_checker is None:
+            raise RuntimeError(
+                "DependencyCheckerService is required for provider discovery"
+            )
+        return self.dependency_checker.discover_and_validate_providers(category)
+
+    def _import_agent_class(self, class_path: str) -> type[Any]:
         """
         Import an agent class from its full path.
 
@@ -367,8 +371,7 @@ class GraphBootstrapService:
 
         try:
             module = __import__(module_path, fromlist=[class_name])
-            agent_class = getattr(module, class_name)
-            return agent_class
+            return require_class(getattr(module, class_name), class_path)
         except (ImportError, AttributeError) as e:
             raise ImportError(f"Cannot import {class_path}: {e}")
 
@@ -389,9 +392,11 @@ class GraphBootstrapService:
         self.logger.info(
             f"📊 [GraphBootstrapService] Bootstrap Summary for '{bundle.graph_name}':"
         )
-        self.logger.info(f"   Required agents: {len(bundle.required_agents)}")
+        self.logger.info(f"   Required agents: {len(bundle.required_agents or set())}")
         self.logger.info(f"   Loaded agents: {len(self._loaded_agents)}")
-        self.logger.info(f"   Required services: {len(bundle.required_services)}")
+        self.logger.info(
+            f"   Required services: {len(bundle.required_services or set())}"
+        )
 
         if self._loaded_agents:
             self.logger.debug(f"   Loaded agent types: {sorted(self._loaded_agents)}")
@@ -414,10 +419,10 @@ class GraphBootstrapService:
             "service": "GraphBootstrapService",
             "graph_name": bundle.graph_name,
             "bootstrap_completed": True,
-            "required_agents": len(bundle.required_agents),
+            "required_agents": len(bundle.required_agents or set()),
             "loaded_agents": len(self._loaded_agents),
             "loaded_agent_types": sorted(list(self._loaded_agents)),
-            "required_services": len(bundle.required_services),
+            "required_services": len(bundle.required_services or set()),
             "agent_breakdown": {
                 "core": len(
                     [

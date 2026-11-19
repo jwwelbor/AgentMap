@@ -24,7 +24,7 @@ def inspect_graph_cmd(
     node: Optional[str] = typer.Option(
         None, "--node", "-n", help="Inspect specific node only"
     ),
-):
+) -> None:
     """Inspect agent service configuration for a graph."""
     typer.echo(f"🔍 Inspecting Graph: {graph_name}")
     typer.echo("=" * 50)

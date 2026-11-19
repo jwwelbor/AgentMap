@@ -59,7 +59,7 @@ class DocumentStorageAgent(BaseStorageAgent):
         document_id: Optional[str] = None,
         mode: Union[WriteMode, str] = WriteMode.WRITE,
         path: Optional[str] = None,
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Write a document or update an existing one.
 

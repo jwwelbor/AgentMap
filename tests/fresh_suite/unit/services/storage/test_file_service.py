@@ -1066,6 +1066,22 @@ class TestFileStorageService(unittest.TestCase):
         prepared = self.service._prepare_content(mock_docs)
         self.assertEqual(prepared, "Content 1\n\nContent 2")
 
+    def test_content_preparation_rejects_non_string_document_content(self):
+        mock_doc = Mock()
+        mock_doc.page_content = 42
+
+        with self.assertRaisesRegex(TypeError, "page_content must be a string"):
+            self.service._prepare_content(mock_doc)
+
+    def test_content_preparation_rejects_malformed_document_lists(self):
+        valid_doc = Mock()
+        valid_doc.page_content = "valid"
+        invalid_doc = Mock()
+        invalid_doc.page_content = None
+
+        with self.assertRaisesRegex(TypeError, "page_content must be a string"):
+            self.service._prepare_content([valid_doc, invalid_doc])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -13,7 +13,8 @@ class RequestParser:
     @staticmethod
     def get_http_method(event: Dict[str, Any]) -> str:
         """Get HTTP method from event."""
-        return event.get("httpMethod", "POST")
+        method = event.get("httpMethod", "POST")
+        return method if isinstance(method, str) else "POST"
 
     @staticmethod
     def parse_json_body(body: str) -> Dict[str, Any]:
@@ -21,16 +22,19 @@ class RequestParser:
         import json
 
         try:
-            return json.loads(body) if body else {}
+            parsed = json.loads(body) if body else {}
         except (json.JSONDecodeError, TypeError):
             return {}
+        return parsed if isinstance(parsed, dict) else {}
 
     @staticmethod
     def extract_query_params(event: Dict[str, Any]) -> Dict[str, Any]:
         """Extract query parameters from event."""
-        return event.get("queryStringParameters") or {}
+        params = event.get("queryStringParameters")
+        return params if isinstance(params, dict) else {}
 
     @staticmethod
     def extract_path_params(event: Dict[str, Any]) -> Dict[str, Any]:
         """Extract path parameters from event."""
-        return event.get("pathParameters") or {}
+        params = event.get("pathParameters")
+        return params if isinstance(params, dict) else {}

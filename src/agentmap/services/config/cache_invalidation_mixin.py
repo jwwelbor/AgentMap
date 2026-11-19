@@ -1,19 +1,41 @@
 """Cache invalidation mixin for the availability cache service."""
 
+from __future__ import annotations
+
+import logging
+from contextlib import AbstractContextManager
 from datetime import datetime, timezone
-from typing import Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from agentmap.services.config.availability_cache import ThreadSafeFileCache
+    from agentmap.services.config.change_detectors import (
+        ConfigChangeDetector,
+        EnvironmentChangeDetector,
+    )
 
 
 class CacheInvalidationMixin:
+    _cache_file_path: Path
+    _config_detector: ConfigChangeDetector
+    _env_detector: EnvironmentChangeDetector
+    _file_cache: ThreadSafeFileCache
+    _invalidation_lock: AbstractContextManager[Any]
+    _last_env_hash: Optional[str]
+    _logger: Optional[logging.Logger]
+    _stats: Dict[str, int]
+
     def invalidate_cache(
         self, category: Optional[str] = None, key: Optional[str] = None
     ) -> None:
         try:
             with self._invalidation_lock:
-                if category is None and key is None:
-                    self._clear_entire_cache()
-                elif key is None:
-                    self._invalidate_category(category)
+                if key is None:
+                    if category is None:
+                        self._clear_entire_cache()
+                    else:
+                        self._invalidate_category(category)
                 else:
                     self._invalidate_specific_key(f"{category}.{key}")
                 self._stats["invalidations"] += 1

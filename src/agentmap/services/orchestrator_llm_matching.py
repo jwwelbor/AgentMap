@@ -6,8 +6,8 @@ import json
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from agentmap.services.llm_service import LLMService
 from agentmap.services.prompt_manager_service import PromptManagerService
+from agentmap.services.protocols.service_protocols import LLMServiceProtocol
 
 
 class LLMMatcher:
@@ -15,7 +15,7 @@ class LLMMatcher:
         self,
         logger: logging.Logger,
         prompt_manager: PromptManagerService,
-        llm_service: LLMService,
+        llm_service: LLMServiceProtocol,
         keyword_parser: Callable[[Dict[str, Any]], List[str]],
     ):
         self.logger = logger
@@ -56,7 +56,7 @@ class LLMMatcher:
         )
         return self._extract_node_from_response(llm_response, available_nodes)
 
-    def _format_node_descriptions(self, nodes: Dict[str, Dict[str, Any]]) -> str:
+    def _format_node_descriptions(self, nodes: Dict[str, Any]) -> str:
         if not nodes:
             return "No nodes available"
         descriptions = []
@@ -79,11 +79,13 @@ class LLMMatcher:
         try:
             if isinstance(llm_response, str) and llm_response.strip().startswith("{"):
                 parsed = json.loads(llm_response.strip())
-                if (
-                    "selectedNode" in parsed
-                    and parsed["selectedNode"] in available_nodes
-                ):
-                    return parsed["selectedNode"]
+                if isinstance(parsed, dict):
+                    selected_node = parsed.get("selectedNode")
+                    if (
+                        isinstance(selected_node, str)
+                        and selected_node in available_nodes
+                    ):
+                        return selected_node
         except json.JSONDecodeError as e:
             self.logger.debug(f"LLM response was not valid JSON: {e}")
         llm_response_str = str(llm_response).strip()

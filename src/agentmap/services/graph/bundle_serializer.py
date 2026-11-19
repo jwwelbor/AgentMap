@@ -1,6 +1,6 @@
 # services/graph/bundle_serializer.py
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.node import Node
@@ -40,7 +40,7 @@ class BundleSerializer:
         """
         # Serialize nodes to dictionaries
         nodes_data = {}
-        for name, node in bundle.nodes.items():
+        for name, node in (bundle.nodes or {}).items():
             # Serialize edges with proper type handling
             # Edge values may be str (single target) or list[str] (parallel)
             # JSON serialization preserves both types naturally
@@ -58,13 +58,14 @@ class BundleSerializer:
             }
 
         # Helper function to convert sets to sorted lists for JSON serialization
-        def set_to_list(s):
+        def set_to_list(s: Optional[Set[str]]) -> List[str]:
             return sorted(list(s)) if s is not None else []
 
         return {
             "format": "metadata",
             "bundle_format": bundle.bundle_format,
             "created_at": bundle.created_at,
+            "last_updated": bundle.last_updated,
             # Core graph data
             "graph_name": bundle.graph_name,
             "entry_point": bundle.entry_point,
@@ -135,7 +136,7 @@ class BundleSerializer:
                 nodes[name] = node
 
             # Helper function to convert lists to sets, handling None values
-            def list_to_set(lst):
+            def list_to_set(lst: Any) -> Set[Any]:
                 return set(lst) if lst is not None else set()
 
             # Extract all fields with backwards compatibility
@@ -170,6 +171,8 @@ class BundleSerializer:
                 bundle.bundle_format = data["bundle_format"]
             if "created_at" in data:
                 bundle.created_at = data["created_at"]
+            if "last_updated" in data:
+                bundle.last_updated = data["last_updated"]
 
             bundle_format = data.get("bundle_format", "legacy")
             self.logger.debug(

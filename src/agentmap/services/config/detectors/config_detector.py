@@ -14,12 +14,12 @@ from typing import Dict, Union
 class ConfigChangeDetector:
     """Detects configuration file changes for automatic cache invalidation."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._config_lock = threading.Lock()
         self._config_mtimes: Dict[str, float] = {}
         self._config_hashes: Dict[str, str] = {}
 
-    def register_config_file(self, config_path: Union[str, Path]):
+    def register_config_file(self, config_path: Union[str, Path]) -> None:
         """Register a configuration file for change monitoring."""
         config_path = Path(config_path)
         if not config_path.exists():
@@ -72,7 +72,7 @@ class ConfigChangeDetector:
 
             return False
 
-    def update_config_tracking(self):
+    def update_config_tracking(self) -> None:
         """Update tracking data for all registered config files."""
         with self._config_lock:
             for path_str in list(self._config_mtimes.keys()):

@@ -6,7 +6,7 @@ All business logic belongs in services, not in this domain model.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Type
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -21,10 +21,10 @@ class AgentRegistry:
         default_agent_class: Optional default agent class for fallback behavior
     """
 
-    agents: Dict[str, Type] = field(default_factory=dict)
-    default_agent_class: Optional[Type] = None
+    agents: Dict[str, type[Any]] = field(default_factory=dict)
+    default_agent_class: Optional[type[Any]] = None
 
-    def add_agent(self, agent_type: str, agent_class: Type) -> None:
+    def add_agent(self, agent_type: str, agent_class: type[Any]) -> None:
         """
         Store an agent class mapping.
 
@@ -57,7 +57,7 @@ class AgentRegistry:
                 self.default_agent_class = None
             del self.agents[normalized_type]
 
-    def get_agent_class(self, agent_type: str) -> Optional[Type]:
+    def get_agent_class(self, agent_type: str) -> Optional[type[Any]]:
         """
         Get an agent class by type.
 
@@ -87,7 +87,7 @@ class AgentRegistry:
         """
         return agent_type.lower() in self.agents
 
-    def list_agents(self) -> Dict[str, Type]:
+    def list_agents(self) -> Dict[str, type[Any]]:
         """
         Get a copy of all registered agent mappings.
 

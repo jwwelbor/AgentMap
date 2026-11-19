@@ -58,8 +58,8 @@ class LLMModelsConfigService:
             try:
                 # Load from llm.{provider}.model in config
                 model = self._app_config_service.get_value(f"llm.{provider}.model")
-                if model:
-                    defaults[provider] = model
+                if isinstance(model, str) and model.strip():
+                    defaults[provider] = model.strip()
                 else:
                     # Use fallback if not configured
                     defaults[provider] = self._FALLBACK_DEFAULTS.get(
@@ -115,7 +115,7 @@ class LLMModelsConfigService:
                 fallback_model = self._app_config_service.get_value(
                     "routing.fallback.default_model"
                 )
-                if fallback_model:
+                if isinstance(fallback_model, str) and fallback_model.strip():
                     return fallback_model
             except Exception:
                 pass

@@ -5,6 +5,8 @@ This service handles the execution of graphs using the workflow orchestration
 service and provides a clean interface for the serverless handler.
 """
 
+from typing import Any
+
 from agentmap.models.serverless_models import ExecutionParams, ExecutionResult
 from agentmap.services.workflow_orchestration_service import (
     WorkflowOrchestrationService,
@@ -14,7 +16,7 @@ from agentmap.services.workflow_orchestration_service import (
 class ExecutionService:
     """Service for executing graphs via the workflow orchestration service."""
 
-    def __init__(self, container, adapter):
+    def __init__(self, container: Any, adapter: Any) -> None:
         """Initialize with DI container and adapter."""
         self.container = container
         self.adapter = adapter
@@ -59,7 +61,7 @@ class ExecutionService:
                 status_code=error_info["status_code"],
             )
 
-    async def _maybe_async(self, fn, *args, **kwargs):
+    async def _maybe_async(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         """
         Helper to handle potentially async functions.
 

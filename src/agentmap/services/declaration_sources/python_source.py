@@ -1,6 +1,6 @@
 """Python dictionary declaration source for built-in agents and services."""
 
-from typing import Dict
+from typing import Any, Dict
 
 from agentmap.builtin_definition_constants import BuiltinDefinitionConstants
 from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
@@ -19,7 +19,7 @@ class PythonDeclarationSource(DeclarationSource):
 
     # Legacy attributes for backward compatibility (delegate to BuiltinDefinitionConstants)
     @property
-    def BUILTIN_AGENTS(self):
+    def BUILTIN_AGENTS(self) -> Dict[str, Dict[str, Any]]:
         """Get agent definitions from centralized constants."""
         # Transform to match old format (without category/provider metadata)
         return {
@@ -32,7 +32,7 @@ class PythonDeclarationSource(DeclarationSource):
         }
 
     @property
-    def BUILTIN_SERVICES(self):
+    def BUILTIN_SERVICES(self) -> Dict[str, Dict[str, Any]]:
         """Get service definitions from centralized constants."""
         # Transform to match old format
         return {
@@ -47,7 +47,7 @@ class PythonDeclarationSource(DeclarationSource):
         }
 
     @property
-    def CORE_SERVICES(self):
+    def CORE_SERVICES(self) -> Dict[str, Dict[str, Any]]:
         """Get core service definitions for backward compatibility."""
         core_service_names = [
             "logging_service",

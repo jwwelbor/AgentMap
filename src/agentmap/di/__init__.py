@@ -11,7 +11,7 @@ This module manages:
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from .containers import ApplicationContainer, create_optional_service, safe_get_service
 
@@ -133,7 +133,8 @@ def initialize_di(config_file: Optional[str] = None) -> ApplicationContainer:
 
 
 def initialize_di_for_testing(
-    config_overrides: Optional[dict] = None, mock_services: Optional[dict] = None
+    config_overrides: Optional[Dict[str, Any]] = None,
+    mock_services: Optional[Dict[str, Any]] = None,
 ) -> ApplicationContainer:
     """
     Initialize DI container specifically for testing with mocks and overrides.
@@ -168,7 +169,7 @@ def initialize_di_for_testing(
     return container
 
 
-def get_service_status(container: ApplicationContainer) -> dict:
+def get_service_status(container: ApplicationContainer) -> Dict[str, Any]:
     """
     Get comprehensive status of all services in the DI container.
 
@@ -180,7 +181,11 @@ def get_service_status(container: ApplicationContainer) -> dict:
     Returns:
         Dict with service availability and status information
     """
-    status = {"container_initialized": True, "services": {}, "errors": []}
+    status: Dict[str, Any] = {
+        "container_initialized": True,
+        "services": {},
+        "errors": [],
+    }
 
     # List of key services to check
     key_services = [

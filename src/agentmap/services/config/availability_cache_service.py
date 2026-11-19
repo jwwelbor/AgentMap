@@ -35,7 +35,9 @@ class AvailabilityCacheService(CacheInvalidationMixin, CacheStatisticsMixin):
     - storage.vector
     """
 
-    def __init__(self, cache_file_path: Union[str, Path], logger=None):
+    def __init__(
+        self, cache_file_path: Union[str, Path], logger: Optional[Any] = None
+    ) -> None:
         self._cache_file_path = Path(cache_file_path)
         self._logger = logger
         self._file_cache = ThreadSafeFileCache(self._cache_file_path, logger)
@@ -64,6 +66,9 @@ class AvailabilityCacheService(CacheInvalidationMixin, CacheStatisticsMixin):
                     self._stats["cache_misses"] += 1
                     return None
                 result = cache_data.get("availability", {}).get(cache_key)
+                if result is not None and not isinstance(result, dict):
+                    self._stats["cache_misses"] += 1
+                    return None
                 self._stats["cache_hits" if result else "cache_misses"] += 1
                 return result
         except Exception:
@@ -102,7 +107,7 @@ class AvailabilityCacheService(CacheInvalidationMixin, CacheStatisticsMixin):
     def is_initialized(self) -> bool:
         return self._cache_file_path.exists()
 
-    def refresh_cache(self, container) -> None:
+    def refresh_cache(self, container: Any) -> None:
         dependency_checker = container.dependency_checker_service()
         self.invalidate_cache()
         dependency_checker.discover_and_validate_providers("llm", force=True)

@@ -5,7 +5,7 @@ This module provides a centralized manager for storage services,
 handling provider registration, service instantiation, and lifecycle management.
 """
 
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Set, Type
 
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
@@ -278,7 +278,7 @@ class StorageServiceManager:
         Returns:
             List of provider names
         """
-        providers = set()
+        providers: Set[str] = set()
         providers.update(self._service_classes.keys())
         providers.update(self._factories.keys())
 

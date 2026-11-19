@@ -87,7 +87,7 @@ class TestFeaturesRegistryService(unittest.TestCase):
         """Test fuzzywuzzy detection when library is not available."""
         # Mock ImportError
         with patch(
-            "builtins.__import__",
+            "agentmap.services.features_registry.nlp_capability.importlib.import_module",
             side_effect=ImportError("No module named 'fuzzywuzzy'"),
         ):
             result = self.service.has_fuzzywuzzy()
@@ -96,7 +96,10 @@ class TestFeaturesRegistryService(unittest.TestCase):
     def test_has_fuzzywuzzy_import_error(self):
         """Test fuzzywuzzy detection handles import errors gracefully."""
         # Mock general exception during import
-        with patch("builtins.__import__", side_effect=Exception("Import error")):
+        with patch(
+            "agentmap.services.features_registry.nlp_capability.importlib.import_module",
+            side_effect=Exception("Import error"),
+        ):
             result = self.service.has_fuzzywuzzy()
             self.assertFalse(result)
 
@@ -116,7 +119,10 @@ class TestFeaturesRegistryService(unittest.TestCase):
             # Return original import for other modules
             return __import__(name, *args, **kwargs)
 
-        with patch("builtins.__import__", side_effect=mock_import):
+        with patch(
+            "agentmap.services.features_registry.nlp_capability.importlib.import_module",
+            side_effect=mock_import,
+        ):
             result = self.service.has_spacy()
             self.assertTrue(result)
 
@@ -132,7 +138,10 @@ class TestFeaturesRegistryService(unittest.TestCase):
             # Return original import for other modules
             return __import__(name, *args, **kwargs)
 
-        with patch("builtins.__import__", side_effect=mock_import):
+        with patch(
+            "agentmap.services.features_registry.nlp_capability.importlib.import_module",
+            side_effect=mock_import,
+        ):
             result = self.service.has_spacy()
             self.assertFalse(result)
 
@@ -140,7 +149,8 @@ class TestFeaturesRegistryService(unittest.TestCase):
         """Test spaCy detection when library is not installed."""
         # Mock ImportError
         with patch(
-            "builtins.__import__", side_effect=ImportError("No module named 'spacy'")
+            "agentmap.services.features_registry.nlp_capability.importlib.import_module",
+            side_effect=ImportError("No module named 'spacy'"),
         ):
             result = self.service.has_spacy()
             self.assertFalse(result)
@@ -148,7 +158,10 @@ class TestFeaturesRegistryService(unittest.TestCase):
     def test_has_spacy_general_error(self):
         """Test spaCy detection handles general errors gracefully."""
         # Mock general exception
-        with patch("builtins.__import__", side_effect=Exception("General error")):
+        with patch(
+            "agentmap.services.features_registry.nlp_capability.importlib.import_module",
+            side_effect=Exception("General error"),
+        ):
             result = self.service.has_spacy()
             self.assertFalse(result)
 

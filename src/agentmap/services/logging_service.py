@@ -8,31 +8,40 @@ ONLY way to get loggers in the application - no helper methods or bypasses allow
 
 import logging
 import logging.config
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from agentmap.exceptions.service_exceptions import LoggingNotConfiguredException
 
 # Define custom TRACE level
 TRACE_LEVEL = 5
-logging.TRACE = TRACE_LEVEL  # Optional, to expose as logging.TRACE
+setattr(logging, "TRACE", TRACE_LEVEL)
 logging.addLevelName(TRACE_LEVEL, "TRACE")
 
 
-# Add trace method to logging.Logger
-def trace(self, message, *args, **kwargs):
-    if self.isEnabledFor(TRACE_LEVEL):
-        self._log(TRACE_LEVEL, message, args, **kwargs)
+def _trace_method(
+    logger: logging.Logger, message: object, *args: Any, **kwargs: Any
+) -> None:
+    """Log a message at the custom TRACE level."""
+    if logger.isEnabledFor(TRACE_LEVEL):
+        logger._log(TRACE_LEVEL, message, args, **kwargs)
 
 
-logging.Logger.trace = trace
+class TraceLogger(logging.Logger):
+    """Typing view for standard loggers extended with the TRACE method."""
+
+    def trace(self, message: object, *args: Any, **kwargs: Any) -> None:
+        _trace_method(self, message, *args, **kwargs)
 
 
-# Optional global trace function (like logging.info(...))
-def trace(message, *args, **kwargs):
-    logging.getLogger().trace(message, *args, **kwargs)
+setattr(logging.Logger, "trace", _trace_method)
 
 
-logging.trace = trace
+def trace(message: object, *args: Any, **kwargs: Any) -> None:
+    """Log a message at TRACE on the root logger."""
+    _trace_method(logging.getLogger(), message, *args, **kwargs)
+
+
+setattr(logging, "trace", trace)
 
 
 class LoggingService:
@@ -58,7 +67,7 @@ class LoggingService:
         """
         self._configuration = configuration or {}
         self._initialized = False
-        self._logger_cache = {}  # Cache loggers for efficiency
+        self._logger_cache: Dict[str, TraceLogger] = {}
 
     def initialize(self) -> None:
         """
@@ -92,7 +101,7 @@ class LoggingService:
 
         self._initialized = True
 
-    def get_logger(self, name: Optional[str] = None) -> logging.Logger:
+    def get_logger(self, name: Optional[str] = None) -> TraceLogger:
         """
         Get a logger instance with the given name.
 
@@ -114,11 +123,13 @@ class LoggingService:
 
         # Cache loggers for efficiency
         if logger_name not in self._logger_cache:
-            self._logger_cache[logger_name] = logging.getLogger(logger_name)
+            self._logger_cache[logger_name] = cast(
+                TraceLogger, logging.getLogger(logger_name)
+            )
 
         return self._logger_cache[logger_name]
 
-    def get_class_logger(self, instance: object) -> logging.Logger:
+    def get_class_logger(self, instance: object) -> TraceLogger:
         """
         Get a logger for a class instance using module.ClassName pattern.
 
@@ -146,11 +157,13 @@ class LoggingService:
 
         # Cache loggers for efficiency
         if logger_name not in self._logger_cache:
-            self._logger_cache[logger_name] = logging.getLogger(logger_name)
+            self._logger_cache[logger_name] = cast(
+                TraceLogger, logging.getLogger(logger_name)
+            )
 
         return self._logger_cache[logger_name]
 
-    def get_module_logger(self, module_name: str) -> logging.Logger:
+    def get_module_logger(self, module_name: str) -> TraceLogger:
         """
         Get a logger for a specific module.
 
@@ -170,7 +183,9 @@ class LoggingService:
 
         # Cache loggers for efficiency
         if module_name not in self._logger_cache:
-            self._logger_cache[module_name] = logging.getLogger(module_name)
+            self._logger_cache[module_name] = cast(
+                TraceLogger, logging.getLogger(module_name)
+            )
 
         return self._logger_cache[module_name]
 
@@ -252,7 +267,7 @@ class LoggingService:
 
         # Update cache if logger is cached
         if logger_name and logger_name in self._logger_cache:
-            self._logger_cache[logger_name] = logger
+            self._logger_cache[logger_name] = cast(TraceLogger, logger)
 
     def get_service_info(self) -> Dict[str, Any]:
         """
@@ -273,22 +288,21 @@ class LoggingService:
         }
 
 
-def _get_logger_from_di(name: Optional[str] = None) -> logging.Logger:
+def _get_logger_from_di(name: Optional[str] = None) -> TraceLogger:
     try:
         from agentmap.runtime.runtime_manager import RuntimeManager
 
         if RuntimeManager.is_initialized():
             logging_service = RuntimeManager.get_container().logging_service()
-            return logging_service.get_logger(name or __name__)
+            return cast(TraceLogger, logging_service.get_logger(name or __name__))
     except Exception:
         pass
 
     import logging
 
-    return logging.getLogger(name or __name__)
+    return cast(TraceLogger, logging.getLogger(name or __name__))
 
 
-def _get_bootstrap_logger(name: Optional[str] = None) -> logging.Logger:
-    import logging
-
-    return logging.getLogger("bootstrap." + name or "bootstrap." + __name__)
+def _get_bootstrap_logger(name: Optional[str] = None) -> TraceLogger:
+    logger_name = f"bootstrap.{name or __name__}"
+    return cast(TraceLogger, logging.getLogger(logger_name))

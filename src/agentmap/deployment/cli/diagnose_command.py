@@ -21,7 +21,7 @@ def diagnose_cmd(
     config_file: Optional[str] = typer.Option(
         None, "--config", "-c", help="Path to custom config file"
     )
-):
+) -> None:
     """
     Check and display dependency status for all components.
 

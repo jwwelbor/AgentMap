@@ -7,12 +7,14 @@ handler surface that now backs WorkflowOrchestrationService.
 
 import unittest
 from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.services.workflow_orchestration_service import (
     WorkflowOrchestrationService,
+    _normalize_initial_state_for_execution,
     _rehydrate_bundle_from_metadata,
 )
 from tests.utils.mock_service_factory import MockServiceFactory
@@ -373,3 +375,28 @@ class TestRehydrateBundleHelper(unittest.TestCase):
         )
 
         self.assertIsNone(result)
+
+
+class TestNormalizeInitialStateForExecution(unittest.TestCase):
+    def test_model_conversion_mapping_is_normalized(self):
+        class MappingState:
+            def model_dump(self):
+                return MappingProxyType({"answer": 42})
+
+        result = _normalize_initial_state_for_execution(MappingState(), Mock())
+
+        self.assertEqual(result, {"answer": 42})
+
+    def test_non_mapping_conversion_results_are_rejected(self):
+        class BadDictState:
+            def dict(self):
+                return ["bad"]
+
+        class BadModelDumpState:
+            def model_dump(self):
+                return 42
+
+        for state in (BadDictState(), BadModelDumpState()):
+            with self.subTest(state=type(state).__name__):
+                with self.assertRaisesRegex(ValueError, "must return a mapping"):
+                    _normalize_initial_state_for_execution(state, Mock())

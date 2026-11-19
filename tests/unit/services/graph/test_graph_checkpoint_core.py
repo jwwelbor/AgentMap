@@ -95,10 +95,15 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         metadata = {"source": "unit"}
 
         result = self.service.put(
-            config=config, checkpoint=checkpoint, metadata=metadata
+            config=config,
+            checkpoint=checkpoint,
+            metadata=metadata,
+            new_versions={},
         )
 
-        self.assertTrue(result["success"])
+        self.assertEqual(result["configurable"]["thread_id"], "thread-123")
+        checkpoint_id = result["configurable"]["checkpoint_id"]
+        self.assertTrue(checkpoint_id)
         stored = self.file_storage.read(collection="")
         self.assertEqual(len(stored), 1)
         document_id = stored[0]
@@ -112,6 +117,7 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         self.assertIn("metadata", payload)
         restored_checkpoint = self.service.serde.loads_typed(payload["checkpoint"])
         self.assertIsInstance(restored_checkpoint["versions_seen"]["node"], list)
+        self.assertEqual(restored_checkpoint["id"], checkpoint_id)
 
     def test_put_handles_storage_failure(self):
         self.service.file_storage.write = mock.Mock(
@@ -122,12 +128,13 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         checkpoint = {"state": {}}
         metadata = {}
 
-        result = self.service.put(
-            config=config, checkpoint=checkpoint, metadata=metadata
-        )
-
-        self.assertFalse(result["success"])
-        self.assertIn("error", result)
+        with self.assertRaisesRegex(RuntimeError, "Checkpoint save failed: boom"):
+            self.service.put(
+                config=config,
+                checkpoint=checkpoint,
+                metadata=metadata,
+                new_versions={},
+            )
         self.logger.error.assert_called()
 
     def test_get_tuple_returns_latest_checkpoint(self):
@@ -135,18 +142,147 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         checkpoint1 = {"state": {"value": "first"}}
         checkpoint2 = {"state": {"value": "second"}}
 
-        self.service.put(config=config, checkpoint=checkpoint1, metadata={"idx": 1})
-        self.service.put(config=config, checkpoint=checkpoint2, metadata={"idx": 2})
+        first_config = self.service.put(
+            config=config, checkpoint=checkpoint1, metadata={"idx": 1}, new_versions={}
+        )
+        second_config = self.service.put(
+            config=config, checkpoint=checkpoint2, metadata={"idx": 2}, new_versions={}
+        )
 
         result = self.service.get_tuple(config)
 
         self.assertIsNotNone(result)
         self.assertEqual(result.checkpoint["state"]["value"], "second")
         self.assertEqual(result.metadata["idx"], 2)
+        first_result = self.service.get_tuple(first_config)
+        self.assertIsNotNone(first_result)
+        self.assertEqual(first_result.checkpoint["state"]["value"], "first")
+        self.assertEqual(first_result.config, first_config)
+        self.assertEqual(second_config["configurable"]["thread_id"], "thread-1")
+
+    def test_get_tuple_does_not_match_thread_id_prefix_collisions(self):
+        short_config = self.service.put(
+            config={"configurable": {"thread_id": "thread"}},
+            checkpoint={"state": {"owner": "thread"}},
+            metadata={},
+            new_versions={},
+        )
+        self.service.put(
+            config={"configurable": {"thread_id": "thread_extra"}},
+            checkpoint={"state": {"owner": "thread_extra"}},
+            metadata={},
+            new_versions={},
+        )
+
+        result = self.service.get_tuple({"configurable": {"thread_id": "thread"}})
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.config["configurable"]["thread_id"], "thread")
+        self.assertEqual(result.checkpoint["state"]["owner"], "thread")
+        self.assertEqual(
+            result.checkpoint["id"], short_config["configurable"]["checkpoint_id"]
+        )
+
+    def test_checkpoint_filenames_encode_thread_and_checkpoint_identity(self):
+        first_config = self.service.put(
+            config={"configurable": {"thread_id": "a"}},
+            checkpoint={"id": "b_c", "state": {"owner": "a"}},
+            metadata={},
+            new_versions={},
+        )
+        second_config = self.service.put(
+            config={"configurable": {"thread_id": "a_b"}},
+            checkpoint={"id": "c", "state": {"owner": "a_b"}},
+            metadata={},
+            new_versions={},
+        )
+        third_config = self.service.put(
+            config={
+                "configurable": {"thread_id": "namespaced", "checkpoint_ns": "one"}
+            },
+            checkpoint={"id": "same", "state": {"owner": "one"}},
+            metadata={},
+            new_versions={},
+        )
+        fourth_config = self.service.put(
+            config={
+                "configurable": {"thread_id": "namespaced", "checkpoint_ns": "two"}
+            },
+            checkpoint={"id": "same", "state": {"owner": "two"}},
+            metadata={},
+            new_versions={},
+        )
+
+        self.assertEqual(len(self.file_storage.read(collection="")), 4)
+        first_result = self.service.get_tuple(first_config)
+        second_result = self.service.get_tuple(second_config)
+        third_result = self.service.get_tuple(third_config)
+        fourth_result = self.service.get_tuple(fourth_config)
+
+        self.assertEqual(first_result.checkpoint["state"]["owner"], "a")
+        self.assertEqual(second_result.checkpoint["state"]["owner"], "a_b")
+        self.assertEqual(third_result.checkpoint["state"]["owner"], "one")
+        self.assertEqual(fourth_result.checkpoint["state"]["owner"], "two")
 
     def test_get_tuple_returns_none_for_missing_thread(self):
         config = {"configurable": {"thread_id": "missing"}}
         self.assertIsNone(self.service.get_tuple(config))
+
+    def test_get_tuple_skips_corrupt_checkpoint_files(self):
+        config = {"configurable": {"thread_id": "thread-corrupt"}}
+        saved_config = self.service.put(
+            config=config,
+            checkpoint={"state": {"value": "valid"}},
+            metadata={},
+            new_versions={},
+        )
+        self.file_storage.write(
+            collection="",
+            data=b"malformed pickle",
+            document_id="thread-corrupt_corrupt.pkl",
+            mode=WriteMode.WRITE,
+            binary_mode=True,
+        )
+
+        result = self.service.get_tuple(config)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.checkpoint["state"]["value"], "valid")
+        self.assertEqual(
+            result.config["configurable"]["checkpoint_id"],
+            saved_config["configurable"]["checkpoint_id"],
+        )
+
+    def test_get_tuple_falls_back_from_newer_invalid_checkpoint_payload(self):
+        config = {"configurable": {"thread_id": "thread-payload"}}
+        saved_config = self.service.put(
+            config=config,
+            checkpoint={"state": {"value": "valid"}},
+            metadata={},
+            new_versions={},
+        )
+        self.file_storage.write(
+            collection="",
+            data=pickle.dumps(
+                {
+                    "checkpoint_id": "invalid",
+                    "checkpoint_ns": "",
+                    "timestamp": "2999-01-01T00:00:00.000000",
+                }
+            ),
+            document_id="thread-payload_invalid.pkl",
+            mode=WriteMode.WRITE,
+            binary_mode=True,
+        )
+
+        result = self.service.get_tuple(config)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.checkpoint["state"]["value"], "valid")
+        self.assertEqual(
+            result.config["configurable"]["checkpoint_id"],
+            saved_config["configurable"]["checkpoint_id"],
+        )
 
     def test_get_tuple_handles_identical_timestamps(self):
         """Test that when timestamps are identical, latest file wins (insertion order)."""
@@ -161,8 +297,18 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
             fixed_time = "2025-10-15T12:00:00.000000"
             mock_dt.utcnow.return_value.isoformat.return_value = fixed_time
 
-            self.service.put(config=config, checkpoint=checkpoint1, metadata={"idx": 1})
-            self.service.put(config=config, checkpoint=checkpoint2, metadata={"idx": 2})
+            self.service.put(
+                config=config,
+                checkpoint=checkpoint1,
+                metadata={"idx": 1},
+                new_versions={},
+            )
+            self.service.put(
+                config=config,
+                checkpoint=checkpoint2,
+                metadata={"idx": 2},
+                new_versions={},
+            )
 
         # Should return the second checkpoint (latest by insertion order)
         result = self.service.get_tuple(config)
@@ -172,18 +318,25 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         self.assertEqual(result.metadata["idx"], 2)
 
     def test_put_writes_saves_write_documents(self):
-        config = {"configurable": {"thread_id": "thread-w"}}
+        config = {
+            "configurable": {
+                "thread_id": "thread-w",
+                "checkpoint_ns": "",
+                "checkpoint_id": "checkpoint-w",
+            }
+        }
         task_id = "task-7"
         writes = [("state", {"foo": "bar"})]
 
         self.service.put_writes(config=config, writes=writes, task_id=task_id)
 
-        stored = self.file_storage.read(collection="writes")
+        collection = self.service._writes_collection("thread-w", "", "checkpoint-w")
+        stored = self.file_storage.read(collection=collection)
         self.assertEqual(len(stored), 1)
         document_id = stored[0]
         payload = pickle.loads(
             self.file_storage.read(
-                collection="writes", document_id=document_id, binary_mode=True
+                collection=collection, document_id=document_id, binary_mode=True
             )
         )
         raw_restored_writes = self.service.serde.loads_typed(payload["writes"])
@@ -193,6 +346,109 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         ]
         self.assertEqual(normalised_writes, list(writes))
         self.assertEqual(payload["task_id"], task_id)
+        self.assertEqual(payload["checkpoint_id"], "checkpoint-w")
+
+    def test_put_writes_replaces_corrupt_existing_record_with_new_writes(self):
+        config = self.service.put(
+            config={"configurable": {"thread_id": "thread-write-recovery"}},
+            checkpoint={"state": {}},
+            metadata={},
+            new_versions={},
+        )
+        task_id = "task-recovery"
+        self.service.put_writes(config, [("state", "old")], task_id=task_id)
+        collection = self.service._writes_collection(
+            "thread-write-recovery",
+            "",
+            config["configurable"]["checkpoint_id"],
+        )
+        document_id = self.file_storage.read(collection=collection)[0]
+        self.file_storage.write(
+            collection=collection,
+            data=b"malformed pickle",
+            document_id=document_id,
+            mode=WriteMode.WRITE,
+            binary_mode=True,
+        )
+
+        self.service.put_writes(config, [("state", "new")], task_id=task_id)
+
+        result = self.service.get_tuple(config)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.pending_writes, [(task_id, "state", "new")])
+
+    def test_get_tuple_returns_only_pending_writes_for_its_checkpoint(self):
+        first_config = self.service.put(
+            config={"configurable": {"thread_id": "thread-pending"}},
+            checkpoint={"state": {"value": "first"}},
+            metadata={"idx": 1},
+            new_versions={},
+        )
+        second_config = self.service.put(
+            config=first_config,
+            checkpoint={"state": {"value": "second"}},
+            metadata={"idx": 2},
+            new_versions={},
+        )
+        self.service.put_writes(
+            config=first_config,
+            writes=[("state", {"value": "first write"})],
+            task_id="task-first",
+        )
+        self.service.put_writes(
+            config=second_config,
+            writes=[("state", {"value": "second write"})],
+            task_id="task-second",
+        )
+        first_collection = self.service._writes_collection(
+            "thread-pending", "", first_config["configurable"]["checkpoint_id"]
+        )
+        self.file_storage.write(
+            collection=first_collection,
+            data=b"malformed pickle",
+            document_id="corrupt.pkl",
+            mode=WriteMode.WRITE,
+            binary_mode=True,
+        )
+
+        first_result = self.service.get_tuple(first_config)
+        second_result = self.service.get_tuple(second_config)
+
+        self.assertEqual(
+            first_result.pending_writes,
+            [("task-first", "state", {"value": "first write"})],
+        )
+        self.assertEqual(
+            second_result.pending_writes,
+            [("task-second", "state", {"value": "second write"})],
+        )
+
+    def test_put_writes_skips_duplicate_channels_and_replaces_control_writes(self):
+        config = {"configurable": {"thread_id": "thread-retry"}}
+        config = self.service.put(
+            config=config, checkpoint={"state": {}}, metadata={}, new_versions={}
+        )
+
+        self.service.put_writes(
+            config,
+            [("state", "first"), ("__interrupt__", "pause")],
+            task_id="task-retry",
+        )
+        self.service.put_writes(
+            config,
+            [("state", "second"), ("__interrupt__", "resume")],
+            task_id="task-retry",
+        )
+
+        result = self.service.get_tuple(config)
+
+        self.assertEqual(
+            result.pending_writes,
+            [
+                ("task-retry", "state", "first"),
+                ("task-retry", "__interrupt__", "resume"),
+            ],
+        )
 
     def test_get_service_info_matches_new_contract(self):
         info = self.service.get_service_info()

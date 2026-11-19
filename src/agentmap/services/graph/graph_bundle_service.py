@@ -1,7 +1,7 @@
 # services/graph_bundle_service.py
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.models.node import Node
@@ -79,7 +79,7 @@ class GraphBundleService:
             [protocol_requirements_analyzer, agent_factory_service]
         )
 
-    def requires_checkpoint_support(self, bundle: GraphBundle) -> bool:
+    def requires_checkpoint_support(self, bundle: Optional[GraphBundle]) -> bool:
         """Determine if the supplied bundle needs checkpoint support."""
 
         if bundle is None:
@@ -166,7 +166,23 @@ class GraphBundleService:
             Dictionary mapping agent types to their class import paths
         """
         try:
-            mappings = self.agent_factory_service.get_agent_class_mappings(agent_types)
+            mappings: Dict[str, str] = {}
+            custom_manager = (
+                self.static_bundle_analyzer.custom_agent_declaration_manager
+            )
+            for agent_type in agent_types:
+                declaration = self.declaration_registry.get_agent_declaration(
+                    agent_type
+                )
+                if declaration is not None:
+                    mappings[agent_type] = declaration.class_path
+                    continue
+
+                custom_declaration = custom_manager.get_agent_declaration(agent_type)
+                if custom_declaration is not None:
+                    class_path = custom_declaration.get("class_path")
+                    if isinstance(class_path, str):
+                        mappings[agent_type] = class_path
 
             self.logger.debug(
                 f"Extracted {len(mappings)} agent mappings: {list(mappings.keys())}"
@@ -190,7 +206,7 @@ class GraphBundleService:
         custom_agents = set()
 
         # Standard framework agent types
-        framework_agents = DeclarationRegistryService.get_all_agent_types()
+        framework_agents = self.declaration_registry.get_all_agent_types()
 
         for agent_type in agent_types:
             if agent_type in framework_agents:
@@ -335,7 +351,7 @@ class GraphBundleService:
             - has_parallel: Whether graph contains any parallel routing
         """
         fan_out_nodes = []
-        fan_in_count = {}
+        fan_in_count: Dict[str, int] = {}
         parallel_groups = []
         max_parallelism = 1
 
@@ -380,7 +396,7 @@ class GraphBundleService:
             Dictionary mapping protocol names to implementation class names
         """
         try:
-            mappings = self.declaration_registry.get_protocol_implementations()
+            mappings = self.declaration_registry.get_protocol_service_map()
 
             self.logger.debug(f"Extracted {len(mappings)} protocol mappings")
             return mappings
@@ -504,7 +520,7 @@ class GraphBundleService:
             self.logger.error(error_msg)
             raise IOError(error_msg)
 
-    def save_bundle(self, bundle: GraphBundle, path: Path) -> Optional[StorageResult]:
+    def save_bundle(self, bundle: GraphBundle, path: Path) -> StorageResult[Any]:
         """Persist the bundle to disk in appropriate format.
 
         Saves metadata-only bundles as JSON. Uses SystemStorageManager for system bundles
@@ -558,7 +574,7 @@ class GraphBundleService:
             return False
 
         try:
-            cache_folder = Path(self.app_config_service.get_cache_folder())
+            cache_folder = self.app_config_service.get_cache_path()
             return cache_folder in path.parents or path.parent == cache_folder
         except Exception as e:
             self.logger.debug(f"Could not determine if path is in cache folder: {e}")
@@ -571,8 +587,8 @@ class GraphBundleService:
         for parallel execution support. JSON naturally preserves both types.
         """
         # Serialize nodes to dictionaries
-        nodes_data = {}
-        for name, node in bundle.nodes.items():
+        nodes_data: Dict[str, Dict[str, Any]] = {}
+        for name, node in (bundle.nodes or {}).items():
             # Serialize edges with proper type handling
             # Edge values may be str (single target) or list[str] (parallel)
             # JSON serialization preserves both types naturally
@@ -590,7 +606,7 @@ class GraphBundleService:
             }
 
         # Helper function to convert sets to sorted lists for JSON serialization
-        def set_to_list(s):
+        def set_to_list(s: Optional[Set[Any]]) -> List[Any]:
             return sorted(list(s)) if s is not None else []
 
         return {
@@ -699,7 +715,7 @@ class GraphBundleService:
                 nodes[name] = node
 
             # Helper function to convert lists to sets, handling None values
-            def list_to_set(lst):
+            def list_to_set(lst: Optional[Iterable[Any]]) -> Set[Any]:
                 return set(lst) if lst is not None else set()
 
             # Extract all fields with backwards compatibility
@@ -821,7 +837,9 @@ class GraphBundleService:
         # Phase 3: Validation metadata
         validation_metadata = self._generate_validation_metadata(nodes)
 
-        function_mappings = {}  # TODO: Extract function mappings if needed
+        function_mappings: Dict[str, str] = (
+            {}
+        )  # TODO: Extract function mappings if needed
 
         # Create enhanced metadata bundle with all new fields
         bundle = GraphBundle.create_metadata(
@@ -905,7 +923,9 @@ class GraphBundleService:
         bundle = self._create_bundle(csv_path, csv_hash, graph_name)
         return (bundle, False)
 
-    def _create_bundle(self, csv_path, csv_hash, graph_name) -> GraphBundle:
+    def _create_bundle(
+        self, csv_path: Path, csv_hash: str, graph_name: Optional[str]
+    ) -> GraphBundle:
         # Create new bundle for this specific graph
         self.logger.info(
             f"Creating new bundle for {csv_path} with graph '{graph_name or 'auto-detect'}'"
@@ -922,45 +942,54 @@ class GraphBundleService:
             self.logger.info("Created bundle using fast static analysis")
         except FileNotFoundError:
             self.logger.warning(f"CSV not found: {csv_path}")
+            raise
         except Exception as e:
             self.logger.warning("Failed to create bundle using fast static analysis")
             raise e
 
+        bundle_graph_name = bundle.graph_name
+        if bundle_graph_name is None:
+            raise ValueError("Created graph bundle is missing its graph name")
+
         bundle_path = self.file_path_service.get_bundle_path(
             csv_hash=csv_hash,
-            graph_name=bundle.graph_name,
+            graph_name=bundle_graph_name,
         )
 
-        save_result: StorageResult = self.save_bundle(bundle, bundle_path)
+        save_result = self.save_bundle(bundle, bundle_path)
 
         if save_result.success:
             # TODO: See if this actually changes from above
-            bundle_path = Path(save_result.file_path)
+            if save_result.file_path is not None:
+                bundle_path = Path(save_result.file_path)
             # Register with composite key for future lookups
             self.graph_registry_service.register(
                 csv_hash,
-                bundle.graph_name,
+                bundle_graph_name,
                 bundle_path,
                 csv_path,
                 len(bundle.nodes) if bundle.nodes else 0,
             )
             self.logger.info(
                 f"Bundle saved and registered with composite key: "
-                f"({csv_hash[:8]}..., '{bundle.graph_name}')"
+                f"({csv_hash[:8]}..., '{bundle_graph_name}')"
             )
         else:
             self.logger.warning(f"Failed to save bundle: {save_result.error}")
 
         # Log warnings for missing declarations
-        if bundle.missing_declarations:
+        missing_declarations = bundle.missing_declarations or set()
+        if missing_declarations:
             self.logger.warning(
-                f"Missing declarations for agent types: {', '.join(bundle.missing_declarations)}. "
+                f"Missing declarations for agent types: {', '.join(missing_declarations)}. "
                 f"These agents will need to be defined before graph execution. execute 'scaffold' command"
             )
 
         return bundle
 
-    def lookup_bundle(self, csv_hash, graph_name):
+    def lookup_bundle(
+        self, csv_hash: str, graph_name: Optional[str]
+    ) -> Optional[GraphBundle]:
         # Look up bundle using composite key (csv_hash, graph_name)
         bundle_path = self.graph_registry_service.find_bundle(csv_hash, graph_name)
         bundle = None

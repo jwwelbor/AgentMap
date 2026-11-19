@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import os
-from typing import Iterable
-
-try:
-    # Use the official OpenAI client if available
-    from openai import OpenAI  # type: ignore
-except Exception:  # pragma: no cover - library optional in tests
-    OpenAI = None  # type: ignore
+from typing import Any, Iterable
 
 from agentmap.models.embeddings import EmbeddingInput, EmbeddingOutput, Metric
+
+_openai_client_type: Any = None
+try:
+    # Use the official OpenAI client if available
+    from openai import OpenAI
+
+    _openai_client_type = OpenAI
+except Exception:  # pragma: no cover - library optional in tests
+    pass
 
 
 class OpenAIEmbeddingService:
@@ -19,8 +22,10 @@ class OpenAIEmbeddingService:
       - OPENAI_API_KEY or Azure OpenAI compatible env
     """
 
-    def __init__(self, client: object | None = None):
-        self._client = client or (OpenAI() if OpenAI else None)
+    def __init__(self, client: Any = None):
+        self._client = client or (
+            _openai_client_type() if _openai_client_type is not None else None
+        )
         api_key = os.getenv("OPENAI_API_KEY")
         if self._client is None and not api_key:
             raise RuntimeError(

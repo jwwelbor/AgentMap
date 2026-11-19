@@ -20,7 +20,7 @@ def validate_cache_cmd(
     file_path: Optional[str] = typer.Option(
         None, "--file", help="Clear cache for specific file only"
     ),
-):
+) -> None:
     """Manage validation result cache."""
     # Lazy import to avoid DI container initialization at module load
     from agentmap.runtime_api import validate_cache

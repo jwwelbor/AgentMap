@@ -12,7 +12,7 @@ from typing import Dict, Optional, Union
 
 
 class EnvironmentChangeDetector:
-    def __init__(self):
+    def __init__(self) -> None:
         self._env_lock = threading.Lock()
         self._cached_env_hash: Optional[str] = None
         self._last_check_time: float = 0
@@ -30,7 +30,7 @@ class EnvironmentChangeDetector:
             self._last_check_time = current_time
             return self._cached_env_hash
 
-    def invalidate_environment_cache(self):
+    def invalidate_environment_cache(self) -> None:
         with self._env_lock:
             self._cached_env_hash = None
             self._last_check_time = 0
@@ -66,12 +66,12 @@ class EnvironmentChangeDetector:
 
 
 class ConfigChangeDetector:
-    def __init__(self):
+    def __init__(self) -> None:
         self._config_lock = threading.Lock()
         self._config_mtimes: Dict[str, float] = {}
         self._config_hashes: Dict[str, str] = {}
 
-    def register_config_file(self, config_path: Union[str, Path]):
+    def register_config_file(self, config_path: Union[str, Path]) -> None:
         config_path = Path(config_path)
         if not config_path.exists():
             return
@@ -98,7 +98,7 @@ class ConfigChangeDetector:
                         return True
             return False
 
-    def update_config_tracking(self):
+    def update_config_tracking(self) -> None:
         with self._config_lock:
             for path_str in list(self._config_mtimes.keys()):
                 config_path = Path(path_str)

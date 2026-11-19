@@ -616,6 +616,16 @@ class TestJSONStorageService(unittest.TestCase):
         self.assertEqual(retrieved["status"], "updated")
         self.assertEqual(retrieved["content"], "initial")  # Should be preserved
 
+    def test_append_creates_missing_collection(self):
+        """Appending to a missing collection creates it with the supplied data."""
+        collection = "append_missing"
+        data = [{"id": "first", "value": 1}]
+
+        result = self.service.write(collection, data, mode=WriteMode.APPEND)
+
+        self.assertTrue(result.success)
+        self.assertEqual(self.service.read(collection), data)
+
     def test_write_with_path(self):
         """Test writing with path parameter."""
         collection = "path_writes"
@@ -770,6 +780,24 @@ class TestJSONStorageService(unittest.TestCase):
         result = self.service._apply_query_filter(test_data, query)
 
         self.assertEqual(result["count"], 1)
+
+    def test_query_sort_handles_mixed_json_value_types(self):
+        test_data = [
+            {"id": "object", "rank": {"nested": 1}},
+            {"id": "string-z", "rank": "z"},
+            {"id": "number", "rank": 3},
+            {"id": "none", "rank": None},
+            {"id": "boolean", "rank": False},
+            {"id": "list", "rank": ["a"]},
+            {"id": "string-a", "rank": "a"},
+        ]
+
+        result = self.service._apply_query_filter(test_data, {"sort": "rank"})
+
+        self.assertEqual(
+            [item["id"] for item in result["data"]],
+            ["none", "boolean", "number", "string-a", "string-z", "list", "object"],
+        )
 
     def test_read_with_query(self):
         """Test reading with query parameters."""

@@ -11,6 +11,12 @@ This module handles storage type-specific operations including:
 import logging
 from typing import Any, Dict, Optional
 
+from agentmap.services.config._availability_cache_manager import (
+    AvailabilityCacheManager,
+)
+from agentmap.services.config._path_resolver import PathResolver
+from agentmap.services.config.config_service import ConfigService
+
 
 class StorageTypeHandlers:
     """
@@ -24,11 +30,11 @@ class StorageTypeHandlers:
     def __init__(
         self,
         config_data: Dict[str, Any],
-        config_service,
-        cache_manager,
-        path_resolver,
+        config_service: ConfigService,
+        cache_manager: AvailabilityCacheManager,
+        path_resolver: PathResolver,
         logger: Optional[logging.Logger] = None,
-    ):
+    ) -> None:
         """
         Initialize the storage type handlers.
 
@@ -45,7 +51,7 @@ class StorageTypeHandlers:
         self._path_resolver = path_resolver
         self._logger = logger or logging.getLogger(__name__)
 
-    def set_logger(self, logger: logging.Logger):
+    def set_logger(self, logger: logging.Logger) -> None:
         """
         Set the logger instance.
 
@@ -65,7 +71,7 @@ class StorageTypeHandlers:
         cached_result = self._cache_manager.get_cached_availability("csv")
         if cached_result:
             self._logger.debug("Using cached availability for CSV storage")
-            return cached_result.get("enabled", False)
+            return bool(cached_result.get("enabled", False))
 
         # Fallback to direct config check
         try:
@@ -105,7 +111,9 @@ class StorageTypeHandlers:
             True if CSV auto-creation is enabled, False otherwise
         """
         csv_config = self._config_data.get("csv", {})
-        return csv_config.get("auto_create_files", False)
+        if not isinstance(csv_config, dict):
+            return False
+        return bool(csv_config.get("auto_create_files", False))
 
     def is_vector_storage_enabled(self) -> bool:
         """
@@ -118,7 +126,7 @@ class StorageTypeHandlers:
         cached_result = self._cache_manager.get_cached_availability("vector")
         if cached_result:
             self._logger.debug("Using cached availability for vector storage")
-            return cached_result.get("enabled", False)
+            return bool(cached_result.get("enabled", False))
 
         # Fallback to direct config check
         try:
@@ -158,7 +166,7 @@ class StorageTypeHandlers:
         cached_result = self._cache_manager.get_cached_availability("kv")
         if cached_result:
             self._logger.debug("Using cached availability for KV storage")
-            return cached_result.get("enabled", False)
+            return bool(cached_result.get("enabled", False))
 
         # Fallback to direct config check
         try:
@@ -199,7 +207,7 @@ class StorageTypeHandlers:
         cached_result = self._cache_manager.get_cached_availability("json")
         if cached_result:
             self._logger.debug("Using cached availability for JSON storage")
-            return cached_result.get("enabled", False)
+            return bool(cached_result.get("enabled", False))
 
         # Fallback to direct config check
         try:
@@ -240,7 +248,7 @@ class StorageTypeHandlers:
         cached_result = self._cache_manager.get_cached_availability("blob")
         if cached_result:
             self._logger.debug("Using cached availability for blob storage")
-            return cached_result.get("enabled", False)
+            return bool(cached_result.get("enabled", False))
 
         # Fallback to direct config check
         try:
@@ -280,7 +288,11 @@ class StorageTypeHandlers:
             True if provider is configured with valid settings
         """
         provider_config = self._config_data.get(provider, {})
-        return bool(provider_config) and provider_config.get("enabled", True)
+        return (
+            isinstance(provider_config, dict)
+            and bool(provider_config)
+            and bool(provider_config.get("enabled", True))
+        )
 
     def is_storage_type_enabled(self, storage_type: str) -> bool:
         """

@@ -4,7 +4,7 @@ CSV ID Detection module.
 Handles smart ID column detection for CSV files.
 """
 
-from typing import Optional
+from typing import Any, List, Optional, Tuple, cast
 
 import pandas as pd
 
@@ -40,8 +40,8 @@ class CSVIdDetection:
         if df.empty or len(df.columns) == 0:
             return None
 
-        columns = df.columns.tolist()
-        candidates = []
+        columns = cast(List[str], df.columns.tolist())
+        candidates: List[Tuple[str, str]] = []
 
         # Check for exact "id" match (case insensitive)
         for col in columns:
@@ -78,7 +78,7 @@ class CSVIdDetection:
     @staticmethod
     def convert_document_id_to_column_type(
         document_id: str, df: pd.DataFrame, id_column: str
-    ):
+    ) -> Any:
         """
         Convert document_id to match the ID column's data type.
 

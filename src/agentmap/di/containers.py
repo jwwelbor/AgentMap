@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from dependency_injector import containers, providers
 
 from .container_parts.bootstrap import BootstrapContainer
@@ -14,9 +16,12 @@ from .container_parts.storage import StorageContainer
 from .container_parts.telemetry import TelemetryContainer
 from .utils import create_optional_service, safe_get_service
 
+if TYPE_CHECKING:
+    from agentmap.services.agent.agent_factory_service import AgentFactoryService
+
 
 def _expose(
-    container_provider: providers.Provider, attribute: str
+    container_provider: providers.Provider[Any], attribute: str
 ) -> providers.Callable:
     """Return a provider that resolves an attribute from a nested container."""
 
@@ -69,6 +74,30 @@ class ApplicationContainer(containers.DeclarativeContainer):
         telemetry_service=_expose(_telemetry, "telemetry_service"),
     )
 
+    @staticmethod
+    def _create_agent_factory_service(
+        features_registry_service: Any,
+        logging_service: Any,
+        custom_agent_loader: Any,
+        app_config_service: Any,
+    ) -> AgentFactoryService:
+        from agentmap.services.agent.agent_factory_service import AgentFactoryService
+
+        return AgentFactoryService(
+            features_registry_service,
+            logging_service,
+            custom_agent_loader,
+            app_config_service,
+        )
+
+    _agent_factory_service = providers.Singleton(
+        _create_agent_factory_service,
+        _expose(_bootstrap, "features_registry_service"),
+        _expose(_core, "logging_service"),
+        _expose(_bootstrap, "custom_agent_loader"),
+        _expose(_core, "app_config_service"),
+    )
+
     _host_registry = providers.Container(
         HostRegistryContainer,
         logging_service=_expose(_core, "logging_service"),
@@ -82,8 +111,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
     # (GraphCoreContainer needs it, but GraphAgentContainer is defined later)
     @staticmethod
     def _create_orchestrator_service(
-        prompt_manager_service, logging_service, llm_service, features_registry_service
-    ):
+        prompt_manager_service: Any,
+        logging_service: Any,
+        llm_service: Any,
+        features_registry_service: Any,
+    ) -> Any:
         from agentmap.services.orchestrator_service import OrchestratorService
 
         return OrchestratorService(
@@ -106,6 +138,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         app_config_service=_expose(_core, "app_config_service"),
         logging_service=_expose(_core, "logging_service"),
         features_registry_service=_expose(_bootstrap, "features_registry_service"),
+        dependency_checker_service=_expose(_bootstrap, "dependency_checker_service"),
         function_resolution_service=_expose(_bootstrap, "function_resolution_service"),
         agent_registry_service=_expose(_bootstrap, "agent_registry_service"),
         csv_graph_parser_service=_expose(_bootstrap, "csv_graph_parser_service"),
@@ -121,14 +154,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
         system_storage_manager=_expose(_storage, "system_storage_manager"),
         file_path_service=_expose(_core, "file_path_service"),
         orchestrator_service=_orchestrator_service,
+        agent_factory_service=_agent_factory_service,
     )
 
     _graph_agent = providers.Container(
         GraphAgentContainer,
         features_registry_service=_expose(_bootstrap, "features_registry_service"),
         logging_service=_expose(_core, "logging_service"),
-        custom_agent_loader=_expose(_bootstrap, "custom_agent_loader"),
         app_config_service=_expose(_core, "app_config_service"),
+        agent_factory_service=_agent_factory_service,
         llm_service=_expose(_llm, "llm_service"),
         storage_service_manager=_expose(_storage, "storage_service_manager"),
         host_protocol_configuration_service=_expose(
@@ -236,7 +270,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     # --- Graph agent re-exports -------------------------------------------------
 
     orchestrator_service = _orchestrator_service
-    agent_factory_service = _expose(_graph_agent, "agent_factory_service")
+    agent_factory_service = _agent_factory_service
     agent_service_injection_service = _expose(
         _graph_agent, "agent_service_injection_service"
     )
@@ -246,19 +280,19 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_graph_runner_service(
-        app_config_service,
-        graph_bootstrap_service,
-        graph_agent_instantiation_service,
-        graph_assembly_service,
-        graph_execution_service,
-        execution_tracking_service,
-        logging_service,
-        interaction_handler_service,
-        graph_checkpoint_service,
-        graph_bundle_service,
-        declaration_registry_service,
-        telemetry_service,
-    ):
+        app_config_service: Any,
+        graph_bootstrap_service: Any,
+        graph_agent_instantiation_service: Any,
+        graph_assembly_service: Any,
+        graph_execution_service: Any,
+        execution_tracking_service: Any,
+        logging_service: Any,
+        interaction_handler_service: Any,
+        graph_checkpoint_service: Any,
+        graph_bundle_service: Any,
+        declaration_registry_service: Any,
+        telemetry_service: Any,
+    ) -> Any:
         from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
         return GraphRunnerService(
@@ -294,7 +328,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # --- Delegated helper methods ----------------------------------------------
 
-    def get_cache_status(self):
+    def get_cache_status(self) -> Any:
         return self._core().get_cache_status()
 
     def invalidate_all_caches(self) -> bool:

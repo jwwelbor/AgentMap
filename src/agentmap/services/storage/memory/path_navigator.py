@@ -69,6 +69,7 @@ class PathNavigator:
             return value
 
         # Make a copy to avoid modifying original
+        result: Any
         if isinstance(data, dict):
             result = data.copy()
         elif isinstance(data, list):
@@ -78,7 +79,7 @@ class PathNavigator:
             result = {}
 
         components = path.split(".")
-        current = result
+        current: Any = result
 
         # Navigate to the parent of the target
         for i, component in enumerate(components[:-1]):

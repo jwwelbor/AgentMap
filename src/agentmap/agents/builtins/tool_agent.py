@@ -6,13 +6,17 @@ Delegates tool selection to OrchestratorService and executes via LangGraph ToolN
 """
 
 import inspect
+import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from langgraph.prebuilt import ToolNode
 
 from agentmap.agents.base_agent import BaseAgent
+from agentmap.services.execution_tracking_service import ExecutionTrackingService
+from agentmap.services.orchestrator_service import OrchestratorService
 from agentmap.services.protocols import LLMCapableAgent, ToolSelectionCapableAgent
+from agentmap.services.state_adapter_service import StateAdapterService
 
 
 class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
@@ -27,10 +31,10 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
         name: str,
         prompt: str,
         context: Optional[Dict[str, Any]] = None,
-        tools: Optional[list] = None,
-        logger=None,
-        execution_tracking_service=None,
-        state_adapter_service=None,
+        tools: Optional[List[Any]] = None,
+        logger: Optional[logging.Logger] = None,
+        execution_tracking_service: Optional[ExecutionTrackingService] = None,
+        state_adapter_service: Optional[StateAdapterService] = None,
     ):
         """
         Initialize tool agent as data container with service delegation.
@@ -70,7 +74,7 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
         self.temperature = float(context.get("temperature", 0.2) if context else 0.2)
 
         # Business service (injected via protocol)
-        self.orchestrator_service = None
+        self.orchestrator_service: Optional[OrchestratorService] = None
 
         # LangGraph ToolNode for execution
         self.tool_node = ToolNode(self.tools) if self.tools else None
@@ -81,7 +85,9 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
                 f"strategy={self.matching_strategy}"
             )
 
-    def configure_orchestrator_service(self, orchestrator_service) -> None:
+    def configure_orchestrator_service(
+        self, orchestrator_service: OrchestratorService
+    ) -> None:
         """Configure orchestrator service for tool selection (protocol method)."""
         self.orchestrator_service = orchestrator_service
         if self._logger:
@@ -132,7 +138,7 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
         tool = self._get_tool_by_name(selected_tool_name)
         return self._execute_tool(tool, inputs)
 
-    def _execute_tool(self, tool, inputs):
+    def _execute_tool(self, tool: Any, inputs: Dict[str, Any]) -> str:
         """Execute tool directly (LangGraph 1.x compatibility)."""
         # Map state field names to tool parameter names
         mapped_args = self._map_inputs_to_tool_params(tool, inputs)
@@ -147,7 +153,7 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
             raise
 
     def _map_inputs_to_tool_params(
-        self, tool, inputs: Dict[str, Any]
+        self, tool: Any, inputs: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Map state field names to tool parameter names.
@@ -225,7 +231,9 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
         )
         return mapped
 
-    def _resolve_tool_descriptions(self, tools, context):
+    def _resolve_tool_descriptions(
+        self, tools: List[Any], context: Dict[str, Any]
+    ) -> Dict[str, Dict[str, str]]:
         """
         Resolve tool descriptions with priority:
         1. Extract from tool definitions (baseline)
@@ -252,7 +260,9 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
 
         return descriptions
 
-    def _tools_to_node_format(self, tool_descriptions):
+    def _tools_to_node_format(
+        self, tool_descriptions: Dict[str, Dict[str, str]]
+    ) -> Dict[str, Dict[str, str]]:
         """Transform tools to node format for OrchestratorService."""
         return {
             name: {
@@ -263,7 +273,7 @@ class ToolAgent(BaseAgent, LLMCapableAgent, ToolSelectionCapableAgent):
             for name, info in tool_descriptions.items()
         }
 
-    def _get_tool_by_name(self, tool_name: str):
+    def _get_tool_by_name(self, tool_name: str) -> Any:
         """Get tool by name."""
         for tool in self.tools:
             if tool.name == tool_name:

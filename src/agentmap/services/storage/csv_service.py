@@ -24,6 +24,9 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from agentmap.services.config.storage_config_service import StorageConfigService
+from agentmap.services.file_path_service import FilePathService
+from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.base import BaseStorageService
 from agentmap.services.storage.csv.csv_file_handler import CSVFileHandler
 from agentmap.services.storage.csv.csv_id_detector import CSVIdDetector
@@ -53,11 +56,11 @@ class CSVStorageService(BaseStorageService):
     def __init__(
         self,
         provider_name: str,
-        configuration,  # StorageConfigService (avoid circular import)
-        logging_service,  # LoggingService (avoid circular import)
-        file_path_service=None,  # FilePathService (optional for path validation)
-        base_directory: str = None,  # Optional base directory for injection
-        telemetry_service=None,  # Optional telemetry service for span instrumentation
+        configuration: StorageConfigService,
+        logging_service: LoggingService,
+        file_path_service: Optional[FilePathService] = None,
+        base_directory: Optional[str] = None,
+        telemetry_service: Optional[Any] = None,
     ):
         """
         Initialize CSVStorageService.
@@ -81,10 +84,10 @@ class CSVStorageService(BaseStorageService):
         )
 
         # Initialize component instances (will be set up after client initialization)
-        self._file_handler = None
-        self._id_detector = None
-        self._query_processor = None
-        self._path_resolver = None
+        self._file_handler: Optional[CSVFileHandler] = None
+        self._id_detector: Optional[CSVIdDetector] = None
+        self._query_processor: Optional[CSVQueryProcessor] = None
+        self._path_resolver: Optional[CSVPathResolver] = None
 
     def _initialize_client(self) -> Any:
         """
@@ -197,10 +200,10 @@ class CSVStorageService(BaseStorageService):
         Raises:
             ValueError: If path validation fails when file_path_service is available
         """
-        # Ensure path resolver (and related components) are initialized
-        if not hasattr(self, "_path_resolver") or self._path_resolver is None:
-            # Accessing self.client triggers lazy initialization via _initialize_client()
+        if self._path_resolver is None:
             _ = self.client
+        if self._path_resolver is None:
+            raise RuntimeError("CSV path resolver was not initialized")
         return self._path_resolver.get_file_path(collection)
 
     def _ensure_directory_exists(self, file_path: str) -> None:
@@ -216,12 +219,13 @@ class CSVStorageService(BaseStorageService):
             PermissionError: If directory cannot be created due to permissions
             OSError: If other OS-level errors occur
         """
-        # Ensure file handler is initialized
-        if not hasattr(self, "_file_handler") or self._file_handler is None:
+        if self._file_handler is None:
             _ = self.client
+        if self._file_handler is None:
+            raise RuntimeError("CSV file handler was not initialized")
         self._file_handler.ensure_directory_exists(file_path)
 
-    def _read_csv_file(self, file_path: str, **kwargs) -> pd.DataFrame:
+    def _read_csv_file(self, file_path: str, **kwargs: Any) -> pd.DataFrame:
         """
         Read CSV file with error handling.
 
@@ -234,9 +238,10 @@ class CSVStorageService(BaseStorageService):
         Returns:
             DataFrame with CSV data
         """
-        # Ensure file handler is initialized
-        if not hasattr(self, "_file_handler") or self._file_handler is None:
+        if self._file_handler is None:
             _ = self.client
+        if self._file_handler is None:
+            raise RuntimeError("CSV file handler was not initialized")
         try:
             return self._file_handler.read_csv_file(file_path, **kwargs)
         except FileNotFoundError:
@@ -245,7 +250,7 @@ class CSVStorageService(BaseStorageService):
             self._handle_error("read_csv", e, file_path=file_path)
 
     def _write_csv_file(
-        self, df: pd.DataFrame, file_path: str, mode: str = "w", **kwargs
+        self, df: pd.DataFrame, file_path: str, mode: str = "w", **kwargs: Any
     ) -> None:
         """
         Write DataFrame to CSV file.
@@ -262,9 +267,10 @@ class CSVStorageService(BaseStorageService):
             PermissionError: If file cannot be written due to permissions
             OSError: If other OS-level errors occur
         """
-        # Ensure file handler is initialized
-        if not hasattr(self, "_file_handler") or self._file_handler is None:
+        if self._file_handler is None:
             _ = self.client
+        if self._file_handler is None:
+            raise RuntimeError("CSV file handler was not initialized")
         try:
             # Ensure base directory exists when using injection (deferred from _initialize_client)
             if self.base_directory:
@@ -290,9 +296,10 @@ class CSVStorageService(BaseStorageService):
         Returns:
             Column name to use as ID, or None if no suitable column found
         """
-        # Ensure ID detector is initialized
-        if not hasattr(self, "_id_detector") or self._id_detector is None:
+        if self._id_detector is None:
             _ = self.client
+        if self._id_detector is None:
+            raise RuntimeError("CSV ID detector was not initialized")
         return self._id_detector.detect_id_column(df)
 
     def _apply_query_filter(
@@ -311,9 +318,11 @@ class CSVStorageService(BaseStorageService):
             Filtered DataFrame
         """
         # Ensure lazy-initialized components (including _query_processor) are ready
-        if not hasattr(self, "_query_processor") or self._query_processor is None:
+        if self._query_processor is None:
             # Accessing self.client should trigger _initialize_client()
             _ = self.client
+        if self._query_processor is None:
+            raise RuntimeError("CSV query processor was not initialized")
         return self._query_processor.apply_query_filter(df, query)
 
     def _perform_read(
@@ -323,7 +332,7 @@ class CSVStorageService(BaseStorageService):
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
         id_field: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """
         Read data from CSV file.
@@ -439,8 +448,8 @@ class CSVStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         mode: WriteMode = WriteMode.WRITE,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Write data to CSV file.
 
@@ -604,9 +613,6 @@ class CSVStorageService(BaseStorageService):
                                 updated_df = pd.concat(
                                     [existing_df, df], ignore_index=True
                                 )
-                        else:
-                            updated_df = df
-
                         self._write_csv_file(updated_df, file_path, mode="w", **kwargs)
                         return self._create_success_result(
                             "update",
@@ -733,8 +739,8 @@ class CSVStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         path: Optional[str] = None,
         id_field: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Delete from CSV file.
 

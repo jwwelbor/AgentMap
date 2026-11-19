@@ -293,6 +293,21 @@ class TestParseResumeToken(unittest.TestCase):
         self.assertEqual(action, "continue")
         self.assertIsNone(data)
 
+    def test_parse_valid_non_object_json_raises_invalid_inputs(self):
+        with self.assertRaises(InvalidInputs) as context:
+            _parse_resume_token("[]")
+
+        self.assertIn("JSON object", str(context.exception))
+
+    def test_parse_non_object_response_data_raises_invalid_inputs(self):
+        for response_data in ([], "not an object", 7):
+            with self.subTest(response_data=response_data):
+                token = json.dumps(
+                    {"thread_id": "thread", "response_data": response_data}
+                )
+                with self.assertRaisesRegex(InvalidInputs, "response_data"):
+                    _parse_resume_token(token)
+
     def test_parse_empty_thread_id_raises_error(self):
         """Test empty thread_id raises InvalidInputs."""
         token = json.dumps({"response_action": "approve"})

@@ -96,6 +96,12 @@ class TestSummaryAgent(unittest.TestCase):
         self.assertIsNotNone(agent.execution_tracking_service)
         self.assertIsNotNone(agent.state_adapter_service)
 
+    def test_non_string_format_options_use_default_strings(self):
+        agent = self.create_summary_agent(format=["invalid"], separator={"invalid"})
+
+        self.assertEqual(agent.format_template, "{key}: {value}")
+        self.assertEqual(agent.separator, "\n\n")
+
     def test_agent_initialization_llm_mode(self):
         """Test summary agent initialization in LLM mode."""
         agent = self.create_summary_agent(use_llm=True)

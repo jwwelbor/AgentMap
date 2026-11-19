@@ -20,7 +20,7 @@ class LLMConfigManager(BaseConfigManager):
     (retry + circuit breaker).
     """
 
-    def get_provider_config(self, provider: str) -> Dict[str, Any]:
+    def get_provider_config(self, provider: str) -> Any:
         """
         Get configuration for a specific LLM provider.
 
@@ -47,9 +47,9 @@ class LLMConfigManager(BaseConfigManager):
         Returns:
             Dictionary containing resilience configuration.
         """
-        resilience_config = self.get_value("llm.resilience", {})
+        resilience_config: Dict[str, Any] = self.get_value("llm.resilience", {})
 
-        defaults = {
+        defaults: Dict[str, Any] = {
             "retry": {
                 "max_attempts": 3,
                 "backoff_base": 2.0,
@@ -83,9 +83,9 @@ class LLMConfigManager(BaseConfigManager):
             Dictionary shaped ``{"catalog_version": ..., "currency": ...,
             "models": {...}}``.
         """
-        pricing_config = self.get_value("llm.pricing", {})
+        pricing_config: Dict[str, Any] = self.get_value("llm.pricing", {})
 
-        defaults = {
+        defaults: Dict[str, Any] = {
             "catalog_version": None,
             "currency": "USD",
             "models": {},

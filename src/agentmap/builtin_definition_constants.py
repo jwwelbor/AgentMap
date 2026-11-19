@@ -6,7 +6,30 @@ eliminating duplication between PythonDeclarationSource and AgentConfigService.
 Provides a single source of truth for all built-in component definitions.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, NotRequired, Optional, TypedDict
+
+
+class AgentDefinition(TypedDict):
+    """Configuration for one built-in agent."""
+
+    class_path: str
+    category: str
+    requires: List[str]
+    protocols_implemented: List[str]
+    source: NotRequired[str]
+    provider: NotRequired[Optional[str]]
+    storage_type: NotRequired[str]
+
+
+class ServiceDefinition(TypedDict):
+    """Configuration for one built-in service."""
+
+    class_path: str
+    singleton: bool
+    required_services: List[str]
+    implements: List[str]
+    source: NotRequired[str]
+    optional: NotRequired[List[str]]
 
 
 class BuiltinDefinitionConstants:
@@ -19,7 +42,7 @@ class BuiltinDefinitionConstants:
     """
 
     # ============ AGENT DEFINITIONS ============
-    AGENTS = {
+    AGENTS: Dict[str, AgentDefinition] = {
         # ============ CORE AGENTS ============
         "echo": {
             "class_path": "agentmap.agents.builtins.echo_agent.EchoAgent",
@@ -251,7 +274,7 @@ class BuiltinDefinitionConstants:
     }
 
     # ============ SERVICE DEFINITIONS ============
-    SERVICES = {
+    SERVICES: Dict[str, ServiceDefinition] = {
         # ============ CORE SERVICES ============
         "logging_service": {
             "class_path": "agentmap.services.logging_service.LoggingService",
@@ -462,7 +485,7 @@ class BuiltinDefinitionConstants:
     # ============ HELPER METHODS ============
 
     @classmethod
-    def get_agents_by_category(cls, category: str) -> Dict:
+    def get_agents_by_category(cls, category: str) -> Dict[str, AgentDefinition]:
         """
         Get all agents in a specific category.
 
@@ -485,8 +508,8 @@ class BuiltinDefinitionConstants:
         Returns:
             Class path string or None if not found
         """
-        agent = cls.AGENTS.get(agent_type, {})
-        return agent.get("class_path")
+        agent = cls.AGENTS.get(agent_type)
+        return agent["class_path"] if agent is not None else None
 
     @classmethod
     def get_agent_class_paths(cls) -> Dict[str, str]:
@@ -509,8 +532,8 @@ class BuiltinDefinitionConstants:
         Returns:
             Class path string or None if not found
         """
-        service = cls.SERVICES.get(service_name, {})
-        return service.get("class_path")
+        service = cls.SERVICES.get(service_name)
+        return service["class_path"] if service is not None else None
 
     @classmethod
     def get_service_class_paths(cls) -> Dict[str, str]:
@@ -523,7 +546,7 @@ class BuiltinDefinitionConstants:
         return {k: v["class_path"] for k, v in cls.SERVICES.items()}
 
     @classmethod
-    def get_agents_by_provider(cls, provider: str) -> Dict:
+    def get_agents_by_provider(cls, provider: str) -> Dict[str, AgentDefinition]:
         """
         Get all agents for a specific LLM provider.
 
@@ -536,7 +559,9 @@ class BuiltinDefinitionConstants:
         return {k: v for k, v in cls.AGENTS.items() if v.get("provider") == provider}
 
     @classmethod
-    def get_agents_by_storage_type(cls, storage_type: str) -> Dict:
+    def get_agents_by_storage_type(
+        cls, storage_type: str
+    ) -> Dict[str, AgentDefinition]:
         """
         Get all agents for a specific storage type.
 
@@ -561,8 +586,8 @@ class BuiltinDefinitionConstants:
         Returns:
             True if the agent is an LLM agent, False otherwise
         """
-        agent = cls.AGENTS.get(agent_type, {})
-        return agent.get("category") == "llm"
+        agent = cls.AGENTS.get(agent_type)
+        return agent is not None and agent["category"] == "llm"
 
     @classmethod
     def is_storage_agent(cls, agent_type: str) -> bool:
@@ -575,8 +600,8 @@ class BuiltinDefinitionConstants:
         Returns:
             True if the agent is a storage agent, False otherwise
         """
-        agent = cls.AGENTS.get(agent_type, {})
-        return agent.get("category") == "storage"
+        agent = cls.AGENTS.get(agent_type)
+        return agent is not None and agent["category"] == "storage"
 
     @classmethod
     def is_core_agent(cls, agent_type: str) -> bool:
@@ -589,8 +614,8 @@ class BuiltinDefinitionConstants:
         Returns:
             True if the agent is a core agent, False otherwise
         """
-        agent = cls.AGENTS.get(agent_type, {})
-        return agent.get("category") == "core"
+        agent = cls.AGENTS.get(agent_type)
+        return agent is not None and agent["category"] == "core"
 
     @classmethod
     def is_mixed_dependency_agent(cls, agent_type: str) -> bool:
@@ -603,11 +628,11 @@ class BuiltinDefinitionConstants:
         Returns:
             True if the agent has mixed dependencies, False otherwise
         """
-        agent = cls.AGENTS.get(agent_type, {})
-        return agent.get("category") == "mixed"
+        agent = cls.AGENTS.get(agent_type)
+        return agent is not None and agent["category"] == "mixed"
 
     @classmethod
-    def get_agent_protocols(cls, agent_type: str) -> list:
+    def get_agent_protocols(cls, agent_type: str) -> List[str]:
         """
         Get protocols implemented by an agent.
 
@@ -617,11 +642,11 @@ class BuiltinDefinitionConstants:
         Returns:
             List of protocol names
         """
-        agent = cls.AGENTS.get(agent_type, {})
-        return agent.get("protocols_implemented", [])
+        agent = cls.AGENTS.get(agent_type)
+        return agent["protocols_implemented"] if agent is not None else []
 
     @classmethod
-    def get_agent_requirements(cls, agent_type: str) -> list:
+    def get_agent_requirements(cls, agent_type: str) -> List[str]:
         """
         Get required services for an agent.
 
@@ -631,8 +656,8 @@ class BuiltinDefinitionConstants:
         Returns:
             List of required service names
         """
-        agent = cls.AGENTS.get(agent_type, {})
-        return agent.get("requires", [])
+        agent = cls.AGENTS.get(agent_type)
+        return agent["requires"] if agent is not None else []
 
     @classmethod
     def get_agent_to_storage_type(cls) -> Dict[str, str]:

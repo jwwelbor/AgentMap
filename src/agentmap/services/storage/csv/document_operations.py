@@ -4,7 +4,7 @@ CSV Document Operations module.
 Handles document-level read, write, and delete operations.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union, cast
 
 import pandas as pd
 
@@ -28,7 +28,7 @@ class CSVDocumentOperations:
     @staticmethod
     def find_document_by_id(
         df: pd.DataFrame, document_id: str, id_field: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[Union[Dict[str, Any], List[Dict[str, Any]]]]:
         """
         Find a single document by ID in the DataFrame.
 
@@ -51,7 +51,7 @@ class CSVDocumentOperations:
                 result_df = matching_rows.drop(
                     columns=[CSVDocumentOperations.BATCH_COLUMN]
                 )
-                return result_df.to_dict(orient="records")
+                return cast(List[Dict[str, Any]], result_df.to_dict(orient="records"))
 
         # Try smart ID column detection for single row
         id_column = id_field if id_field else CSVIdDetection.detect_id_column(df)
@@ -65,18 +65,18 @@ class CSVDocumentOperations:
                 )
                 matching_rows = df[df[id_column] == search_value]
                 if len(matching_rows) > 0:
-                    return matching_rows.iloc[0].to_dict()
+                    return cast(Dict[str, Any], matching_rows.iloc[0].to_dict())
             except (ValueError, TypeError):
                 # Conversion failed, try direct string comparison
                 matching_rows = df[df[id_column].astype(str) == str(document_id)]
                 if len(matching_rows) > 0:
-                    return matching_rows.iloc[0].to_dict()
+                    return cast(Dict[str, Any], matching_rows.iloc[0].to_dict())
 
         # No ID column or ID not found - try row index fallback
         try:
             row_index = int(document_id)
             if 0 <= row_index < len(df):
-                return df.iloc[row_index].to_dict()
+                return cast(Dict[str, Any], df.iloc[row_index].to_dict())
         except (ValueError, TypeError):
             pass
 

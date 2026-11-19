@@ -8,6 +8,10 @@ system, including provider x complexity matrix, task types, and routing policies
 from typing import Any, Dict, List, Optional
 
 from agentmap.services.config.app_config_service import AppConfigService
+from agentmap.services.config.availability_cache_service import (
+    AvailabilityCacheService,
+)
+from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
 from agentmap.services.config.llm_routing_availability import (
     clear_provider_cache as _clear_provider_cache,
 )
@@ -82,8 +86,8 @@ class LLMRoutingConfigService:
         self,
         app_config_service: AppConfigService,
         logging_service: LoggingService,
-        llm_models_config_service,
-        availability_cache_service=None,
+        llm_models_config_service: LLMModelsConfigService,
+        availability_cache_service: Optional[AvailabilityCacheService] = None,
     ):
         """
         Initialize routing configuration from dictionary.
@@ -149,6 +153,8 @@ class LLMRoutingConfigService:
 
         normalized: Dict[str, Dict[str, Any]] = {}
         for provider, provider_capabilities in capabilities.items():
+            if not isinstance(provider_capabilities, dict):
+                continue
             provider_key = canonicalize_provider(provider)
             if provider_key not in normalized or provider.lower() == provider_key:
                 normalized[provider_key] = provider_capabilities
@@ -162,7 +168,8 @@ class LLMRoutingConfigService:
             Activities configuration dictionary mapping activity names
             to their complexity tier routing plans
         """
-        return self.config_dict.get("activities", {})
+        activities = self.config_dict.get("activities", {})
+        return activities if isinstance(activities, dict) else {}
 
     def get_model_for_complexity(self, provider: str, complexity: str) -> Optional[str]:
         """
@@ -247,8 +254,6 @@ class LLMRoutingConfigService:
         capabilities = self.provider_capabilities.get(
             canonicalize_provider(provider), {}
         )
-        if not isinstance(capabilities, dict):
-            return False
         return capabilities.get("prompt_caching", False) is True
 
     def get_prompt_cache_capable_providers(self) -> List[str]:
@@ -292,7 +297,8 @@ class LLMRoutingConfigService:
         Returns:
             Fallback provider name
         """
-        return self.fallback.get("default_provider", "anthropic")
+        provider = self.fallback.get("default_provider", "anthropic")
+        return provider if isinstance(provider, str) else "anthropic"
 
     def get_fallback_model(self) -> str:
         """
@@ -303,7 +309,7 @@ class LLMRoutingConfigService:
         """
         # Try to get from fallback config first
         config_model = self.fallback.get("default_model")
-        if config_model:
+        if isinstance(config_model, str) and config_model:
             return config_model
 
         # Fall back to llm_models_config_service
@@ -322,7 +328,8 @@ class LLMRoutingConfigService:
         Returns:
             True if cost optimization is enabled
         """
-        return self.cost_optimization.get("enabled", True)
+        enabled = self.cost_optimization.get("enabled", True)
+        return enabled if isinstance(enabled, bool) else True
 
     def get_max_cost_tier(self) -> str:
         """
@@ -331,7 +338,8 @@ class LLMRoutingConfigService:
         Returns:
             Maximum cost tier (low, medium, high, critical)
         """
-        return self.cost_optimization.get("max_cost_tier", "high")
+        tier = self.cost_optimization.get("max_cost_tier", "high")
+        return tier if isinstance(tier, str) else "high"
 
     def is_routing_cache_enabled(self) -> bool:
         """
@@ -340,7 +348,8 @@ class LLMRoutingConfigService:
         Returns:
             True if caching is enabled
         """
-        return self.performance.get("enable_routing_cache", True)
+        enabled = self.performance.get("enable_routing_cache", True)
+        return enabled if isinstance(enabled, bool) else True
 
     def get_cache_ttl(self) -> int:
         """
@@ -349,7 +358,8 @@ class LLMRoutingConfigService:
         Returns:
             Cache TTL in seconds
         """
-        return self.performance.get("cache_ttl", 300)
+        ttl = self.performance.get("cache_ttl", 300)
+        return ttl if isinstance(ttl, int) and not isinstance(ttl, bool) else 300
 
     def _get_cached_availability(self, provider: str) -> Optional[Dict[str, Any]]:
         """
@@ -425,7 +435,7 @@ class LLMRoutingConfigService:
             self._logger,
         )
 
-    def clear_provider_cache(self, provider: Optional[str] = None):
+    def clear_provider_cache(self, provider: Optional[str] = None) -> None:
         """
         Clear availability cache for specific provider or all providers.
 

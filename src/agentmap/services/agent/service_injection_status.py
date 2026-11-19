@@ -38,9 +38,9 @@ class ServiceInjectionStatusProvider:
         self._host_services_available = host_protocol_configuration is not None
         self.logger = logger
 
-    def get_service_injection_status(self, agent: Any) -> dict:
+    def get_service_injection_status(self, agent: Any) -> dict[str, Any]:
         agent_name = getattr(agent, "name", "unknown")
-        status = {
+        status: dict[str, Any] = {
             "agent_name": agent_name,
             "agent_type": type(agent).__name__,
             "implemented_protocols": [],
@@ -131,10 +131,11 @@ class ServiceInjectionStatusProvider:
                     status["implemented_protocols"].append(protocol_class.__name__)
                 status["service_injection_potential"].append(protocol_info)
             host_service_status = None
-            if self._host_services_available:
+            host_protocol_configuration = self.host_protocol_configuration
+            if host_protocol_configuration is not None:
                 try:
                     host_service_status = (
-                        self.host_protocol_configuration.get_configuration_status(agent)
+                        host_protocol_configuration.get_configuration_status(agent)
                     )
                 except Exception as e:
                     self.logger.debug(f"Could not get host service status: {e}")
@@ -172,7 +173,7 @@ class ServiceInjectionStatusProvider:
             self.logger.error(f"Error analyzing agent {agent_name}: {e}")
         return status
 
-    def get_service_availability_status(self) -> dict:
+    def get_service_availability_status(self) -> dict[str, Any]:
         return {
             "core_services": {
                 "llm_service_available": self.llm_service is not None,

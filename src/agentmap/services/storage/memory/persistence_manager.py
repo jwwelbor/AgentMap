@@ -80,6 +80,10 @@ class PersistenceManager:
             with open(file_path, "r", encoding="utf-8") as f:
                 persistence_data = json.load(f)
 
+            if not isinstance(persistence_data, dict):
+                self._logger.warning("Persistence data must be a JSON object")
+                return None
+
             self._logger.debug(f"Loaded memory storage from {file_path}")
             return persistence_data
 

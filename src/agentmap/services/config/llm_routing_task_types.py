@@ -27,7 +27,7 @@ DEFAULT_TASK_TYPES = {
 
 
 def validate_task_type_config(
-    task_name: str, task_config: Dict[str, Any], logger: logging.Logger
+    task_name: str, task_config: Any, logger: logging.Logger
 ) -> bool:
     """
     Validate a single task type configuration.
@@ -40,6 +40,10 @@ def validate_task_type_config(
     Returns:
         True if valid, False otherwise
     """
+    if not isinstance(task_config, dict):
+        logger.error(f"Task type '{task_name}' configuration must be a mapping")
+        return False
+
     required_fields = ["provider_preference", "default_complexity"]
 
     for field in required_fields:
@@ -49,6 +53,9 @@ def validate_task_type_config(
 
     # Validate default complexity
     default_complexity = task_config.get("default_complexity", "medium")
+    if not isinstance(default_complexity, str):
+        logger.error(f"Task type '{task_name}' default_complexity must be a string")
+        return False
     if default_complexity.lower() not in get_valid_complexity_levels():
         logger.error(
             f"Task type '{task_name}' has invalid default_complexity: {default_complexity}"
@@ -57,8 +64,24 @@ def validate_task_type_config(
 
     # Validate provider preference is a list
     provider_preference = task_config.get("provider_preference", [])
-    if not isinstance(provider_preference, list):
-        logger.error(f"Task type '{task_name}' provider_preference must be a list")
+    if not isinstance(provider_preference, list) or not all(
+        isinstance(provider, str) for provider in provider_preference
+    ):
+        logger.error(
+            f"Task type '{task_name}' provider_preference must be a list of strings"
+        )
+        return False
+
+    complexity_keywords = task_config.get("complexity_keywords", {})
+    if not isinstance(complexity_keywords, dict) or any(
+        not isinstance(level, str)
+        or not isinstance(keywords, list)
+        or not all(isinstance(keyword, str) for keyword in keywords)
+        for level, keywords in complexity_keywords.items()
+    ):
+        logger.error(
+            f"Task type '{task_name}' complexity_keywords must map strings to lists of strings"
+        )
         return False
 
     return True
@@ -82,6 +105,9 @@ def load_task_types(
 
     # Load user-defined task types
     user_task_types = config.get("task_types", {})
+    if not isinstance(user_task_types, dict):
+        logger.error("Configured task_types must be a mapping")
+        user_task_types = {}
 
     # Merge with defaults (user types override defaults)
     merged_task_types = {**default_task_types, **user_task_types}
@@ -89,7 +115,9 @@ def load_task_types(
     # Validate and normalize each task type
     validated_task_types = {}
     for task_name, task_config in merged_task_types.items():
-        if validate_task_type_config(task_name, task_config, logger):
+        if isinstance(task_name, str) and validate_task_type_config(
+            task_name, task_config, logger
+        ):
             validated_task_types[task_name] = task_config
 
     return validated_task_types
@@ -125,7 +153,12 @@ def get_provider_preference(
         List of preferred providers in order
     """
     task_config = get_task_type_config(task_types, task_type)
-    return task_config.get("provider_preference", ["anthropic"])
+    providers = task_config.get("provider_preference", ["anthropic"])
+    if isinstance(providers, list) and all(
+        isinstance(provider, str) for provider in providers
+    ):
+        return providers
+    return ["anthropic"]
 
 
 def get_default_complexity(
@@ -142,7 +175,8 @@ def get_default_complexity(
         Default complexity level
     """
     task_config = get_task_type_config(task_types, task_type)
-    return task_config.get("default_complexity", "medium")
+    complexity = task_config.get("default_complexity", "medium")
+    return complexity if isinstance(complexity, str) else "medium"
 
 
 def get_complexity_keywords(
@@ -159,7 +193,15 @@ def get_complexity_keywords(
         Dictionary mapping complexity levels to keyword lists
     """
     task_config = get_task_type_config(task_types, task_type)
-    return task_config.get("complexity_keywords", {})
+    keywords = task_config.get("complexity_keywords", {})
+    if isinstance(keywords, dict) and all(
+        isinstance(level, str)
+        and isinstance(items, list)
+        and all(isinstance(item, str) for item in items)
+        for level, items in keywords.items()
+    ):
+        return keywords
+    return {}
 
 
 def get_available_task_types(task_types: Dict[str, Dict[str, Any]]) -> List[str]:

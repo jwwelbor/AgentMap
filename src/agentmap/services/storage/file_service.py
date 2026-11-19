@@ -17,7 +17,7 @@ import mimetypes
 import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
@@ -52,11 +52,11 @@ class FileStorageService(BaseStorageService):
     def __init__(
         self,
         provider_name: str,
-        configuration: StorageConfigService,
+        configuration: Union[StorageConfigService, Dict[str, Any]],
         logging_service: LoggingService,
         file_path_service: FilePathService,
         base_directory: Optional[str] = None,
-        telemetry_service=None,
+        telemetry_service: Any = None,
     ):
         """
         Initialize FileStorageService.
@@ -112,15 +112,18 @@ class FileStorageService(BaseStorageService):
         # Handle system storage (dict configuration) vs user storage (StorageConfigService)
         if self.provider_name.startswith("system_file"):
             # System storage: use dict access on configuration
-            base_dir = self.configuration["base_directory"]
-            encoding = self.configuration.get("encoding", "utf-8")
-            chunk_size = int(self.configuration.get("chunk_size", 1000))
-            chunk_overlap = int(self.configuration.get("chunk_overlap", 200))
-            should_split = self.configuration.get("should_split", False)
-            include_metadata = self.configuration.get("include_metadata", True)
-            newline = self.configuration.get("newline")
-            allow_binary = self.configuration.get("allow_binary", True)
-            max_file_size = self.configuration.get("max_file_size")
+            if not isinstance(self.configuration, dict):
+                raise ValueError("System file storage configuration must be a mapping")
+            system_config = self.configuration
+            base_dir = system_config["base_directory"]
+            encoding = system_config.get("encoding", "utf-8")
+            chunk_size = int(system_config.get("chunk_size", 1000))
+            chunk_overlap = int(system_config.get("chunk_overlap", 200))
+            should_split = system_config.get("should_split", False)
+            include_metadata = system_config.get("include_metadata", True)
+            newline = system_config.get("newline")
+            allow_binary = system_config.get("allow_binary", True)
+            max_file_size = system_config.get("max_file_size")
         else:
             # User storage: use get_file_config() to get config dict, then dict.get()
             file_config = self.configuration.get_file_config()
@@ -203,71 +206,85 @@ class FileStorageService(BaseStorageService):
     @ensure_handlers_initialized
     def _validate_file_path(self, file_path: str) -> str:
         """Validate file path (delegates to FilePathValidator)."""
-        return self._path_validator.validate_file_path(file_path)
+        return cast(FilePathValidator, self._path_validator).validate_file_path(
+            file_path
+        )
 
     @ensure_handlers_initialized
     def _resolve_file_path(
         self, collection: str, document_id: Optional[str] = None
     ) -> Path:
         """Resolve file path (delegates to FilePathValidator)."""
-        return self._path_validator.resolve_file_path(collection, document_id)
+        return cast(FilePathValidator, self._path_validator).resolve_file_path(
+            collection, document_id
+        )
 
     @ensure_handlers_initialized
     def _ensure_directory(self, directory_path: Path) -> None:
         """Ensure directory exists (delegates to FilePathValidator)."""
-        self._path_validator.ensure_directory(directory_path)
+        cast(FilePathValidator, self._path_validator).ensure_directory(directory_path)
 
     @ensure_handlers_initialized
     def _is_text_file(self, file_path: str) -> bool:
         """Check if text file (delegates to FileTypeDetector)."""
-        return self._type_detector.is_text_file(file_path)
+        return cast(FileTypeDetector, self._type_detector).is_text_file(file_path)
 
     @ensure_handlers_initialized
     def _is_binary_file(self, file_path: str) -> bool:
         """Check if binary file (delegates to FileTypeDetector)."""
-        return self._type_detector.is_binary_file(file_path)
+        return cast(FileTypeDetector, self._type_detector).is_binary_file(file_path)
 
     @ensure_handlers_initialized
     def _get_file_loader(self, file_path: str) -> Any:
         """Get document loader (delegates to DocumentLoaderHandler)."""
-        return self._document_loader.get_file_loader(file_path)
+        return cast(DocumentLoaderHandler, self._document_loader).get_file_loader(
+            file_path
+        )
 
     @ensure_handlers_initialized
     def _create_fallback_loader(self, file_path: str) -> Any:
         """Create fallback loader (delegates to DocumentLoaderHandler)."""
-        return self._document_loader.create_fallback_loader(file_path)
+        return cast(
+            DocumentLoaderHandler, self._document_loader
+        ).create_fallback_loader(file_path)
 
     @ensure_handlers_initialized
     def _filter_by_id(self, documents: List[Any], document_id: str) -> List[Any]:
         """Filter documents by ID (delegates to DocumentLoaderHandler)."""
-        return self._document_loader.filter_by_id(documents, document_id)
+        return cast(DocumentLoaderHandler, self._document_loader).filter_by_id(
+            documents, document_id
+        )
 
     @ensure_handlers_initialized
     def _apply_document_path(self, documents: Union[List[Any], Any], path: str) -> Any:
         """Apply document path (delegates to DocumentLoaderHandler)."""
-        return self._document_loader.apply_document_path(documents, path)
+        return cast(DocumentLoaderHandler, self._document_loader).apply_document_path(
+            documents, path
+        )
 
     @ensure_handlers_initialized
     def _apply_query_filter(
         self, documents: List[Any], query: Union[Dict[str, Any], str]
     ) -> List[Any]:
         """Apply query filter (delegates to DocumentLoaderHandler)."""
-        return self._document_loader.apply_query_filter(documents, query)
+        return cast(DocumentLoaderHandler, self._document_loader).apply_query_filter(
+            documents, query
+        )
 
     def _prepare_content(self, data: Any) -> Union[str, bytes]:
         """Prepare content for writing (delegates to ContentProcessor)."""
         return self._content_processor.prepare_content(data)
 
     @ensure_handlers_initialized
-    def _read_text_file(self, file_path: Path, **kwargs) -> str:
+    def _read_text_file(self, file_path: Path, **kwargs: Any) -> str:
         """Read text file (delegates to FileIOHandler)."""
         encoding = kwargs.get("encoding", self.client["encoding"])
-        return self._io_handler.read_text_file(file_path, encoding)
+        return cast(FileIOHandler, self._io_handler).read_text_file(file_path, encoding)
 
     @ensure_handlers_initialized
-    def _read_binary_file(self, file_path: Path, **kwargs) -> bytes:
+    def _read_binary_file(self, file_path: Path, **kwargs: Any) -> bytes:
         """Read binary file (delegates to FileIOHandler)."""
-        return self._io_handler.read_binary_file(file_path)
+        return cast(FileIOHandler, self._io_handler).read_binary_file(file_path)
 
     @ensure_handlers_initialized
     def _write_text_file(
@@ -277,13 +294,13 @@ class FileStorageService(BaseStorageService):
         mode: WriteMode,
         file_exists: bool,
         collection: str,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """Write text file (delegates to FileIOHandler)."""
         encoding = kwargs.get("encoding", self.client["encoding"])
         newline = kwargs.get("newline", self.client["newline"])
 
-        return self._io_handler.write_text_file(
+        return cast(FileIOHandler, self._io_handler).write_text_file(
             file_path,
             content,
             mode,
@@ -303,10 +320,10 @@ class FileStorageService(BaseStorageService):
         mode: WriteMode,
         file_exists: bool,
         collection: str,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """Write binary file (delegates to FileIOHandler)."""
-        return self._io_handler.write_binary_file(
+        return cast(FileIOHandler, self._io_handler).write_binary_file(
             file_path,
             content,
             mode,
@@ -322,7 +339,7 @@ class FileStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """
         Read file(s) - supports document loading via LangChain loaders.
@@ -375,44 +392,44 @@ class FileStorageService(BaseStorageService):
                 if not self.client["allow_binary"]:
                     raise ValueError("Binary file reading not allowed")
 
-                content = self._read_binary_file(file_path, **kwargs)
+                binary_content = self._read_binary_file(file_path, **kwargs)
 
                 if output_format == "default" or output_format == "raw":
-                    return content
+                    return binary_content
                 elif output_format == "structured":
                     return {
-                        "content": content,
+                        "content": binary_content,
                         "metadata": {
                             "source": str(file_path),
-                            "size": len(content),
+                            "size": len(binary_content),
                             "type": "binary",
                         },
                     }
                 else:
-                    return content
+                    return binary_content
 
             # Handle text file reading - prioritize simple text reading
             if self._is_text_file(str(file_path)):
                 try:
-                    content = self._read_text_file(file_path, **kwargs)
+                    text_content = self._read_text_file(file_path, **kwargs)
 
                     if (
                         output_format == "default"
                         or output_format == "text"
                         or output_format == "raw"
                     ):
-                        return content
+                        return text_content
                     elif output_format == "structured":
                         return {
-                            "content": content,
+                            "content": text_content,
                             "metadata": {
                                 "source": str(file_path),
-                                "size": len(content),
+                                "size": len(text_content),
                                 "type": "text",
                             },
                         }
                     else:
-                        return content
+                        return text_content
                 except Exception as e:
                     self._logger.debug(
                         f"Simple text reading failed for {file_path}, trying document loaders: {e}"
@@ -473,15 +490,15 @@ class FileStorageService(BaseStorageService):
                             else:
                                 return str(doc)
                         else:
-                            formatted_docs = []
+                            formatted_docs: List[Any] = []
                             for i, doc in enumerate(documents):
                                 if hasattr(doc, "page_content"):
-                                    item = {"content": doc.page_content}
+                                    formatted_item = {"content": doc.page_content}
                                     if self.client["include_metadata"] and hasattr(
                                         doc, "metadata"
                                     ):
-                                        item["metadata"] = doc.metadata
-                                    formatted_docs.append(item)
+                                        formatted_item["metadata"] = doc.metadata
+                                    formatted_docs.append(formatted_item)
                                 else:
                                     formatted_docs.append(str(doc))
                             return formatted_docs
@@ -511,25 +528,25 @@ class FileStorageService(BaseStorageService):
                 self._logger.warning(
                     f"Document loader failed for {file_path}, falling back to text: {e}"
                 )
-                content = self._read_text_file(file_path, **kwargs)
+                fallback_content = self._read_text_file(file_path, **kwargs)
 
                 if (
                     output_format == "default"
                     or output_format == "text"
                     or output_format == "raw"
                 ):
-                    return content
+                    return fallback_content
                 elif output_format == "structured":
                     return {
-                        "content": content,
+                        "content": fallback_content,
                         "metadata": {
                             "source": str(file_path),
-                            "size": len(content),
+                            "size": len(fallback_content),
                             "type": "text",
                         },
                     }
                 else:
-                    return content
+                    return fallback_content
 
         except Exception as e:
             self._handle_error(
@@ -543,8 +560,8 @@ class FileStorageService(BaseStorageService):
         document_id: Optional[str] = None,
         mode: WriteMode = WriteMode.WRITE,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Write file - supports text and binary content.
 
@@ -628,11 +645,6 @@ class FileStorageService(BaseStorageService):
                 )
 
             # Handle as text file
-            if isinstance(content, bytes):
-                content = content.decode(
-                    kwargs.get("encoding", self.client["encoding"])
-                )
-
             return self._write_text_file(
                 file_path, content, mode, file_exists, collection, **kwargs
             )
@@ -651,8 +663,8 @@ class FileStorageService(BaseStorageService):
         collection: str,
         document_id: Optional[str] = None,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Delete file or directory.
 
@@ -716,7 +728,10 @@ class FileStorageService(BaseStorageService):
             )
 
     def exists(
-        self, collection: str, document_id: Optional[str] = None, **kwargs
+        self,
+        collection: str,
+        document_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> bool:
         """
         Check if file or directory exists.
@@ -738,7 +753,7 @@ class FileStorageService(BaseStorageService):
             return False
 
     def get_file_metadata(
-        self, collection: str, document_id: str, **kwargs
+        self, collection: str, document_id: str, **kwargs: Any
     ) -> Dict[str, Any]:
         """
         Get detailed file metadata.
@@ -786,8 +801,8 @@ class FileStorageService(BaseStorageService):
         source_id: str,
         target_collection: str,
         target_id: str,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Copy file from source to target.
 
@@ -844,7 +859,7 @@ class FileStorageService(BaseStorageService):
                 target_id=target_id,
             )
 
-    def list_collections(self, **kwargs) -> List[str]:
+    def list_collections(self, **kwargs: Any) -> List[str]:
         """
         List all directories (collections) in base directory.
 

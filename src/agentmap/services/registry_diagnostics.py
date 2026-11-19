@@ -5,7 +5,8 @@ This module provides mixins for registry summary and service validation operatio
 """
 
 import inspect
-from typing import Any, Dict
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List
 
 
 class DiagnosticsMixin:
@@ -17,6 +18,15 @@ class DiagnosticsMixin:
     - A `self.logger` attribute for logging.
     - A `self._is_valid_protocol(protocol)` method for protocol validation.
     """
+
+    if TYPE_CHECKING:
+        logger: logging.Logger
+        _service_providers: Dict[str, Any]
+        _protocol_implementations: Dict[type[Any], str]
+        _service_metadata: Dict[str, Dict[str, Any]]
+        _protocol_cache: Dict[str, List[type[Any]]]
+
+        def _is_valid_protocol(self, protocol: type[Any]) -> bool: ...
 
     def get_registry_summary(self) -> Dict[str, Any]:
         """

@@ -342,7 +342,7 @@ class OpenAIStreamSeam:
         # at this native call-site so OpenAI emits a final usage-bearing chunk.
         async for oai_chunk in await sdk_client.chat.completions.create(  # type: ignore[call-overload]
             model=model,
-            messages=messages,  # type: ignore[arg-type]
+            messages=messages,
             stream=True,
             stream_options={"include_usage": True},
             **call_params,

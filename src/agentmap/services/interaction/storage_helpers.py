@@ -9,7 +9,9 @@ import pickle
 from pathlib import Path
 from typing import Any, Optional
 
-from agentmap.services.storage.types import WriteMode
+from agentmap.services.logging_service import TraceLogger
+from agentmap.services.storage.file_service import FileStorageService
+from agentmap.services.storage.types import StorageResult, WriteMode
 
 
 class StorageHelpers:
@@ -23,7 +25,7 @@ class StorageHelpers:
     - Read/write wrapper operations
     """
 
-    def __init__(self, file_storage, logger):
+    def __init__(self, file_storage: FileStorageService, logger: TraceLogger) -> None:
         """
         Initialize storage helpers.
 
@@ -62,7 +64,7 @@ class StorageHelpers:
 
         return collection_normalized
 
-    def write_collection(self, collection: str, **kwargs):
+    def write_collection(self, collection: str, **kwargs: Any) -> StorageResult[Any]:
         """
         Write data to a collection with normalized path.
 
@@ -76,7 +78,7 @@ class StorageHelpers:
         normalized_collection = self.normalize_collection_name(collection)
         return self.file_storage.write(collection=normalized_collection, **kwargs)
 
-    def read_collection(self, collection: str, **kwargs):
+    def read_collection(self, collection: str, **kwargs: Any) -> Any:
         """
         Read data from a collection with normalized path.
 

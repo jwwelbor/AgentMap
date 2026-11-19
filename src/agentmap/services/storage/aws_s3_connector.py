@@ -5,7 +5,7 @@ This module provides an AWS-specific implementation of the BlobStorageConnector
 interface for reading and writing JSON files in S3 buckets.
 """
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 from agentmap.exceptions import StorageConnectionError, StorageOperationError
 from agentmap.services.storage.base_connector import BlobStorageConnector
@@ -19,9 +19,9 @@ class AWSS3Connector(BlobStorageConnector):
     AWS S3, supporting both standard credentials and assumed roles.
     """
 
-    URI_SCHEME = "s3"
+    URI_SCHEME: str = "s3"
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the AWS S3 connector.
 
@@ -29,12 +29,12 @@ class AWSS3Connector(BlobStorageConnector):
             config: AWS S3 configuration with connection details
         """
         super().__init__(config)
-        self.region = None
-        self.access_key = None
-        self.secret_key = None
-        self.session_token = None
-        self.default_bucket = None
-        self.boto_exceptions = None
+        self.region: Optional[str] = None
+        self.access_key: Optional[str] = None
+        self.secret_key: Optional[str] = None
+        self.session_token: Optional[str] = None
+        self.default_bucket: Optional[str] = None
+        self.boto_exceptions: Optional[Dict[str, type[BaseException]]] = None
 
     def _initialize_client(self) -> None:
         """
@@ -46,8 +46,13 @@ class AWSS3Connector(BlobStorageConnector):
         try:
             # Import boto3
             try:
-                import boto3
-                from botocore.exceptions import ClientError, NoCredentialsError
+                # Storage owner: remove these boundary ignores when typed AWS
+                # SDK packages are included in the locked all-extras environment.
+                import boto3  # type: ignore[import-not-found]
+                from botocore.exceptions import (  # type: ignore[import-not-found]
+                    ClientError,
+                    NoCredentialsError,
+                )
 
                 # Store exception classes for future reference
                 self.boto_exceptions = {
@@ -70,7 +75,7 @@ class AWSS3Connector(BlobStorageConnector):
             self.default_bucket = self.config.get("default_bucket", "")
 
             # Create session
-            session_kwargs = {}
+            session_kwargs: Dict[str, Any] = {}
             if self.region:
                 session_kwargs["region_name"] = self.region
             if self.access_key and self.secret_key:
@@ -116,9 +121,9 @@ class AWSS3Connector(BlobStorageConnector):
             # Get object
             try:
                 response = self.client.get_object(Bucket=bucket_name, Key=object_key)
-                return response["Body"].read()
+                return cast(bytes, response["Body"].read())
             except self.client.exceptions.NoSuchKey:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "reading",
                     uri,
                     Exception("Object not found"),
@@ -126,7 +131,7 @@ class AWSS3Connector(BlobStorageConnector):
                     resource_type="object",
                 )
             except self.client.exceptions.NoSuchBucket:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "reading",
                     uri,
                     Exception("Bucket not found"),
@@ -134,7 +139,7 @@ class AWSS3Connector(BlobStorageConnector):
                     resource_type="bucket",
                 )
             except Exception as e:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "reading", uri, e, raise_error=True, resource_type="object"
                 )
 
@@ -142,7 +147,7 @@ class AWSS3Connector(BlobStorageConnector):
             # Re-raise standard exceptions
             raise
         except Exception as e:
-            return self._handle_provider_error(
+            self._handle_provider_error(
                 "reading", uri, e, raise_error=True, resource_type="object"
             )
 
@@ -172,7 +177,7 @@ class AWSS3Connector(BlobStorageConnector):
                 ):
                     # Create bucket if it doesn't exist
                     self.log_info(f"Creating bucket: {bucket_name}")
-                    bucket_params = {"Bucket": bucket_name}
+                    bucket_params: Dict[str, Any] = {"Bucket": bucket_name}
                     if self.region and self.region != "us-east-1":
                         bucket_params["CreateBucketConfiguration"] = {
                             "LocationConstraint": self.region
@@ -180,7 +185,7 @@ class AWSS3Connector(BlobStorageConnector):
                     try:
                         self.client.create_bucket(**bucket_params)
                     except Exception as bucket_error:
-                        return self._handle_provider_error(
+                        self._handle_provider_error(
                             "creating",
                             bucket_name,
                             bucket_error,
@@ -189,7 +194,7 @@ class AWSS3Connector(BlobStorageConnector):
                         )
                 else:
                     # Some other error accessing the bucket
-                    return self._handle_provider_error(
+                    self._handle_provider_error(
                         "accessing",
                         bucket_name,
                         e,
@@ -201,7 +206,7 @@ class AWSS3Connector(BlobStorageConnector):
             try:
                 self.client.put_object(Bucket=bucket_name, Key=object_key, Body=data)
             except Exception as e:
-                return self._handle_provider_error(
+                self._handle_provider_error(
                     "writing", uri, e, raise_error=True, resource_type="object"
                 )
 
@@ -209,7 +214,7 @@ class AWSS3Connector(BlobStorageConnector):
             # Re-raise standard exceptions
             raise
         except Exception as e:
-            return self._handle_provider_error(
+            self._handle_provider_error(
                 "writing", uri, e, raise_error=True, resource_type="object"
             )
 
@@ -273,11 +278,12 @@ class AWSS3Connector(BlobStorageConnector):
         bucket_name = parts["container"]
         if not bucket_name:
             # Use default bucket if not specified in URI
-            bucket_name = self.default_bucket
-            if not bucket_name:
+            default_bucket = self.default_bucket
+            if not default_bucket:
                 raise ValueError(
                     f"No bucket specified in URI and no default bucket configured: {uri}"
                 )
+            bucket_name = default_bucket
 
         # Check if bucket name is mapped in configuration
         bucket_mapping = self.config.get("buckets", {})

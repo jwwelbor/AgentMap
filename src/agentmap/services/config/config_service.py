@@ -31,10 +31,11 @@ class ConfigService:
     that use this infrastructure service.
     """
 
-    _instance = None
+    _instance: Optional["ConfigService"] = None
     _lock = threading.RLock()
+    _bootstrap_logger: logging.Logger
 
-    def __new__(cls):
+    def __new__(cls) -> "ConfigService":
         """Ensure only one instance exists (singleton pattern)."""
         if cls._instance is None:
             with cls._lock:
@@ -43,12 +44,11 @@ class ConfigService:
                     cls._instance._initialize()
         return cls._instance
 
-    def _initialize(self):
+    def _initialize(self) -> None:
         """Initialize the service once."""
-        self._bootstrap_logger = None
-        self._setup_bootstrap_logging()
+        self._bootstrap_logger = self._setup_bootstrap_logging()
 
-    def _setup_bootstrap_logging(self):
+    def _setup_bootstrap_logging(self) -> logging.Logger:
         """Set up bootstrap logger for config loading before real logging is available."""
         # Only set up basic config if no handlers exist to avoid conflicts
         if not logging.getLogger().handlers:
@@ -56,9 +56,9 @@ class ConfigService:
                 level=os.environ.get("AGENTMAP_CONFIG_LOG_LEVEL", "INFO").upper(),
                 format="(CONFIG-BOOTSTRAP) [%(asctime)s] %(levelname)s: %(message)s",
             )
-        self._bootstrap_logger = logging.getLogger("config.bootstrap")
+        return logging.getLogger("config.bootstrap")
 
-    def replace_logger(self, logger: logging.Logger):
+    def replace_logger(self, logger: logging.Logger) -> None:
         """Replace bootstrap logger with real logger once logging service is online."""
         if logger and self._bootstrap_logger:
             # Clean up bootstrap logger handlers
@@ -98,7 +98,13 @@ class ConfigService:
         if config_file.exists():
             try:
                 with config_file.open() as f:
-                    user_config = yaml.safe_load(f) or {}
+                    loaded_config = yaml.safe_load(f)
+                if loaded_config is None:
+                    user_config: Dict[str, Any] = {}
+                elif isinstance(loaded_config, dict):
+                    user_config = loaded_config
+                else:
+                    raise TypeError("Top-level configuration must be a mapping")
                 self._bootstrap_logger.info(
                     f"Successfully loaded configuration from {config_file}"
                 )

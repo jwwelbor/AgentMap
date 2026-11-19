@@ -16,6 +16,7 @@ from agentmap.deployment.cli.utils.cli_presenter import (
     print_err,
     print_json,
 )
+from agentmap.deployment.cli.utils.cli_utils import parse_json_object
 from agentmap.runtime_api import ensure_initialized, run_workflow_async
 
 
@@ -50,7 +51,7 @@ def run_command(
         "--force-create",
         help="Force recreation of the bundle even if cached version exists",
     ),
-):
+) -> None:
     """
     Run a graph using the runtime facade.
 
@@ -78,8 +79,8 @@ def run_command(
 
         # Parse initial state
         try:
-            initial_state = json.loads(state) if state != "{}" else {}
-        except json.JSONDecodeError as e:
+            initial_state = parse_json_state(state)
+        except ValueError as e:
             print_err(f"Invalid JSON in --state: {e}")
             raise typer.Exit(
                 code=map_exception_to_exit_code(ValueError("Invalid JSON in state"))
@@ -181,9 +182,11 @@ def run_command(
         raise typer.Exit(code=exit_code)
 
 
-def parse_json_state(state: str) -> dict:
+def parse_json_state(state: str) -> dict[str, object]:
     """Helper function to parse JSON state (for backward compatibility)."""
     try:
-        return json.loads(state) if state != "{}" else {}
+        return {} if state == "{}" else parse_json_object(state)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in state: {e}")
+        raise ValueError(f"Invalid JSON in state: {e}") from e
+    except ValueError as e:
+        raise ValueError("JSON state must be an object") from e

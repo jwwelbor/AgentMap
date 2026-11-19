@@ -224,7 +224,7 @@ class OpenAIBatchAdapter:
                 expired=None,
             )
 
-        raw_status = getattr(batch, "status", None)
+        raw_status: Any = getattr(batch, "status", None)
         normalized_status = self._STATUS_MAP.get(raw_status, LLMBatchStatus.FAILED)
         if raw_status not in self._STATUS_MAP:
             self._logger.warning(
@@ -320,6 +320,12 @@ class OpenAIBatchAdapter:
                 )
                 continue
 
+            if not isinstance(item, dict):
+                self._logger.warning(
+                    "OpenAIBatchAdapter.fetch_results: JSONL record must be an object"
+                )
+                continue
+
             custom_id = item.get("custom_id")
             request_id = custom_to_spec.get(custom_id) if custom_id else None
 
@@ -336,12 +342,23 @@ class OpenAIBatchAdapter:
 
             # Item-level error (the request itself failed)
             if error_payload:
+                if not isinstance(error_payload, dict):
+                    self._logger.warning(
+                        "OpenAIBatchAdapter.fetch_results: error payload must be an object"
+                    )
+                    continue
+                error_type = error_payload.get("code", "unknown")
+                error_message = error_payload.get("message", "")
                 yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
-                        error_type=error_payload.get("code", "unknown"),
-                        message=error_payload.get("message", ""),
+                        error_type=(
+                            error_type if isinstance(error_type, str) else "unknown"
+                        ),
+                        message=(
+                            error_message if isinstance(error_message, str) else ""
+                        ),
                         retryable=False,
                     ),
                 )
@@ -361,20 +378,41 @@ class OpenAIBatchAdapter:
                     ),
                 )
                 continue
+            if not isinstance(response_payload, dict):
+                self._logger.warning(
+                    "OpenAIBatchAdapter.fetch_results: response payload must be an object"
+                )
+                continue
 
             status_code = response_payload.get("status_code", 200)
-            body = response_payload.get("body") or {}
+            raw_body = response_payload.get("body")
+            body = {} if raw_body is None else raw_body
+            if not isinstance(body, dict):
+                self._logger.warning(
+                    "OpenAIBatchAdapter.fetch_results: response body must be an object"
+                )
+                continue
 
             if status_code != 200:
                 # HTTP-level error from the provider
-                error_detail = body.get("error", {}) if isinstance(body, dict) else {}
+                error_detail = body.get("error", {})
+                if not isinstance(error_detail, dict):
+                    error_detail = {}
+                error_type = error_detail.get("code", "http_error")
+                error_message = error_detail.get(
+                    "message", f"HTTP {status_code} from OpenAI"
+                )
                 yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
                     error=LLMExecutionError(
-                        error_type=error_detail.get("code", "http_error"),
-                        message=error_detail.get(
-                            "message", f"HTTP {status_code} from OpenAI"
+                        error_type=(
+                            error_type if isinstance(error_type, str) else "http_error"
+                        ),
+                        message=(
+                            error_message
+                            if isinstance(error_message, str)
+                            else f"HTTP {status_code} from OpenAI"
                         ),
                         retryable=False,
                     ),
@@ -384,9 +422,12 @@ class OpenAIBatchAdapter:
             # Parse successful response
             choices = body.get("choices") or []
             content: Optional[str] = None
-            if choices and isinstance(choices[0], dict):
+            if isinstance(choices, list) and choices and isinstance(choices[0], dict):
                 msg = choices[0].get("message") or {}
-                content = msg.get("content")
+                if isinstance(msg, dict):
+                    message_content = msg.get("content")
+                    if isinstance(message_content, str):
+                        content = message_content
 
             if not content:
                 yield LLMBatchResult(
@@ -406,7 +447,7 @@ class OpenAIBatchAdapter:
             # Normalize usage: OpenAI uses prompt_tokens/completion_tokens
             usage: Optional[LLMUsage] = None
             usage_raw = body.get("usage")
-            if usage_raw:
+            if isinstance(usage_raw, dict):
                 usage = LLMUsage(
                     input_tokens=usage_raw.get("prompt_tokens"),
                     output_tokens=usage_raw.get("completion_tokens"),
@@ -414,12 +455,20 @@ class OpenAIBatchAdapter:
                     cache_creation_input_tokens=None,
                     cache_read_input_tokens=None,
                 )
+            elif usage_raw is not None:
+                self._logger.warning(
+                    "OpenAIBatchAdapter.fetch_results: usage payload must be an object"
+                )
+
+            resolved_model = body.get("model")
+            if not isinstance(resolved_model, str):
+                resolved_model = None
 
             yield LLMBatchResult(
                 request_id=request_id,
                 status="succeeded",
                 resolved_provider="openai",
-                resolved_model=body.get("model"),
+                resolved_model=resolved_model,
                 text=content,
                 usage=usage,
             )

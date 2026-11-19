@@ -2,6 +2,7 @@
 
 import asyncio
 from threading import Condition, Lock, get_ident
+from typing import TYPE_CHECKING, Any, Dict, Tuple
 
 from agentmap.async_lifecycle import raise_cleanup_error_or_note
 from agentmap.exceptions import LLMConfigurationError, LLMLifecycleCleanupError
@@ -10,6 +11,43 @@ from agentmap.exceptions import LLMConfigurationError, LLMLifecycleCleanupError
 class OrdinaryClientLifecycleMixin:
     """Keep admitted builders owned until publication or failure and drain."""
 
+    if TYPE_CHECKING:
+        _cache_lock: Any
+        _ordinary_condition: Condition
+        _ordinary_pending: int
+        _ordinary_threads: dict[int, set[str]]
+        _ordinary_waiter: Tuple[asyncio.AbstractEventLoop, asyncio.Future[Any]] | None
+        _ordinary_cleanup_error: LLMLifecycleCleanupError | None
+        _clients: dict[str, Any]
+        _key_locks: dict[str, Any]
+        _api_key_tokens: dict[str, str]
+        _published_tokens: set[str]
+        _pending_tokens: dict[str, int]
+        _owners: list[Any]
+        _active_governed: set[asyncio.Task[Any]]
+        _active_uses: set[Any]
+        _cleanup_error: LLMLifecycleCleanupError | None
+        _owner_loop: asyncio.AbstractEventLoop | None
+        _closing: bool
+
+        def _cache_key(
+            self, provider: str, config: Dict[str, Any], streaming: bool, governed: bool
+        ) -> str: ...
+
+        def _create_langchain_client(
+            self,
+            provider: str,
+            config: Dict[str, Any],
+            streaming: bool = False,
+            *,
+            governed: bool = False,
+            owner: Any = None,
+        ) -> Any: ...
+
+        def _finish_pending_token(self, api_key: str, token: str) -> None: ...
+
+        def _ensure_open(self) -> None: ...
+
     def _initialize_ordinary_lifecycle(self) -> None:
         self._ordinary_condition = Condition(self._cache_lock)
         self._ordinary_pending = 0
@@ -17,7 +55,9 @@ class OrdinaryClientLifecycleMixin:
         self._ordinary_waiter = None
         self._ordinary_cleanup_error = None
 
-    def _get_or_create_ordinary(self, provider, config, streaming):
+    def _get_or_create_ordinary(
+        self, provider: str, config: Dict[str, Any], streaming: bool
+    ) -> Any:
         with self._cache_lock:
             cache_key = self._cache_key(provider, config, streaming, False)
             api_key = config.get("api_key") or ""
@@ -30,7 +70,7 @@ class OrdinaryClientLifecycleMixin:
             self._pending_tokens[token] = self._pending_tokens.get(token, 0) + 1
             self._ordinary_pending += 1
             self._ordinary_threads.setdefault(get_ident(), set()).add(cache_key)
-        primary_error = None
+        primary_error: BaseException | None = None
         try:
             with key_lock:
                 with self._cache_lock:
@@ -48,8 +88,14 @@ class OrdinaryClientLifecycleMixin:
         finally:
             self._finish_ordinary_reservation(cache_key, api_key, token, primary_error)
 
-    def _finish_ordinary_reservation(self, cache_key, api_key, token, primary):
-        failures = []
+    def _finish_ordinary_reservation(
+        self,
+        cache_key: str,
+        api_key: str,
+        token: str,
+        primary: BaseException | None,
+    ) -> None:
+        failures: list[BaseException] = []
         with self._cache_lock:
             try:
                 self._finish_pending_token(api_key, token)
@@ -79,12 +125,14 @@ class OrdinaryClientLifecycleMixin:
                     primary, cleanup, operation="ordinary finalization"
                 )
 
-    def _notify_ordinary_drain_locked(self):
+    def _notify_ordinary_drain_locked(self) -> None:
         pair = self._ordinary_waiter
         if self._ordinary_pending == 0 and pair is not None:
             pair[0].call_soon_threadsafe(self._complete_ordinary_drain, pair)
 
-    def _complete_ordinary_drain(self, pair):
+    def _complete_ordinary_drain(
+        self, pair: Tuple[asyncio.AbstractEventLoop, asyncio.Future[Any]]
+    ) -> None:
         with self._cache_lock:
             if self._ordinary_waiter is pair and not pair[1].done():
                 pair[1].set_result(None)
@@ -95,7 +143,7 @@ class OrdinaryClientLifecycleMixin:
 
     async def _wait_ordinary_drain(self) -> None:
         loop = asyncio.get_running_loop()
-        pair = None
+        pair: Tuple[asyncio.AbstractEventLoop, asyncio.Future[Any]] | None = None
         with self._cache_lock:
             if self._ordinary_pending:
                 pair = (loop, loop.create_future())

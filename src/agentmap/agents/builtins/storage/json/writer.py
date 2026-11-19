@@ -22,7 +22,7 @@ class JSONDocumentWriterAgent(JSONDocumentAgent):
 
     def _execute_operation(
         self, collection: str, inputs: Dict[str, Any]
-    ) -> DocumentResult:
+    ) -> DocumentResult[Any]:
         """
         Execute write operation for JSON files by delegating to JSONStorageService.
 
@@ -43,7 +43,14 @@ class JSONDocumentWriterAgent(JSONDocumentAgent):
             )
 
         # Get write mode
-        mode_str = inputs.get("mode", "append").lower()
+        mode_value = inputs.get("mode", "append")
+        if not isinstance(mode_value, str):
+            return DocumentResult(
+                success=False,
+                file_path=collection,
+                error="Write mode must be a string",
+            )
+        mode_str = mode_value.lower()
         try:
             mode = WriteMode.from_string(mode_str)
         except ValueError as e:

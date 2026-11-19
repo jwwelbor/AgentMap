@@ -1,10 +1,11 @@
-.PHONY: help format lint type-check test coverage clean install
+.PHONY: help format lint type-check type-check-ratchet test coverage clean install
 
 help:
 	@echo "AgentMap development tasks:"
 	@echo "  make format       - Format code with isort and black"
 	@echo "  make lint         - Run linters (flake8, ruff)"
 	@echo "  make type-check   - Run mypy type checker"
+	@echo "  make type-check-ratchet - Check mypy findings against the reviewed baseline"
 	@echo "  make test         - Run pytest tests"
 	@echo "  make coverage     - Run tests with coverage report"
 	@echo "  make clean        - Clean build artifacts and cache"
@@ -27,8 +28,12 @@ lint:
 # Type checking
 type-check:
 	@echo "Running mypy type checker..."
-	uv run mypy src/
+	uv run --locked --all-extras mypy src/
 	@echo "✓ Type checking complete"
+
+# Compare against the checked-in diagnostic multiset until the source backlog is zero.
+type-check-ratchet:
+	uv run --locked --all-extras python tools/mypy_ratchet.py
 
 # Run tests
 test:

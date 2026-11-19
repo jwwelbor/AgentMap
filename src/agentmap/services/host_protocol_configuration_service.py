@@ -6,7 +6,7 @@ removing the need for services to access the container directly.
 """
 
 import re
-from typing import Any, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 from agentmap.services.host_service_registry import HostServiceRegistry
 from agentmap.services.logging_service import LoggingService
@@ -260,7 +260,7 @@ class HostProtocolConfigurationService:
         # Create method name
         return f"configure_{snake_case}_service"
 
-    def get_configuration_status(self, agent: Any) -> dict:
+    def get_configuration_status(self, agent: Any) -> Dict[str, Any]:
         """
         Get detailed status of what host services could be configured for an agent.
 
@@ -273,7 +273,7 @@ class HostProtocolConfigurationService:
             Dictionary with configuration status information
         """
         agent_name = getattr(agent, "name", "unknown")
-        status = {
+        status: Dict[str, Any] = {
             "agent_name": agent_name,
             "agent_type": type(agent).__name__,
             "implemented_protocols": [],
@@ -289,7 +289,7 @@ class HostProtocolConfigurationService:
 
                 protocols = self.registry.get_service_protocols(service_name)
                 for protocol in protocols:
-                    protocol_info = {
+                    protocol_info: Dict[str, Any] = {
                         "protocol": protocol.__name__,
                         "service": service_name,
                         "agent_implements": isinstance(agent, protocol),
@@ -317,9 +317,8 @@ class HostProtocolConfigurationService:
                 "total_protocols_implemented": len(status["implemented_protocols"]),
                 "total_services_available": len(status["available_services"]),
                 "configuration_ready": sum(
-                    1
+                    bool(p["agent_implements"] and p["method_exists"])
                     for p in status["configuration_potential"]
-                    if p["agent_implements"] and p["method_exists"]
                 ),
             }
 

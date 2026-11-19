@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from agentmap.services.config.config_managers.base_config_manager import (
     BaseConfigManager,
@@ -24,7 +24,7 @@ class DeclarationConfigManager(BaseConfigManager):
         Returns:
             List of Path objects for custom declaration directories
         """
-        declaration_paths_config = self.get_value("declarations.custom", [])
+        declaration_paths_config: List[Any] = self.get_value("declarations.custom", [])
 
         declaration_paths = []
         for path_config in declaration_paths_config:
@@ -72,7 +72,7 @@ class DeclarationConfigManager(BaseConfigManager):
         if not self.is_host_declarations_enabled():
             return []
 
-        host_paths_config = self.get_value("declarations.host.paths", [])
+        host_paths_config: List[Any] = self.get_value("declarations.host.paths", [])
 
         host_paths = []
         for path in host_paths_config:
@@ -98,7 +98,7 @@ class DeclarationConfigManager(BaseConfigManager):
 
         return host_paths
 
-    def is_host_declarations_enabled(self) -> bool:
+    def is_host_declarations_enabled(self) -> Any:
         """
         Check if host declarations are enabled.
 
@@ -107,7 +107,7 @@ class DeclarationConfigManager(BaseConfigManager):
         """
         return self.get_value("declarations.host.enabled", False)
 
-    def get_host_declarations_namespace(self) -> Optional[str]:
+    def get_host_declarations_namespace(self) -> Any:
         """
         Get the namespace for host declarations.
 
@@ -123,7 +123,9 @@ class DeclarationConfigManager(BaseConfigManager):
         Returns:
             Dictionary with validation settings
         """
-        validation_config = self.get_value("declarations.validation", {})
+        validation_config: Dict[str, Any] = self.get_value(
+            "declarations.validation", {}
+        )
 
         # Default validation settings
         defaults = {

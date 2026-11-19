@@ -22,20 +22,18 @@ Enhanced with optional messaging capabilities:
 """
 
 import asyncio
+import logging
 import time
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Any, Dict, Optional
 
 from langgraph.types import interrupt
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
-from agentmap.services.protocols import MessagingCapableAgent
+from agentmap.services.protocols import MessagingCapableAgent, MessagingServiceProtocol
 from agentmap.services.state_adapter_service import StateAdapterService
-
-if TYPE_CHECKING:
-    from agentmap.services.messaging.messaging_service import MessagingService
 
 
 class SuspendAgent(BaseAgent, MessagingCapableAgent):
@@ -83,7 +81,7 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
         prompt: str = "suspend",
         *,
         context: Optional[Dict[str, Any]] = None,
-        logger=None,
+        logger: Optional[logging.Logger] = None,
     ):
         super().__init__(
             name=name,
@@ -93,7 +91,7 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
             execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
         )
-        self._messaging_service: Optional["MessagingService"] = None
+        self._messaging_service: Optional[MessagingServiceProtocol] = None
 
     # --- Core execution ---
     def process(self, inputs: Dict[str, Any]) -> Any:
@@ -168,14 +166,14 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
 
     # Protocol implementation (MessagingCapableAgent)
     def configure_messaging_service(
-        self, messaging_service: "MessagingService"
+        self, messaging_service: MessagingServiceProtocol
     ) -> None:
         self._messaging_service = messaging_service
         if self._logger:
             self.log_debug("Messaging service configured for SuspendAgent")
 
     @property
-    def messaging_service(self) -> "MessagingService":
+    def messaging_service(self) -> MessagingServiceProtocol:
         if self._messaging_service is None:
             raise ValueError(
                 f"Messaging service not configured for agent '{self.name}'"
@@ -454,7 +452,7 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
         tracker = self.current_execution_tracker
         if tracker:
             tid = getattr(tracker, "thread_id", None)
-            if tid:
+            if isinstance(tid, str) and tid:
                 return tid
         return str(uuid.uuid4())
 
@@ -462,8 +460,8 @@ class SuspendAgent(BaseAgent, MessagingCapableAgent):
         return {
             "agent_behavior": {
                 "execution_type": "langgraph_interrupt",
-                "reason": self.reason,
-                "external_ref": self.external_ref,
+                "reason": self.context.get("reason"),
+                "external_ref": self.context.get("external_ref"),
             },
             "interrupt_pattern": {
                 "uses_langgraph_interrupt": True,

@@ -141,7 +141,7 @@ class GraphAnalyzer:
             - has_parallel: Whether graph contains any parallel routing
         """
         fan_out_nodes = []
-        fan_in_count = {}
+        fan_in_count: Dict[str, int] = {}
         parallel_groups = []
         max_parallelism = 1
 
@@ -186,7 +186,7 @@ class GraphAnalyzer:
             Dictionary mapping protocol names to implementation class names
         """
         try:
-            mappings = self.declaration_registry.get_protocol_implementations()
+            mappings = self.declaration_registry.get_protocol_service_map()
 
             self.logger.debug(f"Extracted {len(mappings)} protocol mappings")
             return mappings

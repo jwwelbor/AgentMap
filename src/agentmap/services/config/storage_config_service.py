@@ -42,7 +42,7 @@ class StorageConfigService:
         self,
         config_service: ConfigService,
         storage_config_path: Optional[Union[str, Path]],
-        availability_cache_service=None,
+        availability_cache_service: Any = None,
     ):
         """
         Initialize StorageConfigService with storage configuration path.
@@ -57,8 +57,8 @@ class StorageConfigService:
                 file doesn't exist, or file cannot be parsed.
         """
         self._config_service = config_service
-        self._config_data = None
-        self._logger = None
+        self._config_data: Any = None
+        self._logger: logging.Logger = logging.getLogger("bootstrap.storage_config")
         self._storage_config_path = storage_config_path
         self._availability_cache_service = availability_cache_service
 
@@ -69,21 +69,22 @@ class StorageConfigService:
         self._validate_and_load_config(storage_config_path)
 
         # Initialize helper classes after config is loaded
+        config_data = self._require_loaded_config()
         self._cache_manager = AvailabilityCacheManager(
             availability_cache_service, self._logger
         )
         self._path_resolver = PathResolver(
-            self._config_data, self._config_service, self._logger
+            config_data, self._config_service, self._logger
         )
         self._storage_handlers = StorageTypeHandlers(
-            self._config_data,
+            config_data,
             self._config_service,
             self._cache_manager,
             self._path_resolver,
             self._logger,
         )
 
-    def _setup_bootstrap_logging(self):
+    def _setup_bootstrap_logging(self) -> None:
         """Set up bootstrap logger for config loading before real logging is available."""
         # Only set up basic config if no handlers exist to avoid conflicts
         if not logging.getLogger().handlers:
@@ -96,7 +97,7 @@ class StorageConfigService:
 
     def _validate_and_load_config(
         self, storage_config_path: Optional[Union[str, Path]]
-    ):
+    ) -> None:
         """Validate storage config path and load configuration."""
         # Fail if no storage config path provided
         if storage_config_path is None:
@@ -134,7 +135,7 @@ class StorageConfigService:
             self._logger.error(f"[StorageConfigService] {error_msg}")
             raise StorageConfigurationNotAvailableException(error_msg) from e
 
-    def replace_logger(self, logger: logging.Logger):
+    def replace_logger(self, logger: logging.Logger) -> None:
         """
         Replace bootstrap logger with real logger once logging service is online.
 
@@ -158,6 +159,25 @@ class StorageConfigService:
             self._path_resolver.set_logger(logger)
             self._storage_handlers.set_logger(logger)
 
+    def _require_loaded_config(self) -> Dict[str, Any]:
+        """Return validated configuration data after successful loading."""
+        if not isinstance(self._config_data, dict):
+            raise StorageConfigurationNotAvailableException(
+                "Storage configuration data is not loaded"
+            )
+        return self._config_data
+
+    def _get_dict_config(self, section: str) -> Dict[str, Any]:
+        """Return a mapping section after validating loaded YAML data."""
+        value = self._require_loaded_config().get(section, {})
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise StorageConfigurationNotAvailableException(
+                f"Storage configuration section '{section}' must be a mapping"
+            )
+        return value
+
     # Storage-specific business logic methods
     def get_csv_config(self) -> Dict[str, Any]:
         """
@@ -166,7 +186,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing CSV storage configuration
         """
-        return self._config_data.get("csv", {})
+        return self._get_dict_config("csv")
 
     def get_vector_config(self) -> Dict[str, Any]:
         """
@@ -175,7 +195,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing vector storage configuration
         """
-        return self._config_data.get("vector", {})
+        return self._get_dict_config("vector")
 
     def get_kv_config(self) -> Dict[str, Any]:
         """
@@ -184,7 +204,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing key-value storage configuration
         """
-        return self._config_data.get("kv", {})
+        return self._get_dict_config("kv")
 
     def get_json_config(self) -> Dict[str, Any]:
         """
@@ -193,7 +213,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing JSON storage configuration
         """
-        return self._config_data.get("json", {})
+        return self._get_dict_config("json")
 
     def get_blob_config(self) -> Dict[str, Any]:
         """
@@ -202,7 +222,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing blob storage configuration
         """
-        return self._config_data.get("blob", {})
+        return self._get_dict_config("blob")
 
     def get_file_config(self) -> Dict[str, Any]:
         """
@@ -211,7 +231,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing file storage configuration
         """
-        return self._config_data.get("file", {})
+        return self._get_dict_config("file")
 
     def get_provider_config(self, provider: str) -> Dict[str, Any]:
         """
@@ -223,7 +243,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing provider-specific configuration
         """
-        return self._config_data.get(provider, {})
+        return self._get_dict_config(provider)
 
     def get_value(self, path: str, default: Any = None) -> Any:
         """
@@ -237,7 +257,7 @@ class StorageConfigService:
             Configuration value or default if not found
         """
         return self._config_service.get_value_from_config(
-            self._config_data, path, default
+            self._require_loaded_config(), path, default
         )
 
     def get_collection_config(
@@ -253,9 +273,16 @@ class StorageConfigService:
         Returns:
             Dictionary containing collection-specific configuration
         """
-        return self.get_value(f"{storage_type}.collections.{collection_name}", {})
+        value: Any = self.get_value(f"{storage_type}.collections.{collection_name}", {})
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise StorageConfigurationNotAvailableException(
+                f"Storage collection '{storage_type}.{collection_name}' must be a mapping"
+            )
+        return value
 
-    def get_default_directory(self, storage_type: str) -> str:
+    def get_default_directory(self, storage_type: str) -> Any:
         """
         Get default directory for a storage type.
 
@@ -269,7 +296,7 @@ class StorageConfigService:
             f"{storage_type}.default_directory", f"data/{storage_type}"
         )
 
-    def get_default_provider(self, storage_type: str) -> str:
+    def get_default_provider(self, storage_type: str) -> Any:
         """
         Get default provider for a storage type.
 
@@ -291,7 +318,13 @@ class StorageConfigService:
         Returns:
             List of collection names
         """
-        collections_config = self.get_value(f"{storage_type}.collections", {})
+        collections_config: Any = self.get_value(f"{storage_type}.collections", {})
+        if collections_config is None:
+            return []
+        if not isinstance(collections_config, dict):
+            raise StorageConfigurationNotAvailableException(
+                f"Storage collections for '{storage_type}' must be a mapping"
+            )
         return list(collections_config.keys())
 
     def has_collection(self, storage_type: str, collection_name: str) -> bool:
@@ -402,7 +435,21 @@ class StorageConfigService:
             Dictionary containing blob provider-specific configuration
         """
         blob_config = self.get_blob_config()
-        return blob_config.get("providers", {}).get(provider, {})
+        providers = blob_config.get("providers", {})
+        if providers is None:
+            return {}
+        if not isinstance(providers, dict):
+            raise StorageConfigurationNotAvailableException(
+                "Storage configuration section 'blob.providers' must be a mapping"
+            )
+        provider_config = providers.get(provider, {})
+        if provider_config is None:
+            return {}
+        if not isinstance(provider_config, dict):
+            raise StorageConfigurationNotAvailableException(
+                f"Blob provider configuration '{provider}' must be a mapping"
+            )
+        return provider_config
 
     def _get_cached_availability(self, storage_type: str) -> Optional[Dict[str, Any]]:
         """
@@ -639,11 +686,11 @@ class StorageConfigService:
         Returns:
             Dictionary with validation status similar to AppConfigService pattern
         """
-        warnings = []
-        errors = []
+        warnings: list[str] = []
+        errors: list[str] = []
 
         try:
-            csv_config = self.get_csv_config()
+            csv_config = self._require_loaded_config().get("csv", {})
 
             # Skip validation if CSV config is not a dictionary (handled by parent validation)
             if not isinstance(csv_config, dict):
@@ -741,8 +788,8 @@ class StorageConfigService:
 
         Note: This method provides basic validation for test compatibility.
         """
-        warnings = []
-        errors = []
+        warnings: list[str] = []
+        errors: list[str] = []
 
         try:
             # Basic validation - check if config data exists and is valid

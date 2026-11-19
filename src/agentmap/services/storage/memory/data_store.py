@@ -220,7 +220,7 @@ class MemoryDataStore:
             return 0
         return len(self._storage[collection])
 
-    def list_collections(self) -> list:
+    def list_collections(self) -> list[str]:
         """
         List all collection names.
 
@@ -229,7 +229,7 @@ class MemoryDataStore:
         """
         return sorted(list(self._storage.keys()))
 
-    def clear_all(self) -> tuple:
+    def clear_all(self) -> tuple[int, int]:
         """
         Clear all data from storage.
 

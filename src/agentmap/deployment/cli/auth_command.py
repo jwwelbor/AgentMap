@@ -8,10 +8,13 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import typer
 import yaml
 from typer import colors
+
+from agentmap.deployment.cli.auth_types import APIKeyConfiguration
 
 # Create the auth app with subcommands
 auth_app = typer.Typer(name="auth", help="Authentication management commands")
@@ -28,12 +31,12 @@ def hash_api_key(api_key: str) -> str:
 
 
 def generate_api_key_config(
-    name: str, permissions: list, expires_days: int = None
-) -> dict:
+    name: str, permissions: list[str], expires_days: int | None = None
+) -> APIKeyConfiguration:
     """Generate a complete API key configuration."""
     api_key = generate_api_key()
 
-    config = {
+    config: APIKeyConfiguration = {
         "key": api_key,
         "permissions": permissions,
         "user_id": name,
@@ -51,7 +54,9 @@ def generate_api_key_config(
     return config
 
 
-def create_auth_configuration() -> dict:
+def create_auth_configuration() -> (
+    tuple[dict[str, Any], dict[str, APIKeyConfiguration]]
+):
     """Create a complete authentication configuration."""
 
     # Generate different API keys
@@ -65,7 +70,7 @@ def create_auth_configuration() -> dict:
     }
 
     # Build authentication configuration
-    auth_config = {
+    auth_config: dict[str, Any] = {
         "authentication": {
             "enabled": True,
             "api_keys": keys,
@@ -89,11 +94,17 @@ def create_auth_configuration() -> dict:
     return auth_config, keys
 
 
-def load_yaml_config(config_path: str) -> dict:
+def load_yaml_config(config_path: str) -> dict[str, Any]:
     """Load YAML configuration file."""
     try:
         with open(config_path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
+            config = yaml.safe_load(f)
+        if config is None:
+            return {}
+        if isinstance(config, dict):
+            return config
+        typer.secho("❌ YAML configuration must contain a mapping", fg=colors.RED)
+        raise typer.Exit(code=1)
     except FileNotFoundError:
         return {}
     except yaml.YAMLError as e:
@@ -101,7 +112,7 @@ def load_yaml_config(config_path: str) -> dict:
         raise typer.Exit(code=1)
 
 
-def save_yaml_config(config_path: str, config: dict):
+def save_yaml_config(config_path: str, config: dict[str, Any]) -> None:
     """Save configuration to YAML file."""
     try:
         # Ensure directory exists
@@ -114,7 +125,7 @@ def save_yaml_config(config_path: str, config: dict):
         raise typer.Exit(code=1)
 
 
-def print_api_keys(keys: dict):
+def print_api_keys(keys: dict[str, APIKeyConfiguration]) -> None:
     """Print API keys in a formatted way."""
     typer.secho("\n🔑 Generated API Keys:", fg=colors.GREEN, bold=True)
     typer.secho("-" * 80, fg=colors.BLUE)
@@ -130,7 +141,7 @@ def print_api_keys(keys: dict):
     typer.secho("\n" + "-" * 80, fg=colors.BLUE)
 
 
-def print_environment_setup(keys: dict):
+def print_environment_setup(keys: dict[str, APIKeyConfiguration]) -> None:
     """Print environment variable setup instructions."""
     typer.secho(
         "\n🖥️  Environment Variable Setup (Windows CMD):", fg=colors.CYAN, bold=True
@@ -160,7 +171,7 @@ def auth_init(
         "-f",
         help="Overwrite existing auth configuration if it exists",
     ),
-):
+) -> None:
     """Generate new authentication configuration in specified config file.
 
     Creates a new auth section with API keys. Will error if auth section already exists
@@ -201,7 +212,7 @@ def auth_update(
     config: str = typer.Option(
         ..., "--config", "-c", help="Path to configuration file to update"
     )
-):
+) -> None:
     """Update API keys in existing authentication configuration.
 
     Regenerates all API keys while preserving the rest of the auth configuration.
@@ -226,7 +237,11 @@ def auth_update(
     _, new_keys = create_auth_configuration()
 
     # Update only the API keys, preserving other auth settings
-    existing_config["authentication"]["api_keys"] = new_keys
+    auth_config = existing_config.get("authentication")
+    if not isinstance(auth_config, dict):
+        typer.secho("❌ Authentication configuration must be a mapping", fg=colors.RED)
+        raise typer.Exit(code=1)
+    auth_config["api_keys"] = new_keys
 
     # Save updated configuration
     save_yaml_config(config, existing_config)
@@ -249,7 +264,7 @@ def auth_view(
         "-s",
         help="Show actual API keys (security warning: keys will be visible)",
     ),
-):
+) -> None:
     """View authentication configuration and API keys from config file.
 
     By default, API keys are masked for security. Use --show-keys to display actual keys.
@@ -268,6 +283,9 @@ def auth_view(
         raise typer.Exit(code=1)
 
     auth_config = existing_config["authentication"]
+    if not isinstance(auth_config, dict):
+        typer.secho("❌ Authentication configuration must be a mapping", fg=colors.RED)
+        raise typer.Exit(code=1)
 
     typer.secho(
         f"\n🔍 Authentication Configuration from: {config}", fg=colors.CYAN, bold=True
@@ -281,7 +299,37 @@ def auth_view(
     )
 
     # Show API keys
-    api_keys = auth_config.get("api_keys", {})
+    raw_api_keys = auth_config.get("api_keys", {})
+    if not isinstance(raw_api_keys, dict):
+        typer.secho("❌ api_keys must be a mapping", fg=colors.RED)
+        raise typer.Exit(code=1)
+    api_keys: dict[str, APIKeyConfiguration] = {}
+    for name, key_config in raw_api_keys.items():
+        if not isinstance(name, str) or not isinstance(key_config, dict):
+            typer.secho("❌ Each api_keys entry must be a named mapping", fg=colors.RED)
+            raise typer.Exit(code=1)
+        key = key_config.get("key")
+        permissions = key_config.get("permissions", [])
+        if (
+            not isinstance(key, str)
+            or not isinstance(permissions, list)
+            or not all(isinstance(permission, str) for permission in permissions)
+        ):
+            typer.secho(
+                "❌ Each api_keys entry must contain a string key and string permissions",
+                fg=colors.RED,
+            )
+            raise typer.Exit(code=1)
+        validated_config: APIKeyConfiguration = {
+            "key": key,
+            "permissions": permissions,
+            "user_id": name,
+            "metadata": {},
+        }
+        expires_at = key_config.get("expires_at")
+        if isinstance(expires_at, str):
+            validated_config["expires_at"] = expires_at
+        api_keys[name] = validated_config
     if api_keys:
         if show_keys:
             typer.secho(
@@ -294,13 +342,13 @@ def auth_view(
                 "\n🔑 API Keys (masked for security):", fg=colors.GREEN, bold=True
             )
             typer.secho("-" * 80, fg=colors.BLUE)
-            for name, config in api_keys.items():
+            for name, key_config in api_keys.items():
                 typer.secho(f"\n{name.upper()} Key:", fg=colors.YELLOW, bold=True)
-                typer.echo(f"  API Key: {'*' * 32}...{config['key'][-8:]}")
-                typer.echo(f"  Permissions: {', '.join(config['permissions'])}")
-                if "expires_at" in config:
-                    typer.echo(f"  Expires: {config['expires_at']}")
-                typer.echo(f"  Key Hash: {hash_api_key(config['key'])}")
+                typer.echo(f"  API Key: {'*' * 32}...{key_config['key'][-8:]}")
+                typer.echo(f"  Permissions: {', '.join(key_config['permissions'])}")
+                if "expires_at" in key_config:
+                    typer.echo(f"  Expires: {key_config['expires_at']}")
+                typer.echo(f"  Key Hash: {hash_api_key(key_config['key'])}")
 
             typer.secho(
                 "\n💡 Use --show-keys to display actual API keys", fg=colors.CYAN
@@ -329,7 +377,7 @@ def auth_view(
 
 # Main auth command that includes all subcommands
 @auth_app.callback()
-def auth_callback():
+def auth_callback() -> None:
     """Authentication management for AgentMap."""
 
 

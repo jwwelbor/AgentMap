@@ -8,7 +8,6 @@ following the Template Method pattern and established service patterns.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from agentmap.services.config.storage_config_service import StorageConfigService
 from agentmap.services.file_path_service import FilePathService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.config_loader import ConfigLoaderMixin
@@ -43,7 +42,7 @@ class BaseStorageService(
     def __init__(
         self,
         provider_name: str,
-        configuration: StorageConfigService,
+        configuration: Any,
         logging_service: LoggingService,
         file_path_service: Optional[FilePathService] = None,
         base_directory: Optional[str] = None,
@@ -54,7 +53,7 @@ class BaseStorageService(
 
         Args:
             provider_name: Name of the storage provider
-            configuration: Storage configuration service for storage-specific config access
+            configuration: StorageConfigService or an inline dict for system storage
             logging_service: Logging service for creating loggers
             file_path_service: Optional file path service for path validation and security
             base_directory: Optional base directory for storage operations (for system storage)
@@ -130,7 +129,7 @@ class BaseStorageService(
 
     def create_collection(
         self, collection: str, schema: Optional[Dict[str, Any]] = None
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """
         Create a new collection.
 
@@ -219,7 +218,7 @@ class BaseStorageService(
         document_id: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """
         Provider-specific read implementation.
@@ -249,8 +248,8 @@ class BaseStorageService(
         document_id: Optional[str] = None,
         mode: WriteMode = WriteMode.WRITE,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Provider-specific write implementation.
 
@@ -278,7 +277,7 @@ class BaseStorageService(
         document_id: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """
         Read data from storage with optional telemetry instrumentation.
@@ -297,8 +296,8 @@ class BaseStorageService(
         document_id: Optional[str] = None,
         mode: WriteMode = WriteMode.WRITE,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Write data to storage with optional telemetry instrumentation.
 
@@ -319,7 +318,7 @@ class BaseStorageService(
         document_id: Optional[str] = None,
         query: Optional[Dict[str, Any]] = None,
         path: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Any:
         """Execute read with telemetry span."""
         from agentmap.services.telemetry.constants import (
@@ -328,8 +327,11 @@ class BaseStorageService(
             STORAGE_READ_SPAN,
         )
 
+        telemetry_service = self._telemetry_service
+        if telemetry_service is None:
+            return self._perform_read(collection, document_id, query, path, **kwargs)
         try:
-            cm = self._telemetry_service.start_span(
+            cm = telemetry_service.start_span(
                 STORAGE_READ_SPAN,
                 attributes={
                     STORAGE_BACKEND: self.provider_name,
@@ -359,8 +361,8 @@ class BaseStorageService(
         document_id: Optional[str] = None,
         mode: WriteMode = WriteMode.WRITE,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """Execute write with telemetry span."""
         from agentmap.services.telemetry.constants import (
             STORAGE_BACKEND,
@@ -369,8 +371,13 @@ class BaseStorageService(
             STORAGE_WRITE_SPAN,
         )
 
+        telemetry_service = self._telemetry_service
+        if telemetry_service is None:
+            return self._perform_write(
+                collection, data, document_id, mode, path, **kwargs
+            )
         try:
-            cm = self._telemetry_service.start_span(
+            cm = telemetry_service.start_span(
                 STORAGE_WRITE_SPAN,
                 attributes={
                     STORAGE_BACKEND: self.provider_name,
@@ -391,7 +398,7 @@ class BaseStorageService(
                 # Record count from data if determinable
                 if isinstance(data, (list, tuple)):
                     try:
-                        self._telemetry_service.set_span_attributes(
+                        telemetry_service.set_span_attributes(
                             span, {STORAGE_RECORD_COUNT: len(data)}
                         )
                     except Exception:
@@ -448,8 +455,8 @@ class BaseStorageService(
         collection: str,
         document_id: Optional[str] = None,
         path: Optional[str] = None,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """
         Delete data from storage.
 
@@ -474,8 +481,8 @@ class BaseStorageService(
         collection: str,
         data: List[Dict[str, Any]],
         mode: WriteMode = WriteMode.WRITE,
-        **kwargs,
-    ) -> StorageResult:
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         """Write multiple documents/records in a batch operation."""
         self._logger.debug(
             f"[{self.provider_name}] Performing batch write of {len(data)} items"
