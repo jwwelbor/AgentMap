@@ -15,6 +15,7 @@ This package provides clean architecture with separated concerns:
 # at module load time. Imports are deferred until actually accessed.
 
 import importlib
+from typing import Any
 
 # Map module paths to the names they export
 _LAZY_IMPORTS = {
@@ -56,7 +57,7 @@ _NAME_TO_MODULE = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """Lazy import handler for AgentMap exports."""
     if module_path := _NAME_TO_MODULE.get(name):
         module = importlib.import_module(module_path)

@@ -5,7 +5,7 @@ This module provides content preparation and conversion functionality,
 handling various data types and formats for file storage operations.
 """
 
-from typing import Any, Union
+from typing import Any, Union, cast
 
 
 class ContentProcessor:
@@ -29,7 +29,7 @@ class ContentProcessor:
         """
         if hasattr(data, "page_content"):
             # Single LangChain document
-            return data.page_content
+            return cast(str, data.page_content)
         elif isinstance(data, list) and data and hasattr(data[0], "page_content"):
             # List of LangChain documents
             return "\n\n".join(doc.page_content for doc in data)

@@ -6,7 +6,7 @@ update time, access count, and version tracking.
 """
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 
 class MetadataTracker:
@@ -40,7 +40,7 @@ class MetadataTracker:
         Returns:
             True if tracking is enabled, False otherwise
         """
-        return self._config.get("track_metadata", True)
+        return cast(bool, self._config.get("track_metadata", True))
 
     def update_metadata(
         self, collection: str, document_id: str, operation: str

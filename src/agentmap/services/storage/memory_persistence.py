@@ -5,6 +5,7 @@ This module handles saving and loading memory storage data to/from disk.
 """
 
 import json
+import logging
 import os
 import time
 from typing import Any, Dict
@@ -17,7 +18,7 @@ class MemoryPersistenceManager:
     Handles saving and loading storage state to/from JSON files.
     """
 
-    def __init__(self, logger):
+    def __init__(self, logger: logging.Logger) -> None:
         """
         Initialize persistence manager.
 

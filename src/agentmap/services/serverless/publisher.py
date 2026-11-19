@@ -11,7 +11,7 @@ from typing import Any, Dict
 class ResultPublisher:
     """Service for publishing execution results to external systems."""
 
-    def __init__(self, container):
+    def __init__(self, container: Any) -> None:
         """Initialize with DI container."""
         self._container = container
 

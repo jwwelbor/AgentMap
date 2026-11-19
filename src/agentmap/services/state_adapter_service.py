@@ -6,7 +6,7 @@ Following YAGNI principle, this service only wraps the set_value method that is
 actually used in the codebase. Additional methods can be added as needed.
 """
 
-from typing import Any, Dict, List, Optional, TypeVar
+from typing import Any, Dict, List, Optional, TypeVar, cast
 
 # Type variable for state objects
 StateType = TypeVar("StateType", Dict[str, Any], object)
@@ -118,7 +118,7 @@ class StateAdapterService:
             try:
                 # Create a copy with updated field
                 update_dict = {key: value}
-                new_state = state.copy(update=update_dict)
+                new_state = cast(Any, state).copy(update=update_dict)
                 return new_state
             except Exception:
                 # Fall back to attribute setting if copy with update fails
@@ -129,7 +129,7 @@ class StateAdapterService:
             # Create a shallow copy
             import copy
 
-            new_state = copy.copy(state)
+            new_state = copy.copy(cast(Any, state))
             setattr(new_state, key, value)
             return new_state
         except Exception as e:
