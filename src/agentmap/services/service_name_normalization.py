@@ -65,14 +65,14 @@ _NORMALIZED_SERVICE_NAME_LOOKUP = {
 }
 
 
-def is_known_declared_service_name(value: str) -> bool:
+def is_known_declared_service_name(value: object) -> bool:
     """Return True if the token maps to a known canonical injectable service."""
     if not isinstance(value, str):
         return False
     return _normalize_service_token(value) in _NORMALIZED_SERVICE_NAME_LOOKUP
 
 
-def normalize_declared_service_name(value: str) -> str:
+def normalize_declared_service_name(value: object) -> str:
     """
     Normalize a declared service token to its canonical internal service name.
 
@@ -110,7 +110,7 @@ def normalize_declared_service_names(values: Iterable[str]) -> List[str]:
     return normalized
 
 
-def expand_declared_service_names(values: Iterable[str]) -> Set[str]:
+def expand_declared_service_names(values: Iterable[object]) -> Set[str]:
     """
     Expand declared service tokens into every name they may match at injection.
 

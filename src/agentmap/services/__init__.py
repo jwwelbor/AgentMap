@@ -17,6 +17,8 @@ Services are loaded lazily via __getattr__ to improve startup performance.
 Direct imports from submodules bypass this lazy loading.
 """
 
+from typing import Any, Dict, List
+
 # Lazy loading mapping: name -> (module_path, attribute_name)
 # Module paths are relative to agentmap.services
 _LAZY_IMPORTS = {
@@ -149,10 +151,10 @@ _LAZY_IMPORTS = {
 }
 
 # Cache for loaded items
-_loaded_items = {}
+_loaded_items: Dict[str, Any] = {}
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """Lazy load services and protocols on demand."""
     if name in _LAZY_IMPORTS:
         if name not in _loaded_items:
@@ -165,7 +167,7 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def __dir__():
+def __dir__() -> List[str]:
     """Support dir() for discoverability."""
     return list(_LAZY_IMPORTS.keys())
 

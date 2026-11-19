@@ -5,6 +5,8 @@ Direct imports from individual modules (e.g., from .core import CoreContainer)
 bypass this lazy loading and load immediately.
 """
 
+from typing import Any, Dict, List
+
 # Lazy loading mapping
 _CONTAINER_MODULES = {
     "CoreContainer": "core",
@@ -17,10 +19,10 @@ _CONTAINER_MODULES = {
 }
 
 # Cache for loaded containers
-_loaded_containers = {}
+_loaded_containers: Dict[str, Any] = {}
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """Lazy load container parts on demand."""
     if name in _CONTAINER_MODULES:
         if name not in _loaded_containers:
@@ -34,7 +36,7 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def __dir__():
+def __dir__() -> List[str]:
     """Support dir() for discoverability."""
     return list(_CONTAINER_MODULES.keys())
 

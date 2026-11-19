@@ -5,7 +5,7 @@ This module provides query filtering, sorting, and pagination functionality
 for in-memory document collections.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 
 class QueryEngine:
@@ -84,7 +84,10 @@ class QueryEngine:
         if sort_field:
             reverse = sort_order == "desc"
             items.sort(
-                key=lambda x: x[1].get(sort_field) if isinstance(x[1], dict) else None,
+                key=lambda x: cast(
+                    Any,
+                    x[1].get(sort_field) if isinstance(x[1], dict) else None,
+                ),
                 reverse=reverse,
             )
 
