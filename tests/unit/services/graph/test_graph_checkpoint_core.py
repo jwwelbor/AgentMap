@@ -183,6 +183,47 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
             result.checkpoint["id"], short_config["configurable"]["checkpoint_id"]
         )
 
+    def test_checkpoint_filenames_encode_thread_and_checkpoint_identity(self):
+        first_config = self.service.put(
+            config={"configurable": {"thread_id": "a"}},
+            checkpoint={"id": "b_c", "state": {"owner": "a"}},
+            metadata={},
+            new_versions={},
+        )
+        second_config = self.service.put(
+            config={"configurable": {"thread_id": "a_b"}},
+            checkpoint={"id": "c", "state": {"owner": "a_b"}},
+            metadata={},
+            new_versions={},
+        )
+        third_config = self.service.put(
+            config={
+                "configurable": {"thread_id": "namespaced", "checkpoint_ns": "one"}
+            },
+            checkpoint={"id": "same", "state": {"owner": "one"}},
+            metadata={},
+            new_versions={},
+        )
+        fourth_config = self.service.put(
+            config={
+                "configurable": {"thread_id": "namespaced", "checkpoint_ns": "two"}
+            },
+            checkpoint={"id": "same", "state": {"owner": "two"}},
+            metadata={},
+            new_versions={},
+        )
+
+        self.assertEqual(len(self.file_storage.read(collection="")), 4)
+        first_result = self.service.get_tuple(first_config)
+        second_result = self.service.get_tuple(second_config)
+        third_result = self.service.get_tuple(third_config)
+        fourth_result = self.service.get_tuple(fourth_config)
+
+        self.assertEqual(first_result.checkpoint["state"]["owner"], "a")
+        self.assertEqual(second_result.checkpoint["state"]["owner"], "a_b")
+        self.assertEqual(third_result.checkpoint["state"]["owner"], "one")
+        self.assertEqual(fourth_result.checkpoint["state"]["owner"], "two")
+
     def test_get_tuple_returns_none_for_missing_thread(self):
         config = {"configurable": {"thread_id": "missing"}}
         self.assertIsNone(self.service.get_tuple(config))

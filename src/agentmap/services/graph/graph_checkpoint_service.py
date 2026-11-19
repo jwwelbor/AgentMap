@@ -14,6 +14,7 @@ in cache/checkpoints/ namespace. Checkpoint documents are pickled for fast I/O.
 """
 
 import asyncio
+import base64
 import hashlib
 import pickle
 from datetime import datetime
@@ -105,6 +106,7 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                 "timestamp": datetime.utcnow().isoformat(),
                 "version": "2.0",
                 "checkpoint_id": checkpoint_id,
+                "thread_id": thread_id,
                 "parent_checkpoint_id": configurable.get("checkpoint_id"),
                 "checkpoint_ns": checkpoint_ns,
                 "new_versions": new_versions,
@@ -119,7 +121,9 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
             result = self.file_storage.write(
                 collection="",  # Use namespace root
                 data=document_bytes,
-                document_id=f"{thread_id}_{checkpoint_id}.pkl",
+                document_id=self._checkpoint_document_id(
+                    thread_id, checkpoint_ns, checkpoint_id
+                ),
                 mode=WriteMode.WRITE,
                 binary_mode=True,
             )
@@ -162,14 +166,29 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                 self.logger.trace(f"no files found for thread {thread_id}")
                 return None
 
-            # Filter files by thread_id prefix
-            thread_files = [f for f in files if f.startswith(f"{thread_id}_")]
+            legacy_prefix = f"{thread_id}_"
+            checkpoint_prefix = f"v2.{self._encode_checkpoint_component(thread_id)}."
+            thread_files = [
+                filename
+                for filename in files
+                if isinstance(filename, str)
+                and (
+                    filename.startswith(legacy_prefix)
+                    or filename.startswith(checkpoint_prefix)
+                )
+            ]
             if requested_checkpoint_id:
-                requested_filename = f"{thread_id}_{requested_checkpoint_id}.pkl"
+                requested_filenames = {f"{thread_id}_{requested_checkpoint_id}.pkl"}
+                if isinstance(requested_checkpoint_id, str):
+                    requested_filenames.add(
+                        self._checkpoint_document_id(
+                            thread_id, checkpoint_ns, requested_checkpoint_id
+                        )
+                    )
                 thread_files = [
                     filename
                     for filename in thread_files
-                    if filename == requested_filename
+                    if filename in requested_filenames
                 ]
 
             if not thread_files:
@@ -191,9 +210,23 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                     if not isinstance(checkpoint_doc, dict):
                         continue
                     checkpoint_id = checkpoint_doc.get("checkpoint_id")
+                    stored_thread_id = checkpoint_doc.get("thread_id")
+                    is_current_format = (
+                        isinstance(checkpoint_id, str)
+                        and filename
+                        == self._checkpoint_document_id(
+                            thread_id, checkpoint_ns, checkpoint_id
+                        )
+                        and stored_thread_id == thread_id
+                    )
+                    is_unambiguous_legacy_format = (
+                        isinstance(checkpoint_id, str)
+                        and "_" not in checkpoint_id
+                        and filename == f"{thread_id}_{checkpoint_id}.pkl"
+                        and stored_thread_id in (None, thread_id)
+                    )
                     if (
-                        not isinstance(checkpoint_id, str)
-                        or filename != f"{thread_id}_{checkpoint_id}.pkl"
+                        not (is_current_format or is_unambiguous_legacy_format)
                         or checkpoint_doc.get("checkpoint_ns", "") != checkpoint_ns
                     ):
                         continue
@@ -291,6 +324,22 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
         identity = "\0".join((thread_id, checkpoint_ns, checkpoint_id))
         digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
         return f"writes/{digest}"
+
+    @staticmethod
+    def _encode_checkpoint_component(value: str) -> str:
+        encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii")
+        return encoded.rstrip("=")
+
+    @classmethod
+    def _checkpoint_document_id(
+        cls, thread_id: str, checkpoint_ns: str, checkpoint_id: str
+    ) -> str:
+        components = (
+            cls._encode_checkpoint_component(thread_id),
+            cls._encode_checkpoint_component(checkpoint_ns),
+            cls._encode_checkpoint_component(checkpoint_id),
+        )
+        return f"v2.{components[0]}.{components[1]}.{components[2]}.pkl"
 
     def _load_pending_writes(
         self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
