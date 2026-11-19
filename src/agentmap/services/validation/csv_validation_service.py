@@ -2,7 +2,7 @@
 import hashlib
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 import pandas as pd
 from pydantic import ValidationError as PydanticValidationError
@@ -14,6 +14,8 @@ from agentmap.models.validation.validation_models import (
 from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.function_resolution_service import FunctionResolutionService
 from agentmap.services.logging_service import LoggingService
+
+GraphValidationData = Dict[str, Dict[str, Dict[str, Any]]]
 
 
 class CSVValidationService:
@@ -173,7 +175,7 @@ class CSVValidationService:
 
             try:
                 # Convert row to dict, handling NaN values
-                row_dict = {}
+                row_dict: Dict[str, Any] = {}
                 for col in df.columns:
                     value = row[col]
                     # Convert NaN to None
@@ -185,7 +187,7 @@ class CSVValidationService:
                         )
 
                 # Validate with Pydantic model
-                CSVRowModel(**row_dict)
+                CSVRowModel.model_validate(row_dict)
 
             except PydanticValidationError as e:
                 for error in e.errors():
@@ -206,9 +208,9 @@ class CSVValidationService:
 
     def _build_graphs_for_validation(
         self, df: pd.DataFrame, result: ValidationResult
-    ) -> Dict[str, Dict]:
+    ) -> GraphValidationData:
         """Build graph structures for validation purposes."""
-        graphs = defaultdict(dict)
+        graphs: defaultdict[str, Dict[str, Dict[str, Any]]] = defaultdict(dict)
 
         for idx, row in df.iterrows():
             line_number = idx + 2
@@ -288,7 +290,7 @@ class CSVValidationService:
         return dict(graphs)
 
     def _validate_graph_consistency(
-        self, graphs: Dict[str, Dict], result: ValidationResult
+        self, graphs: GraphValidationData, result: ValidationResult
     ) -> None:
         """Validate graph-level consistency rules."""
 
@@ -346,7 +348,7 @@ class CSVValidationService:
                 )
 
     def _validate_routing_logic(
-        self, df: pd.DataFrame, graphs: Dict[str, Dict], result: ValidationResult
+        self, df: pd.DataFrame, graphs: GraphValidationData, result: ValidationResult
     ) -> None:
         """Validate routing logic and edge references."""
 

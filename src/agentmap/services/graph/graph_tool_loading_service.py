@@ -89,6 +89,8 @@ class GraphToolLoadingService:
                 tools = self._load_tools_for_single_node(node_name, node, tool_source)
 
                 # Store in bundle
+                if bundle.tools is None:
+                    bundle.tools = {}
                 bundle.tools[node_name] = tools
                 loaded_count += 1
 
@@ -163,7 +165,7 @@ class GraphToolLoadingService:
 
     def _load_tools_for_single_node(
         self, node_name: str, node: Any, tool_source: str
-    ) -> list:
+    ) -> List[Any]:
         """
         Load tools for a single node from its tool source.
 
@@ -218,8 +220,12 @@ class GraphToolLoadingService:
             raise ImportError(error_msg) from e
 
     def _filter_tools_by_availability(
-        self, all_tools: list, available_tools: list, tool_source: str, node_name: str
-    ) -> list:
+        self,
+        all_tools: List[Any],
+        available_tools: List[str],
+        tool_source: str,
+        node_name: str,
+    ) -> List[Any]:
         """
         Filter tools by the available_tools specification.
 
@@ -322,8 +328,8 @@ class GraphToolLoadingService:
             ValueError: On name collisions, or if no tools are found.
             ImportError: If any .py file in the directory fails to import.
         """
-        tools_by_name: dict = {}
-        sources_by_name: dict = {}
+        tools_by_name: dict[str, Any] = {}
+        sources_by_name: dict[str, str] = {}
         py_files = sorted(p for p in path.glob("*.py") if p.is_file())
 
         for py_file in py_files:
