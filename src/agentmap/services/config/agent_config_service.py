@@ -5,7 +5,7 @@ Provides backward compatibility layer for agent configuration access.
 Delegates to BuiltinDefinitionConstants for actual definitions.
 """
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 
 from agentmap.builtin_definition_constants import BuiltinDefinitionConstants
 
@@ -126,7 +126,7 @@ class AgentConfigService:
         return BuiltinDefinitionConstants.get_agent_class_paths()
 
     @staticmethod
-    def get_core_agent_types() -> set:
+    def get_core_agent_types() -> Set[str]:
         """
         Get set of core agent type names for categorization.
 
@@ -136,7 +136,7 @@ class AgentConfigService:
         return set(AgentConfigService._get_core_agents_dict().keys())
 
     @staticmethod
-    def get_llm_agent_types() -> set:
+    def get_llm_agent_types() -> Set[str]:
         """
         Get set of LLM agent type names for categorization.
 
@@ -146,7 +146,7 @@ class AgentConfigService:
         return set(AgentConfigService._get_llm_agents_dict().keys())
 
     @staticmethod
-    def get_storage_agent_types() -> set:
+    def get_storage_agent_types() -> Set[str]:
         """
         Get set of storage agent type names for categorization.
 
@@ -156,7 +156,7 @@ class AgentConfigService:
         return set(AgentConfigService._get_storage_agents_dict().keys())
 
     @staticmethod
-    def get_mixed_dependency_agent_types() -> set:
+    def get_mixed_dependency_agent_types() -> Set[str]:
         """
         Get set of mixed dependency agent type names for categorization.
 
@@ -263,7 +263,7 @@ class AgentConfigService:
         return agent_type in AgentConfigService._get_storage_agents_dict()
 
     @staticmethod
-    def get_required_provider(agent_type: str) -> str:
+    def get_required_provider(agent_type: str) -> Optional[str]:
         """
         Get the required provider for an LLM agent type.
 
@@ -276,7 +276,7 @@ class AgentConfigService:
         return BuiltinDefinitionConstants.get_llm_agent_to_provider().get(agent_type)
 
     @staticmethod
-    def get_required_storage_type(agent_type: str) -> str:
+    def get_required_storage_type(agent_type: str) -> Optional[str]:
         """
         Get the required storage type for a storage agent type.
 
