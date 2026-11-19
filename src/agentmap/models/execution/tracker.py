@@ -27,3 +27,4 @@ class ExecutionTracker:
     track_outputs: bool = False
     minimal_mode: bool = False
     thread_id: Optional[str] = None  # LangGraph thread ID for checkpoint support
+    graph_name: Optional[str] = None
