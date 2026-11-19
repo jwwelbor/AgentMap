@@ -5,9 +5,9 @@ Main orchestrator that coordinates template composition with proper indentation 
 This refactored version delegates responsibilities to focused, single-purpose classes.
 """
 
-from typing import Any, Dict, NamedTuple
+from typing import Any, Dict, List, NamedTuple
 
-from agentmap.models.scaffold_types import ServiceRequirements
+from agentmap.models.scaffold_types import ServiceAttribute, ServiceRequirements
 from agentmap.services.config.app_config_service import AppConfigService
 from agentmap.services.logging_service import LoggingService
 
@@ -89,12 +89,12 @@ class IndentedTemplateComposer:
         )
 
     @property
-    def _template_cache(self):
+    def _template_cache(self) -> Dict[str, str]:
         """Access template cache from loader (backwards compatibility)."""
         return self._template_loader._template_cache
 
     @property
-    def _cache_stats(self):
+    def _cache_stats(self) -> Dict[str, int]:
         """Access cache stats from loader (backwards compatibility)."""
         return self._template_loader._cache_stats
 
@@ -152,7 +152,7 @@ class IndentedTemplateComposer:
         """
         return self._template_loader.get_cache_stats()
 
-    def clear_template_cache(self):
+    def clear_template_cache(self) -> None:
         """
         Clear template cache and reset statistics.
 
@@ -365,7 +365,7 @@ class IndentedTemplateComposer:
         """
         return self._code_generator._to_pascal_case(text)
 
-    def _generate_service_attributes(self, attributes) -> str:
+    def _generate_service_attributes(self, attributes: List[ServiceAttribute]) -> str:
         """
         Generate service attribute declarations.
 
@@ -380,7 +380,9 @@ class IndentedTemplateComposer:
         """
         return self._code_generator.generate_service_attributes(attributes)
 
-    def _generate_services_documentation(self, attributes) -> str:
+    def _generate_services_documentation(
+        self, attributes: List[ServiceAttribute]
+    ) -> str:
         """
         Generate services documentation for class docstring.
 
@@ -395,7 +397,7 @@ class IndentedTemplateComposer:
         """
         return self._code_generator.generate_services_documentation(attributes)
 
-    def _generate_input_field_access(self, input_fields) -> str:
+    def _generate_input_field_access(self, input_fields: List[str]) -> str:
         """
         Generate input field access code for process method.
 
@@ -445,7 +447,9 @@ class IndentedTemplateComposer:
         """
         return self._function_composer._prepare_template_variables(func_name, info)
 
-    def _generate_context_fields(self, input_fields, output_field: str) -> str:
+    def _generate_context_fields(
+        self, input_fields: List[str], output_field: str
+    ) -> str:
         """
         Generate documentation about available fields in the state.
 

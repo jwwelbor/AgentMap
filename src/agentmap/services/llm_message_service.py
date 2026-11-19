@@ -9,7 +9,7 @@ Renamed from llm_message_utils.py (LLMMessageUtils) per E05-F05 Decision 3.
 
 import copy
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from agentmap.exceptions import LLMServiceError
 
@@ -17,10 +17,11 @@ logger = logging.getLogger(__name__)
 
 # Cached LangChain message classes — resolved once to avoid retrying a
 # failed langchain.schema import on every convert_messages_to_langchain call.
-_langchain_message_classes = None
+MessageClasses = Tuple[Type[Any], Type[Any], Type[Any], Type[Any]]
+_langchain_message_classes: Optional[MessageClasses] = None
 
 
-def _resolve_langchain_message_classes():
+def _resolve_langchain_message_classes() -> Optional[MessageClasses]:
     global _langchain_message_classes
     if _langchain_message_classes is not None:
         return _langchain_message_classes
@@ -49,7 +50,7 @@ class LLMMessageService:
     """Service for handling LLM message transformation and cache metadata injection."""
 
     @staticmethod
-    def has_prompt_caching(messages: List[Dict[str, Any]]) -> bool:
+    def has_prompt_caching(messages: List[Any]) -> bool:
         """
         Detect provider-native prompt-caching metadata in structured messages.
 
@@ -74,8 +75,8 @@ class LLMMessageService:
 
     @staticmethod
     def strip_cache_control(
-        messages: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        messages: List[Any],
+    ) -> List[Any]:
         """Return a copy of *messages* with all ``cache_control`` blocks removed.
 
         ``cache_control`` is an Anthropic-specific content-block extension. When a
@@ -111,7 +112,7 @@ class LLMMessageService:
         return sanitized
 
     @staticmethod
-    def extract_prompt_from_messages(messages: List[Dict[str, Any]]) -> str:
+    def extract_prompt_from_messages(messages: List[Any]) -> str:
         """
         Extract the main prompt content from messages for complexity analysis.
 
@@ -146,7 +147,7 @@ class LLMMessageService:
 
     @staticmethod
     def _convert_single_message_to_langchain(
-        msg: Dict[str, Any], classes: tuple
+        msg: Dict[str, Any], classes: MessageClasses
     ) -> Any:
         """Convert one message dict to its LangChain message class by role.
 
@@ -180,7 +181,7 @@ class LLMMessageService:
         return HumanMessage(content=content)  # default to user
 
     @staticmethod
-    def convert_messages_to_langchain(messages: List[Dict[str, Any]]) -> List[Any]:
+    def convert_messages_to_langchain(messages: List[Any]) -> List[Any]:
         """
         Convert messages to LangChain message format.
 
@@ -223,10 +224,10 @@ class LLMMessageService:
 
     @staticmethod
     def inject_cache_metadata(
-        messages: List[Dict[str, Any]],
+        messages: List[Any],
         provider: str,
         cache_system_prompt: bool,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Any]:
         """
         Inject provider-specific prompt-caching metadata into messages.
 
