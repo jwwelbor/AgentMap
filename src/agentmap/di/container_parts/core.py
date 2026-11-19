@@ -3,9 +3,23 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 from dependency_injector import containers, providers
+
+if TYPE_CHECKING:
+    from agentmap.services.auth_service import AuthService
+    from agentmap.services.config.app_config_service import AppConfigService
+    from agentmap.services.config.availability_cache_service import (
+        AvailabilityCacheService,
+    )
+    from agentmap.services.config.config_service import ConfigService
+    from agentmap.services.config.llm_models_config_service import (
+        LLMModelsConfigService,
+    )
+    from agentmap.services.file_path_service import FilePathService
+    from agentmap.services.logging_service import LoggingService
+    from agentmap.services.prompt_manager_service import PromptManagerService
 
 
 class CoreContainer(containers.DeclarativeContainer):
@@ -16,7 +30,7 @@ class CoreContainer(containers.DeclarativeContainer):
     # --- Configuration services -------------------------------------------------
 
     @staticmethod
-    def _create_config_service():
+    def _create_config_service() -> ConfigService:
         from agentmap.services.config.config_service import ConfigService
 
         return ConfigService()
@@ -24,7 +38,9 @@ class CoreContainer(containers.DeclarativeContainer):
     config_service = providers.Singleton(_create_config_service)
 
     @staticmethod
-    def _create_app_config_service(config_service, config_path):
+    def _create_app_config_service(
+        config_service: ConfigService, config_path: Optional[Union[str, Path]]
+    ) -> AppConfigService:
         from agentmap.services.config.app_config_service import AppConfigService
 
         return AppConfigService(config_service, config_path)
@@ -38,7 +54,9 @@ class CoreContainer(containers.DeclarativeContainer):
     # --- Logging ----------------------------------------------------------------
 
     @staticmethod
-    def _create_and_initialize_logging_service(app_config_service):
+    def _create_and_initialize_logging_service(
+        app_config_service: AppConfigService,
+    ) -> LoggingService:
         from agentmap.services.logging_service import LoggingService
 
         logging_config = app_config_service.get_logging_config()
@@ -54,7 +72,9 @@ class CoreContainer(containers.DeclarativeContainer):
     # --- Availability cache -----------------------------------------------------
 
     @staticmethod
-    def _create_availability_cache_service(app_config_service, logging_service):
+    def _create_availability_cache_service(
+        app_config_service: AppConfigService, logging_service: LoggingService
+    ) -> Optional[AvailabilityCacheService]:
         from agentmap.services.config.availability_cache_service import (
             AvailabilityCacheService,
         )
@@ -111,7 +131,9 @@ class CoreContainer(containers.DeclarativeContainer):
     # --- Cross-cutting services --------------------------------------------------
 
     @staticmethod
-    def _create_llm_models_config_service(app_config_service):
+    def _create_llm_models_config_service(
+        app_config_service: AppConfigService,
+    ) -> LLMModelsConfigService:
         from agentmap.services.config.llm_models_config_service import (
             LLMModelsConfigService,
         )
@@ -124,7 +146,9 @@ class CoreContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_auth_service(auth_config, logging_service):
+    def _create_auth_service(
+        auth_config: Dict[str, Any], logging_service: LoggingService
+    ) -> AuthService:
         from agentmap.services.auth_service import AuthService
 
         return AuthService(auth_config, logging_service)
@@ -136,7 +160,9 @@ class CoreContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_file_path_service(app_config_service, logging_service):
+    def _create_file_path_service(
+        app_config_service: AppConfigService, logging_service: LoggingService
+    ) -> FilePathService:
         from agentmap.services.file_path_service import FilePathService
 
         return FilePathService(app_config_service, logging_service)
@@ -148,7 +174,9 @@ class CoreContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_prompt_manager_service(app_config_service, logging_service):
+    def _create_prompt_manager_service(
+        app_config_service: AppConfigService, logging_service: LoggingService
+    ) -> PromptManagerService:
         from agentmap.services.prompt_manager_service import PromptManagerService
 
         return PromptManagerService(app_config_service, logging_service)

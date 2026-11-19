@@ -7,6 +7,8 @@ the OTEL SDK is available, and no host TracerProvider exists.
 
 from __future__ import annotations
 
+from typing import Any, Dict
+
 from dependency_injector import containers, providers
 
 # Deferred import -- kept at module level for easy patching in tests.
@@ -16,7 +18,7 @@ try:
         bootstrap_standalone_tracer_provider,
     )
 except ImportError:
-    bootstrap_standalone_tracer_provider = None  # type: ignore[assignment,misc]
+    bootstrap_standalone_tracer_provider = None  # type: ignore[assignment]
 
 
 class TelemetryContainer(containers.DeclarativeContainer):
@@ -28,15 +30,15 @@ class TelemetryContainer(containers.DeclarativeContainer):
     any error occurs during bootstrap.
     """
 
-    logging_service = providers.Dependency()
-    app_config_service = providers.Dependency()
+    logging_service: Any = providers.Dependency()
+    app_config_service: Any = providers.Dependency()
     app_config_service.set_default(providers.Object(None))
 
     @staticmethod
-    def _create_telemetry_service(  # type: ignore[no-untyped-def]
-        logging_service,
-        app_config_service=None,
-    ):
+    def _create_telemetry_service(
+        logging_service: Any,
+        app_config_service: Any = None,
+    ) -> Any:
         try:
             logger = logging_service.get_logger("agentmap.di.telemetry")
         except Exception:
@@ -90,7 +92,7 @@ class TelemetryContainer(containers.DeclarativeContainer):
     )
 
 
-def _read_telemetry_config(app_config_service, logger):
+def _read_telemetry_config(app_config_service: Any, logger: Any) -> Dict[str, Any]:
     """Read telemetry config from app_config_service, with safe defaults."""
     defaults = {
         "enabled": False,
@@ -108,7 +110,8 @@ def _read_telemetry_config(app_config_service, logger):
     if app_config_service is None:
         return defaults
     try:
-        return app_config_service.get_telemetry_config()
+        telemetry_config = app_config_service.get_telemetry_config()
+        return telemetry_config if isinstance(telemetry_config, dict) else defaults
     except Exception as exc:
         if logger:
             logger.warning(
@@ -118,7 +121,7 @@ def _read_telemetry_config(app_config_service, logger):
         return defaults
 
 
-def _create_otel_service():
+def _create_otel_service() -> Any:
     """Attempt to create OTELTelemetryService, return None on failure."""
     try:
         import opentelemetry.trace  # noqa: F401
@@ -132,7 +135,7 @@ def _create_otel_service():
         return None
 
 
-def _create_noop_service():
+def _create_noop_service() -> Any:
     """Create a NoOpTelemetryService."""
     from agentmap.services.telemetry.noop_telemetry_service import (
         NoOpTelemetryService,
@@ -141,7 +144,9 @@ def _create_noop_service():
     return NoOpTelemetryService()
 
 
-def _create_service_no_bootstrap(logging_service, telemetry_config):
+def _create_service_no_bootstrap(
+    logging_service: Any, telemetry_config: Dict[str, Any]
+) -> Any:
     """Create telemetry service without bootstrap, storing content flags."""
     service = _create_otel_service()
     if service is None:
@@ -162,7 +167,9 @@ def _create_service_no_bootstrap(logging_service, telemetry_config):
     return service
 
 
-def _create_service_with_flags(logging_service, telemetry_config):
+def _create_service_with_flags(
+    logging_service: Any, telemetry_config: Dict[str, Any]
+) -> Any:
     """Create telemetry service and store content capture flags."""
     service = _create_otel_service()
     if service is None:
