@@ -2,18 +2,36 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, Dict, Optional, cast
+
 from dependency_injector import containers, providers
+
+from agentmap.services.protocols.service_protocols import (
+    BatchAdapterProtocol,
+    LLMBudgetGuardProtocol,
+)
+
+if TYPE_CHECKING:
+    from agentmap.services.config.llm_routing_config_service import (
+        LLMRoutingConfigService,
+    )
+    from agentmap.services.llm_batch_repository import BatchHandleRepository
+    from agentmap.services.llm_service import LLMService
+    from agentmap.services.routing.cache import RoutingCache
+    from agentmap.services.routing.complexity_analyzer import PromptComplexityAnalyzer
+    from agentmap.services.routing.routing_service import LLMRoutingService
 
 
 class LLMContainer(containers.DeclarativeContainer):
     """Provides LLM configuration, routing, and execution services."""
 
-    app_config_service = providers.Dependency()
-    logging_service = providers.Dependency()
-    availability_cache_service = providers.Dependency()
-    features_registry_service = providers.Dependency()
-    llm_models_config_service = providers.Dependency()
-    telemetry_service = providers.Dependency()
+    # Dependency providers resolve these values dynamically at runtime.
+    app_config_service: Any = providers.Dependency()
+    logging_service: Any = providers.Dependency()
+    availability_cache_service: Any = providers.Dependency()
+    features_registry_service: Any = providers.Dependency()
+    llm_models_config_service: Any = providers.Dependency()
+    telemetry_service: Any = providers.Dependency()
 
     # E05-F06 REQ-F-003/REQ-F-004 (Component Change 10): the single canonical
     # registration path for an opt-in LLMBudgetGuardProtocol implementation.
@@ -25,16 +43,16 @@ class LLMContainer(containers.DeclarativeContainer):
     # `llm_service()` resolution, or the override has no effect.
     # There is deliberately no competing per-call registration path
     # (Decision 4).
-    budget_guard = providers.Dependency()
+    budget_guard: Any = providers.Dependency()
     budget_guard.set_default(providers.Object(None))
 
     @staticmethod
     def _create_llm_routing_config_service(
-        app_config_service,
-        logging_service,
-        llm_models_config_service,
-        availability_cache_service,
-    ):
+        app_config_service: Any,
+        logging_service: Any,
+        llm_models_config_service: Any,
+        availability_cache_service: Any,
+    ) -> LLMRoutingConfigService:
         from agentmap.services.config.llm_routing_config_service import (
             LLMRoutingConfigService,
         )
@@ -55,7 +73,9 @@ class LLMContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_prompt_complexity_analyzer(app_config_service, logging_service):
+    def _create_prompt_complexity_analyzer(
+        app_config_service: Any, logging_service: Any
+    ) -> PromptComplexityAnalyzer:
         from agentmap.services.routing.complexity_analyzer import (
             PromptComplexityAnalyzer,
         )
@@ -69,7 +89,7 @@ class LLMContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_routing_cache(logging_service):
+    def _create_routing_cache(logging_service: Any) -> RoutingCache:
         from agentmap.services.routing.cache import RoutingCache
 
         return RoutingCache(logging_service)
@@ -81,11 +101,11 @@ class LLMContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_llm_routing_service(
-        llm_routing_config_service,
-        logging_service,
-        routing_cache,
-        prompt_complexity_analyzer,
-    ):
+        llm_routing_config_service: Any,
+        logging_service: Any,
+        routing_cache: Any,
+        prompt_complexity_analyzer: Any,
+    ) -> LLMRoutingService:
         from agentmap.services.routing.routing_service import LLMRoutingService
 
         return LLMRoutingService(
@@ -105,8 +125,11 @@ class LLMContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _make_batch_adapter(
-        provider_key, adapter_cls, app_config_service, logging_service
-    ):
+        provider_key: str,
+        adapter_cls: Any,
+        app_config_service: Any,
+        logging_service: Any,
+    ) -> Optional[BatchAdapterProtocol]:
         from agentmap.exceptions import LLMDependencyError
 
         api_key = app_config_service.get_llm_config(provider_key).get("api_key", "")
@@ -118,7 +141,10 @@ class LLMContainer(containers.DeclarativeContainer):
             )
             return None
         try:
-            return adapter_cls(api_key=api_key, logger=logger)
+            return cast(
+                BatchAdapterProtocol,
+                adapter_cls(api_key=api_key, logger=logger),
+            )
         except LLMDependencyError as exc:
             logger.warning(
                 "llm_batch.dependency_missing adapter=%s: %s",
@@ -128,7 +154,9 @@ class LLMContainer(containers.DeclarativeContainer):
             return None
 
     @staticmethod
-    def _create_anthropic_batch_adapter(app_config_service, logging_service):
+    def _create_anthropic_batch_adapter(
+        app_config_service: Any, logging_service: Any
+    ) -> Optional[BatchAdapterProtocol]:
         from agentmap.services.llm.anthropic_batch_adapter import AnthropicBatchAdapter
 
         return LLMContainer._make_batch_adapter(
@@ -145,7 +173,9 @@ class LLMContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_openai_batch_adapter(app_config_service, logging_service):
+    def _create_openai_batch_adapter(
+        app_config_service: Any, logging_service: Any
+    ) -> Optional[BatchAdapterProtocol]:
         from agentmap.services.llm.openai_batch_adapter import OpenAIBatchAdapter
 
         return LLMContainer._make_batch_adapter(
@@ -162,7 +192,9 @@ class LLMContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_gemini_batch_adapter(app_config_service, logging_service):
+    def _create_gemini_batch_adapter(
+        app_config_service: Any, logging_service: Any
+    ) -> Optional[BatchAdapterProtocol]:
         from agentmap.services.llm.gemini_batch_adapter import GeminiBatchAdapter
 
         return LLMContainer._make_batch_adapter(
@@ -179,7 +211,9 @@ class LLMContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_batch_handle_repository(app_config_service):
+    def _create_batch_handle_repository(
+        app_config_service: Any,
+    ) -> BatchHandleRepository:
         from agentmap.services.llm_batch_repository import BatchHandleRepository
 
         batch_dir = app_config_service.get_value(
@@ -194,24 +228,24 @@ class LLMContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_llm_service(
-        app_config_service,
-        logging_service,
-        llm_routing_service,
-        llm_models_config_service,
-        features_registry_service,
-        llm_routing_config_service,
-        telemetry_service,
-        anthropic_batch_adapter=None,
-        openai_batch_adapter=None,
-        gemini_batch_adapter=None,
-        batch_handle_repository=None,
-        budget_guard=None,
-    ):
+        app_config_service: Any,
+        logging_service: Any,
+        llm_routing_service: Any,
+        llm_models_config_service: Any,
+        features_registry_service: Any,
+        llm_routing_config_service: Any,
+        telemetry_service: Any,
+        anthropic_batch_adapter: Optional[BatchAdapterProtocol] = None,
+        openai_batch_adapter: Optional[BatchAdapterProtocol] = None,
+        gemini_batch_adapter: Optional[BatchAdapterProtocol] = None,
+        batch_handle_repository: Optional[BatchHandleRepository] = None,
+        budget_guard: Optional[LLMBudgetGuardProtocol] = None,
+    ) -> LLMService:
         from agentmap.services.llm_service import LLMService
 
         # Build the provider→adapter registry; omit providers whose SDK is absent
         # (factory returns None when LLMDependencyError is raised at init time).
-        batch_adapters = {}
+        batch_adapters: Dict[str, BatchAdapterProtocol] = {}
         if anthropic_batch_adapter is not None:
             batch_adapters["anthropic"] = anthropic_batch_adapter
         if openai_batch_adapter is not None:

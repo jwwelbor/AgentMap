@@ -258,6 +258,8 @@ class LLMService:
         self.features_registry = features_registry_service
         self.routing_config = routing_config_service
         self._telemetry_service = telemetry_service
+        self._capture_llm_prompts: bool = False
+        self._capture_llm_responses: bool = False
         # E05-F06 REQ-F-003/REQ-F-004: opt-in pre-dispatch budget refusal and
         # post-completion receipt observation. None => no guard-related code
         # path executes (NFR-F-002/AC pre-F06 byte-identical behavior).
