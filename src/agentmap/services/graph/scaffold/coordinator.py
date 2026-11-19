@@ -82,7 +82,7 @@ class GraphScaffoldService:
         Returns:
             Path to created file, or None if file already exists
         """
-        output_path = output_path or self.config.custom_agents_path
+        output_path = output_path or self.config.get_custom_agents_path()
         return self._scaffold_agent(agent_type, info, output_path, overwrite=False)
 
     def scaffold_edge_function(
@@ -99,7 +99,7 @@ class GraphScaffoldService:
         Returns:
             Path to created file, or None if file already exists
         """
-        func_path = func_path or self.config.functions_path
+        func_path = func_path or self.config.get_functions_path()
         return self._scaffold_function(func_name, info, func_path, overwrite=False)
 
     def scaffold_from_bundle(
@@ -184,7 +184,7 @@ class GraphScaffoldService:
         return {
             "agents_path": self.config.get_custom_agents_path(),
             "functions_path": self.config.get_functions_path(),
-            "csv_path": self.config.csv_path,
+            "csv_path": self.config.get_csv_repository_path(),
         }
 
     def get_service_info(self) -> Dict[str, Any]:
@@ -200,7 +200,7 @@ class GraphScaffoldService:
             "template_composer_available": self.template_composer is not None,
             "custom_agents_path": str(self.config.get_custom_agents_path()),
             "functions_path": str(self.config.get_functions_path()),
-            "csv_path": str(self.config.csv_path),
+            "csv_path": str(self.config.get_csv_repository_path()),
             "service_parser_available": self.service_parser is not None,
             "architecture_approach": "unified_template_composition",
             "supported_services": list(self.service_parser.separate_service_map.keys()),
@@ -212,7 +212,7 @@ class GraphScaffoldService:
 
     def _collect_agent_info(
         self, csv_path: Path, graph_name: Optional[str] = None
-    ) -> Dict[str, Dict]:
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Collect information about agents from the CSV file.
 
@@ -222,7 +222,7 @@ class GraphScaffoldService:
 
     def _collect_function_info(
         self, csv_path: Path, graph_name: Optional[str] = None
-    ) -> Dict[str, Dict]:
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Collect information about functions from the CSV file.
 
@@ -340,22 +340,21 @@ class GraphScaffoldService:
         """Scaffold all functions extracted from the bundle."""
         func_info = self._extract_functions_from_bundle(bundle)
         for func_name, info in func_info.items():
-            if not self.function_service.has_function(func_name):
-                try:
-                    created_path = self._scaffold_function(
-                        func_name, info, functions_path, options.overwrite_existing
-                    )
+            try:
+                created_path = self._scaffold_function(
+                    func_name, info, functions_path, options.overwrite_existing
+                )
 
-                    if created_path:
-                        result.created_files.append(created_path)
-                        result.scaffolded_count += 1
-                    else:
-                        result.skipped_files.append(functions_path / f"{func_name}.py")
+                if created_path:
+                    result.created_files.append(created_path)
+                    result.scaffolded_count += 1
+                else:
+                    result.skipped_files.append(functions_path / f"{func_name}.py")
 
-                except Exception as e:
-                    error_msg = f"Failed to scaffold function {func_name}: {str(e)}"
-                    self.logger.error(f"[GraphScaffoldService] {error_msg}")
-                    result.errors.append(error_msg)
+            except Exception as e:
+                error_msg = f"Failed to scaffold function {func_name}: {str(e)}"
+                self.logger.error(f"[GraphScaffoldService] {error_msg}")
+                result.errors.append(error_msg)
 
     def _log_service_stats(self, result: ScaffoldResult) -> None:
         """Log service statistics from scaffolding result."""
@@ -404,7 +403,11 @@ class GraphScaffoldService:
             return bundle
 
     def _scaffold_agent(
-        self, agent_type: str, info: Dict, output_path: Path, overwrite: bool = False
+        self,
+        agent_type: str,
+        info: Dict[str, Any],
+        output_path: Path,
+        overwrite: bool = False,
     ) -> Optional[Path]:
         """Scaffold agent class file with service awareness."""
         file_name = f"{agent_type.lower()}_agent.py"
@@ -465,7 +468,11 @@ class GraphScaffoldService:
             raise
 
     def _scaffold_function(
-        self, func_name: str, info: Dict, func_path: Path, overwrite: bool = False
+        self,
+        func_name: str,
+        info: Dict[str, Any],
+        func_path: Path,
+        overwrite: bool = False,
     ) -> Optional[Path]:
         """
         Create a scaffold file for a function.
