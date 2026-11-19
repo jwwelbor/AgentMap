@@ -5,7 +5,7 @@ This module provides AWS Lambda function handlers that follow SPEC-DEP-001
 by using only the runtime facade for consistent behavior across all deployment adapters.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from agentmap.deployment.serverless.base_handler import BaseHandler
 
@@ -68,7 +68,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     return handler.lambda_handler(event, context)
 
 
-def lambda_handler_with_config(config_file: str):
+def lambda_handler_with_config(
+    config_file: str,
+) -> Callable[[Dict[str, Any], Any], Dict[str, Any]]:
     """
     Create a Lambda handler with custom configuration using facade pattern.
 

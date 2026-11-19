@@ -3,12 +3,15 @@ Modernized Echo Agent demonstrating the new protocol-based pattern.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.prompt_manager_service import PromptManagerService
-from agentmap.services.protocols import PromptCapableAgent
+from agentmap.services.protocols import (
+    PromptCapableAgent,
+    PromptManagerServiceProtocol,
+)
 from agentmap.services.state_adapter_service import StateAdapterService
 
 
@@ -53,8 +56,10 @@ class EchoAgent(BaseAgent, PromptCapableAgent):
             state_adapter_service=state_adapter_service,
         )
 
-    def configure_prompt_service(self, prompt_service):
-        self.prompt_service: PromptManagerService = prompt_service
+    def configure_prompt_service(
+        self, prompt_service: PromptManagerServiceProtocol
+    ) -> None:
+        self.prompt_service = cast(PromptManagerService, prompt_service)
 
     def process(self, inputs: Dict[str, Any]) -> Any:
         """

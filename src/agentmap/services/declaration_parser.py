@@ -73,9 +73,8 @@ class DeclarationParser:
                 protocols_implemented = data.get("protocols_implemented", [])
                 protocol_requirements = self._parse_protocol_requirements(
                     data.get("protocols", []),
-                    data.get(
-                        "implements", protocols_implemented
-                    ),  # Use protocols_implemented as implements
+                    data.get("implements", protocols_implemented)
+                    or [],  # Use protocols_implemented as implements
                     data.get("requires_protocols", []),
                 )
 

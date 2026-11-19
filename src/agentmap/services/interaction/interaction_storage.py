@@ -9,6 +9,8 @@ import time
 from typing import Any, Dict, Optional
 
 from agentmap.models.human_interaction import HumanInteractionRequest
+from agentmap.services.interaction.storage_helpers import StorageHelpers
+from agentmap.services.logging_service import TraceLogger
 from agentmap.services.storage.types import WriteMode
 
 
@@ -24,10 +26,10 @@ class InteractionStorage:
 
     def __init__(
         self,
-        storage_helpers,
+        storage_helpers: StorageHelpers,
         requests_collection: str,
         responses_collection: str,
-        logger,
+        logger: TraceLogger,
     ):
         """
         Initialize interaction storage.
