@@ -1,9 +1,22 @@
 """Cache statistics mixin for the availability cache service."""
 
-from typing import Any, Dict
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict
+
+if TYPE_CHECKING:
+    from agentmap.services.config.availability_cache import ThreadSafeFileCache
+    from agentmap.services.config.change_detectors import EnvironmentChangeDetector
 
 
 class CacheStatisticsMixin:
+    _cache_file_path: Path
+    _env_detector: EnvironmentChangeDetector
+    _file_cache: ThreadSafeFileCache
+    _auto_invalidation_enabled: bool
+    _stats: Dict[str, int]
+
     def _initialize_stats(self) -> Dict[str, int]:
         return {
             "cache_hits": 0,
@@ -24,7 +37,7 @@ class CacheStatisticsMixin:
             }
             if cache_data:
                 availability_data = cache_data.get("availability", {})
-                category_counts = {}
+                category_counts: Dict[str, int] = {}
                 for cache_key in availability_data.keys():
                     parts = cache_key.split(".", 1)
                     category = (
