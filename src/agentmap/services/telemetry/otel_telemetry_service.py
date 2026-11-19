@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, ContextManager, Dict, Optional
+from typing import Any, ContextManager, Dict, Optional, cast
 
 from opentelemetry import metrics, trace
 from opentelemetry.trace import StatusCode
@@ -188,7 +188,7 @@ class OTELTelemetryService:
     def get_meter(self, name: str = "agentmap", version: Optional[str] = None) -> Any:
         """Return an OTEL Meter via ``metrics.get_meter()``."""
         try:
-            return metrics.get_meter(name, version=version)
+            return metrics.get_meter(name, version=cast(Any, version))
         except Exception as exc:
             logger.warning("Failed to get meter %r: %s", name, exc)
             return None

@@ -159,9 +159,7 @@ def get_complexity_keywords(
         Dictionary mapping complexity levels to keyword lists
     """
     task_config = get_task_type_config(task_types, task_type)
-    return cast(
-        Dict[str, List[str]], task_config.get("complexity_keywords", {})
-    )
+    return cast(Dict[str, List[str]], task_config.get("complexity_keywords", {}))
 
 
 def get_available_task_types(task_types: Dict[str, Dict[str, Any]]) -> List[str]:

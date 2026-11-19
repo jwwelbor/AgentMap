@@ -48,7 +48,9 @@ class InMemoryVectorIndex:
         for i, v, m in zip(ids, vectors, metadatas):
             self._vecs[i] = (v, m)
 
-    def search(self, query: list[float], k: int, filters: dict[str, Any] | None = None):
+    def search(
+        self, query: list[float], k: int, filters: dict[str, Any] | None = None
+    ) -> list[tuple[str, float, dict[str, Any]]]:
         items = []
         for _id, (vec, meta) in self._vecs.items():
             if filters:

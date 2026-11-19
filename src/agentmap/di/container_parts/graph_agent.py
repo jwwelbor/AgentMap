@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from dependency_injector import containers, providers
 
 if TYPE_CHECKING:
+    from agentmap.services.agent.agent_factory_service import AgentFactoryService
     from agentmap.services.agent.agent_service_injection_service import (
         AgentServiceInjectionService,
     )
@@ -21,8 +22,9 @@ class GraphAgentContainer(containers.DeclarativeContainer):
     # Dependency providers resolve these values dynamically at runtime.
     features_registry_service: Any = providers.Dependency()
     logging_service: Any = providers.Dependency()
+    custom_agent_loader: Any = providers.Object(None)
     app_config_service: Any = providers.Dependency()
-    agent_factory_service: Any = providers.Dependency()
+    agent_factory_service: Any = providers.Object(None)
     llm_service: Any = providers.Dependency()
     storage_service_manager: Any = providers.Dependency()
     host_protocol_configuration_service: Any = providers.Dependency()
@@ -36,6 +38,35 @@ class GraphAgentContainer(containers.DeclarativeContainer):
     declaration_registry_service: Any = providers.Dependency()
     telemetry_service: Any = providers.Dependency()
     file_path_service: Any = providers.Dependency()
+
+    @staticmethod
+    def _resolve_agent_factory_service(
+        agent_factory_service: AgentFactoryService | None,
+        features_registry_service: Any,
+        logging_service: Any,
+        custom_agent_loader: Any,
+        app_config_service: Any,
+    ) -> AgentFactoryService:
+        if agent_factory_service is not None:
+            return agent_factory_service
+
+        from agentmap.services.agent.agent_factory_service import AgentFactoryService
+
+        return AgentFactoryService(
+            features_registry_service,
+            logging_service,
+            custom_agent_loader,
+            app_config_service,
+        )
+
+    resolved_agent_factory_service = providers.Singleton(
+        _resolve_agent_factory_service,
+        agent_factory_service,
+        features_registry_service,
+        logging_service,
+        custom_agent_loader,
+        app_config_service,
+    )
 
     @staticmethod
     def _create_agent_service_injection_service(
@@ -107,7 +138,7 @@ class GraphAgentContainer(containers.DeclarativeContainer):
 
     graph_agent_instantiation_service = providers.Singleton(
         _create_graph_agent_instantiation_service,
-        agent_factory_service,
+        resolved_agent_factory_service,
         agent_service_injection_service,
         execution_tracking_service,
         state_adapter_service,

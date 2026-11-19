@@ -207,9 +207,7 @@ class CSVGraphParserService:
         """Delegate to parser component."""
         return self.parser.parse_dataframe_to_spec(df, csv_path)
 
-    def _parse_edge_targets(
-        self, edge_value: str
-    ) -> Optional[Union[str, List[str]]]:
+    def _parse_edge_targets(self, edge_value: str) -> Optional[Union[str, List[str]]]:
         """Delegate to parser component."""
         return self.parser.parse_edge_targets(edge_value)
 

@@ -24,9 +24,7 @@ class DeclarationConfigManager(BaseConfigManager):
         Returns:
             List of Path objects for custom declaration directories
         """
-        declaration_paths_config: List[Any] = self.get_value(
-            "declarations.custom", []
-        )
+        declaration_paths_config: List[Any] = self.get_value("declarations.custom", [])
 
         declaration_paths = []
         for path_config in declaration_paths_config:

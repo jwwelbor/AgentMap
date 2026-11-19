@@ -189,6 +189,36 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
             kwargs["stream_options"] = {"include_usage": True}
         return client_class(**kwargs)
 
+    def _load_anthropic_client_class(self) -> Any:
+        try:
+            from langchain_anthropic import ChatAnthropic
+
+            return ChatAnthropic
+        except ImportError:
+            try:
+                client_class = getattr(
+                    importlib.import_module("langchain_community.chat_models"),
+                    "ChatAnthropic",
+                )
+                self._logger.warning(
+                    "Using community LangChain import. Consider upgrading to langchain-anthropic."
+                )
+                return client_class
+            except (ImportError, AttributeError):
+                try:
+                    client_class = getattr(
+                        importlib.import_module("langchain.chat_models"),
+                        "ChatAnthropic",
+                    )
+                    self._logger.warning(
+                        "Using legacy LangChain import. Please upgrade your dependencies."
+                    )
+                    return client_class
+                except (ImportError, AttributeError):
+                    raise LLMDependencyError(
+                        "Anthropic dependencies not found. Install with: pip install langchain-anthropic"
+                    )
+
     def _create_anthropic_client(
         self,
         api_key: str,
@@ -213,38 +243,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         if governed:
             return observed_anthropic_client(kwargs, owner)
 
-        client_class: Any
-        try:
-            # Try langchain-anthropic first
-            from langchain_anthropic import ChatAnthropic
-
-            client_class = ChatAnthropic
-        except ImportError:
-            try:
-                from langchain_community.chat_models import (
-                    ChatAnthropic as CommunityChatAnthropic,
-                )
-
-                client_class = CommunityChatAnthropic
-
-                self._logger.warning(
-                    "Using community LangChain import. Consider upgrading to langchain-anthropic."
-                )
-            except ImportError:
-                try:
-                    client_class = getattr(
-                        importlib.import_module("langchain.chat_models"),
-                        "ChatAnthropic",
-                    )
-
-                    self._logger.warning(
-                        "Using legacy LangChain import. Please upgrade your dependencies."
-                    )
-                except (ImportError, AttributeError):
-                    raise LLMDependencyError(
-                        "Anthropic dependencies not found. Install with: pip install langchain-anthropic"
-                    )
-
+        client_class = self._load_anthropic_client_class()
         return client_class(**kwargs)
 
     def _create_google_client(

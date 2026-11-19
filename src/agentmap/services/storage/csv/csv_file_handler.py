@@ -44,9 +44,7 @@ class CSVFileHandler:
         }
         self._logger = logger
 
-    def read_csv_file(
-        self, file_path: str, **kwargs: Any
-    ) -> pd.DataFrame:
+    def read_csv_file(self, file_path: str, **kwargs: Any) -> pd.DataFrame:
         """
         Read CSV file with error handling.
 

@@ -2,7 +2,7 @@
 Workflow query routes - Simple and clean.
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -70,7 +70,7 @@ router = APIRouter(prefix="/workflows", tags=["Workflows"])
 
 @router.get("", response_model=WorkflowListResponse)
 @requires_auth("read")
-async def list_workflows(request: Request):
+async def list_workflows(request: Request) -> WorkflowListResponse:
     """List all available workflows."""
     try:
         # TD-018/TD-049: ensure_initialized_async offloads the synchronous
@@ -96,7 +96,7 @@ async def list_workflows(request: Request):
                     repository_path = repo_meta["repository_path"]
                     break
 
-        workflows_by_name = {}
+        workflows_by_name: dict[str, dict[str, Any]] = {}
         for graph in graphs:
             workflow_name = graph.get("workflow") or graph.get("name")
             if not workflow_name:
@@ -152,7 +152,9 @@ async def list_workflows(request: Request):
 
 @router.get("/{graph_id:path}", response_model=WorkflowDetailResponse)
 @requires_auth("read")
-async def get_workflow_details(graph_id: str, request: Request):
+async def get_workflow_details(
+    graph_id: str, request: Request
+) -> WorkflowDetailResponse:
     """Get details for a specific workflow."""
     try:
         # TD-018/TD-049: see list_workflows above.
