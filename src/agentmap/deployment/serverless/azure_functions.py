@@ -7,7 +7,7 @@ by using only the runtime facade for consistent behavior across all deployment a
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple, cast
 
 from agentmap.deployment.serverless.base_handler import BaseHandler
 
@@ -15,7 +15,7 @@ from agentmap.deployment.serverless.base_handler import BaseHandler
 class AzureFunctionHandler(BaseHandler):
     """Azure Function handler using facade pattern through BaseHandler."""
 
-    def azure_handler(self, req) -> Dict[str, Any]:
+    def azure_handler(self, req: Any) -> Dict[str, Any]:
         """
         Azure Function entry point for HTTP triggers using facade pattern.
 
@@ -34,7 +34,7 @@ class AzureFunctionHandler(BaseHandler):
         # Azure Functions expects different response format
         return self._convert_to_azure_response(result)
 
-    def _convert_azure_request(self, req) -> Dict[str, Any]:
+    def _convert_azure_request(self, req: Any) -> Dict[str, Any]:
         """Convert Azure Functions request to standard event format."""
         try:
             if hasattr(req, "method") and req.method == "POST":
@@ -42,7 +42,7 @@ class AzureFunctionHandler(BaseHandler):
                 try:
                     request_json = req.get_json()
                     if request_json:
-                        return request_json
+                        return cast(Dict[str, Any], request_json)
                 except ValueError:
                     pass
 
@@ -50,7 +50,7 @@ class AzureFunctionHandler(BaseHandler):
                 try:
                     body = req.get_body().decode("utf-8")
                     if body:
-                        return json.loads(body)
+                        return cast(Dict[str, Any], json.loads(body))
                 except (json.JSONDecodeError, AttributeError):
                     pass
 
@@ -105,7 +105,7 @@ def get_azure_handler(config_file: Optional[str] = None) -> AzureFunctionHandler
     return _azure_handler_instance
 
 
-def azure_http_handler(req):
+def azure_http_handler(req: Any) -> Dict[str, Any]:
     """
     Main Azure HTTP Function handler using facade pattern.
 
@@ -121,7 +121,7 @@ def azure_http_handler(req):
     return handler.azure_handler(req)
 
 
-def azure_blob_handler(blob, context):
+def azure_blob_handler(blob: Any, context: Any) -> None:
     """
     Main Azure Blob Storage Function handler using facade pattern.
 
@@ -153,7 +153,7 @@ def azure_blob_handler(blob, context):
     logging.info(f"Blob handler result: {result}")
 
 
-def azure_queue_handler(queueItem, context):
+def azure_queue_handler(queueItem: Any, context: Any) -> None:
     """
     Main Azure Queue Function handler using facade pattern.
 
@@ -181,7 +181,7 @@ def azure_queue_handler(queueItem, context):
     logging.info(f"Queue handler result: {result}")
 
 
-def azure_event_grid_handler(eventGridEvent, context):
+def azure_event_grid_handler(eventGridEvent: Any, context: Any) -> None:
     """
     Main Azure Event Grid Function handler using facade pattern.
 
@@ -208,7 +208,14 @@ def azure_event_grid_handler(eventGridEvent, context):
     logging.info(f"Event Grid handler result: {result}")
 
 
-def azure_handler_with_config(config_file: str):
+def azure_handler_with_config(
+    config_file: str,
+) -> Tuple[
+    Callable[[Any], Dict[str, Any]],
+    Callable[[Any, Any], None],
+    Callable[[Any, Any], None],
+    Callable[[Any, Any], None],
+]:
     """
     Create Azure handlers with custom configuration using facade pattern.
 
@@ -220,10 +227,10 @@ def azure_handler_with_config(config_file: str):
     """
     handler = AzureFunctionHandler(config_file=config_file)
 
-    def configured_http_handler(req):
+    def configured_http_handler(req: Any) -> Dict[str, Any]:
         return handler.azure_handler(req)
 
-    def configured_blob_handler(blob, context):
+    def configured_blob_handler(blob: Any, context: Any) -> None:
         event_data = {
             "Records": [
                 {
@@ -238,7 +245,7 @@ def azure_handler_with_config(config_file: str):
         result = handler.handle_request_sync(event_data, context)
         logging.info(f"Configured Blob handler result: {result}")
 
-    def configured_queue_handler(queueItem, context):
+    def configured_queue_handler(queueItem: Any, context: Any) -> None:
         event_data = {
             "Records": [
                 {
@@ -253,7 +260,7 @@ def azure_handler_with_config(config_file: str):
         result = handler.handle_request_sync(event_data, context)
         logging.info(f"Configured Queue handler result: {result}")
 
-    def configured_event_grid_handler(eventGridEvent, context):
+    def configured_event_grid_handler(eventGridEvent: Any, context: Any) -> None:
         event_data = {
             "graph": eventGridEvent.get("subject", "default"),
             "state": eventGridEvent.get("data", {}),
@@ -272,7 +279,7 @@ def azure_handler_with_config(config_file: str):
 # Example usage patterns for different Azure configurations:
 
 
-def run_graph_azure_handler(req):
+def run_graph_azure_handler(req: Any) -> Dict[str, Any]:
     """Azure HTTP handler specifically for graph execution."""
     handler = get_azure_handler()
 
