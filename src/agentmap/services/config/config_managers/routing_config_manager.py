@@ -17,7 +17,7 @@ class RoutingConfigManager(BaseConfigManager):
 
     def get_routing_config(self) -> Dict[str, Any]:
         """Get the routing configuration with default values."""
-        routing_config = self.get_section("routing", {})
+        routing_config: Dict[str, Any] = self.get_section("routing", {})
 
         # Default routing configuration matching LLMRoutingConfigService expectations
         defaults = {

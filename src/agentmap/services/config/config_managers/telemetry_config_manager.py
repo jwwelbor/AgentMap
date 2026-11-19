@@ -1,6 +1,6 @@
 """Telemetry configuration manager."""
 
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.services.config.config_managers.base_config_manager import (
@@ -50,7 +50,7 @@ class TelemetryConfigManager(BaseConfigManager):
                 if enabled or trace flags are non-boolean, or if resource
                 attribute values are non-string.
         """
-        raw = self.get_section("telemetry", {})
+        raw: Any = self.get_section("telemetry", {})
         if raw is None:
             raw = {}
         merged = self._merge_with_defaults(raw, DEFAULTS)
@@ -66,11 +66,11 @@ class TelemetryConfigManager(BaseConfigManager):
         Returns:
             True if telemetry is enabled, False otherwise.
         """
-        raw = self.get_section("telemetry", {})
+        raw: Any = self.get_section("telemetry", {})
         if raw is None:
             raw = {}
         merged = self._merge_with_defaults(raw, DEFAULTS)
-        return merged["enabled"]
+        return cast(bool, merged["enabled"])
 
     def get_exporter_config(self) -> Dict[str, str]:
         """
@@ -112,7 +112,9 @@ class TelemetryConfigManager(BaseConfigManager):
             to 'agentmap'.
         """
         config = self.get_telemetry_config()
-        return config.get("resource", {"service.name": "agentmap"})
+        return cast(
+            Dict[str, str], config.get("resource", {"service.name": "agentmap"})
+        )
 
     def _validate(self, config: Dict[str, Any]) -> None:
         """

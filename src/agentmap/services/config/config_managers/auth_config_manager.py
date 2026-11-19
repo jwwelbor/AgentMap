@@ -17,7 +17,7 @@ class AuthConfigManager(BaseConfigManager):
 
     def get_auth_config(self) -> Dict[str, Any]:
         """Get authentication configuration with default values."""
-        auth_config = self.get_section("authentication", {})
+        auth_config: Dict[str, Any] = self.get_section("authentication", {})
 
         # Default authentication configuration
         defaults = {

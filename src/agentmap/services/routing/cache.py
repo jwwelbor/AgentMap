@@ -133,7 +133,7 @@ class RoutingCache:
         complexity: TaskComplexity,
         prompt: str,
         available_providers: List[str],
-        provider_preference: List[str] = None,
+        provider_preference: Optional[List[str]] = None,
         cost_optimization: bool = True,
         ttl: Optional[int] = None,
     ) -> Optional[RoutingDecision]:
@@ -200,7 +200,7 @@ class RoutingCache:
         prompt: str,
         available_providers: List[str],
         decision: RoutingDecision,
-        provider_preference: List[str] = None,
+        provider_preference: Optional[List[str]] = None,
         cost_optimization: bool = True,
     ) -> None:
         """

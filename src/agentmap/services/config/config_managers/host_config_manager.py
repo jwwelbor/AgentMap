@@ -27,7 +27,7 @@ class HostConfigManager(BaseConfigManager):
         Returns:
             Dictionary containing host application configuration
         """
-        host_config = self.get_section("host_application", {})
+        host_config: Dict[str, Any] = self.get_section("host_application", {})
 
         # Default host application configuration
         defaults = {
