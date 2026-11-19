@@ -5,12 +5,18 @@ This module provides a GCP-specific implementation of the CloudMessageAdapter
 interface for publishing messages to Google Cloud Pub/Sub topics.
 """
 
+from __future__ import annotations
+
 import importlib
 import json
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from agentmap.exceptions import MessagingConnectionError
 from agentmap.models.storage.types import StorageResult
+from agentmap.services.logging_service import TraceLogger
+
+if TYPE_CHECKING:
+    from agentmap.services.messaging.messaging_service import CloudProvider
 
 
 class GCPMessageAdapter:
@@ -21,7 +27,7 @@ class GCPMessageAdapter:
     Google Cloud Pub/Sub, supporting topic creation and message publishing.
     """
 
-    def __init__(self, config: Dict[str, Any], logger):
+    def __init__(self, config: Dict[str, Any], logger: TraceLogger) -> None:
         """
         Initialize the GCP Pub/Sub adapter.
 
@@ -31,8 +37,8 @@ class GCPMessageAdapter:
         """
         self.config = config or {}
         self.logger = logger
-        self._client = None
-        self._publisher = None
+        self._client: Any = None
+        self._publisher: Any = None
         self.project_id = None
 
         # Initialize client
@@ -91,7 +97,7 @@ class GCPMessageAdapter:
         topic: str,
         message: Dict[str, Any],
         attributes: Optional[Dict[str, str]] = None,
-    ) -> StorageResult:
+    ) -> StorageResult[Any]:
         """
         Publish a message to a GCP Pub/Sub topic.
 
@@ -149,7 +155,7 @@ class GCPMessageAdapter:
                 operation="publish_message",
             )
 
-    async def create_topic(self, topic_name: str) -> StorageResult:
+    async def create_topic(self, topic_name: str) -> StorageResult[Any]:
         """
         Create a topic if it doesn't exist.
 
@@ -205,7 +211,7 @@ class GCPMessageAdapter:
                 operation="create_topic",
             )
 
-    def get_provider(self):
+    def get_provider(self) -> CloudProvider:
         """Get the cloud provider type."""
         from agentmap.services.messaging.messaging_service import CloudProvider
 
