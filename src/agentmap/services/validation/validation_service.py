@@ -1,12 +1,13 @@
 # src/agentmap/services/validation/validation_service.py
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, NoReturn, Optional, Tuple
 
 import typer
 
 from agentmap.exceptions.validation_exceptions import ValidationException
 from agentmap.models.validation.validation_models import ValidationResult
 from agentmap.services.config import AppConfigService
+from agentmap.services.config.llm_models_config_service import LLMModelsConfigService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.validation.config_validation_service import (
     ConfigValidationService,
@@ -52,7 +53,7 @@ class ValidationService:
             self.csv_validator = csv_validator
 
         self.config_validator = config_validator or ConfigValidationService(
-            logging_service
+            logging_service, LLMModelsConfigService(config_service)
         )
         self.cache_service = cache_service or ValidationCacheService()
 
@@ -102,20 +103,21 @@ class ValidationService:
         csv_result = self.validate_csv_file(csv_path, use_cache)
 
         if csv_result.has_errors:
-            raise ValidationException(csv_result)
+            _raise_validation_exception(csv_result)
 
         if config_path:
             config_result = self.validate_config_file(config_path, use_cache)
             if config_result.has_errors:
-                raise ValidationException(config_result)
+                _raise_validation_exception(config_result)
 
     def clear_validation_cache(self, file_path: Optional[str] = None) -> int:
-        return self.cache_service.clear_cache(file_path)
+        path = Path(file_path) if file_path is not None else None
+        return self.cache_service.clear_cache(path)
 
     def cleanup_validation_cache(self) -> int:
         return self.cache_service.cleanup_expired()
 
-    def get_validation_cache_stats(self) -> dict:
+    def get_validation_cache_stats(self) -> Dict[str, int]:
         return self.cache_service.get_cache_stats()
 
     # ========================================================================
@@ -157,7 +159,7 @@ class ValidationService:
         self,
         csv_result: Optional[ValidationResult] = None,
         config_result: Optional[ValidationResult] = None,
-    ):
+    ) -> None:
         """Print validation summary to console using typer for formatting."""
         if csv_result:
             self._print_single_validation_summary("CSV", csv_result)
@@ -167,7 +169,7 @@ class ValidationService:
 
     def _print_single_validation_summary(
         self, file_type: str, result: ValidationResult
-    ):
+    ) -> None:
         """Print summary for a single validation result."""
         if result.has_errors:
             typer.secho(f"\n❌ {file_type} Validation Errors:", fg=typer.colors.RED)
@@ -190,3 +192,14 @@ class ValidationService:
                 f"🔍 {file_type} validation completed successfully",
                 fg=typer.colors.GREEN,
             )
+
+
+def _raise_validation_exception(result: ValidationResult) -> NoReturn:
+    """Raise a validation failure with the details from its result."""
+    raise ValidationException(
+        file_path=result.file_path,
+        error_count=len(result.errors),
+        error_messages=[error.message for error in result.errors],
+        warning_count=len(result.warnings),
+        info_count=len(result.info),
+    )

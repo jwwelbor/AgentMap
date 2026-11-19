@@ -5,9 +5,15 @@ This module provides configuration loading functionality that can be mixed into
 storage services to handle provider-specific configuration loading.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Dict
 
 from agentmap.services.storage.types import StorageConfig
+
+if TYPE_CHECKING:
+    from agentmap.services.config.storage_config_service import StorageConfigService
+    from agentmap.services.logging_service import TraceLogger
 
 
 class ConfigLoaderMixin:
@@ -27,8 +33,8 @@ class ConfigLoaderMixin:
 
     # Type hints for attributes expected from the base class
     provider_name: str
-    configuration: Any
-    _logger: Any
+    configuration: StorageConfigService
+    _logger: TraceLogger
 
     def _load_provider_config(self) -> StorageConfig:
         """
@@ -38,9 +44,7 @@ class ConfigLoaderMixin:
             StorageConfig for this provider
         """
         if self.provider_name.startswith("system_"):
-            return (
-                self.configuration
-            )  # System storage is static dict src\agentmap\services\storage\system_manager.py
+            return StorageConfig(provider=self.provider_name)
 
         try:
             config_data = self._get_provider_config_data()
@@ -60,7 +64,7 @@ class ConfigLoaderMixin:
             # Return minimal config to prevent startup failures
             return StorageConfig(provider=self.provider_name)
 
-    def _get_provider_config_data(self) -> dict:
+    def _get_provider_config_data(self) -> Dict[str, Any]:
         """
         Get provider configuration data from the configuration service.
 
@@ -72,14 +76,15 @@ class ConfigLoaderMixin:
             # Use named provider methods for known providers
             method_name = f"get_{self.provider_name}_config"
             if hasattr(self.configuration, method_name):
-                return getattr(self.configuration, method_name)()
+                config_data = getattr(self.configuration, method_name)()
+                return config_data if isinstance(config_data, dict) else {}
             else:
                 return self.configuration.get_provider_config(self.provider_name)
         else:
             # Use generic provider method for other providers
             return self.configuration.get_provider_config(self.provider_name)
 
-    def _apply_fallback_config(self, config_data: dict) -> dict:
+    def _apply_fallback_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Apply fallback configuration if provider config is empty.
 
@@ -102,14 +107,16 @@ class ConfigLoaderMixin:
         if not config_data and self.provider_name in storage_type_providers:
             storage_type_method = f"get_{self.provider_name}_config"
             if hasattr(self.configuration, storage_type_method):
-                config_data = getattr(self.configuration, storage_type_method)()
-                self._logger.debug(
-                    f"[{self.provider_name}] Using storage type config as fallback"
-                )
+                fallback_data = getattr(self.configuration, storage_type_method)()
+                if isinstance(fallback_data, dict):
+                    config_data = fallback_data
+                    self._logger.debug(
+                        f"[{self.provider_name}] Using storage type config as fallback"
+                    )
 
         return config_data or {}
 
-    def _ensure_provider_name(self, config_data: dict) -> dict:
+    def _ensure_provider_name(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Ensure provider name is present in configuration data.
 

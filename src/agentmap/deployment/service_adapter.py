@@ -10,7 +10,7 @@ conversion and formatting functionality.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 from dependency_injector.containers import Container
 
@@ -20,7 +20,7 @@ from agentmap.models.execution.result import ExecutionResult
 class ServiceAdapter:
     """Adapter for result conversion, error handling, and response formatting."""
 
-    def __init__(self, container: Container):
+    def __init__(self, container: Optional[Container]):
         """Initialize adapter with DI container."""
         self.container = container
 
@@ -134,7 +134,7 @@ class ServiceAdapter:
             "body": json.dumps(body),
         }
 
-    def initialize_services(self):
+    def initialize_services(self) -> Tuple[Any, Any, Any]:
         """
         Initialize services from DI container.
 
@@ -145,6 +145,8 @@ class ServiceAdapter:
             Tuple of commonly used services
         """
         try:
+            if self.container is None:
+                raise RuntimeError("DI container is not available")
             graph_runner_service = self.container.graph_runner_service()
             app_config_service = self.container.app_config_service()
             logging_service = self.container.logging_service()
@@ -235,7 +237,7 @@ def create_service_adapter(container: Container) -> ServiceAdapter:
 
 
 # Legacy validation function - kept for backward compatibility
-def validate_run_parameters(**params) -> None:
+def validate_run_parameters(**params: Any) -> None:
     """
     Validate common run parameters before processing.
 
@@ -268,6 +270,11 @@ def validate_run_parameters(**params) -> None:
 
 
 # NEW: Trigger parameter extraction helpers for serverless functions
+def _as_parameter_dict(value: Any) -> Dict[str, Any]:
+    """Return trigger data as a dictionary, or an empty mapping if malformed."""
+    return value if isinstance(value, dict) else {}
+
+
 class TriggerParameterExtractor:
     """Helper to extract parameters from serverless trigger events."""
 
@@ -284,20 +291,21 @@ class TriggerParameterExtractor:
         """
         # HTTP triggers
         if "httpMethod" in event:
-            if event.get("httpMethod").upper() == "POST":
+            http_method = event.get("httpMethod")
+            if isinstance(http_method, str) and http_method.upper() == "POST":
                 body = event.get("body", "{}")
                 if isinstance(body, str):
                     try:
-                        params = json.loads(body)
+                        params = _as_parameter_dict(json.loads(body))
                     except json.JSONDecodeError:
                         params = {}
                 else:
-                    params = body or {}
+                    params = _as_parameter_dict(body)
             else:
-                params = event.get("queryStringParameters") or {}
+                params = _as_parameter_dict(event.get("queryStringParameters"))
 
             # Add path parameters
-            path_params = event.get("pathParameters") or {}
+            path_params = _as_parameter_dict(event.get("pathParameters"))
             params.update(path_params)
 
             return params
@@ -308,10 +316,10 @@ class TriggerParameterExtractor:
             body = record.get("body", "{}")
             if isinstance(body, str):
                 try:
-                    return json.loads(body)
+                    return _as_parameter_dict(json.loads(body))
                 except json.JSONDecodeError:
                     return {"csv_or_workflow": "default"}
-            return body
+            return _as_parameter_dict(body)
 
         # Direct invocation
         else:
@@ -370,7 +378,8 @@ class ResponseFormatter:
 
     @staticmethod
     def for_serverless(
-        result: Union[ExecutionResult, Dict[str, Any]], correlation_id: str = None
+        result: Union[ExecutionResult, Dict[str, Any]],
+        correlation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Format result for serverless HTTP response."""
         adapter = ServiceAdapter(None)  # No container needed for formatting

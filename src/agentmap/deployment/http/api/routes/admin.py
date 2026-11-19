@@ -2,7 +2,7 @@
 Admin routes - System administration and diagnostics.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -25,7 +25,7 @@ class DiagnosticsResponse(BaseModel):
     llm_ready: bool = Field(..., description="LLM features ready")
     storage_ready: bool = Field(..., description="Storage features ready")
     features: Dict[str, Any] = Field(..., description="Feature details")
-    suggestions: list = Field(..., description="Installation suggestions")
+    suggestions: List[str] = Field(..., description="Installation suggestions")
 
 
 class ConfigResponse(BaseModel):
@@ -38,8 +38,10 @@ class CacheResponse(BaseModel):
     """Cache information."""
 
     action: str = Field(..., description="Action performed")
-    stats: Optional[Dict[str, Any]] = Field(None, description="Cache statistics")
-    removed_entries: Optional[int] = Field(None, description="Entries removed")
+    stats: Optional[Dict[str, Any]] = Field(
+        default=None, description="Cache statistics"
+    )
+    removed_entries: Optional[int] = Field(default=None, description="Entries removed")
 
 
 class VersionResponse(BaseModel):
@@ -70,7 +72,7 @@ router = APIRouter(prefix="/admin", tags=["Administration"])
 
 @router.get("/diagnostics", response_model=DiagnosticsResponse)
 @requires_auth("admin")
-async def get_diagnostics(request: Request):
+async def get_diagnostics(request: Request) -> DiagnosticsResponse:
     """Get comprehensive system diagnostics."""
     try:
         await ensure_initialized_async()
@@ -100,7 +102,7 @@ async def get_diagnostics(request: Request):
 
 @router.get("/config", response_model=ConfigResponse)
 @requires_auth("admin")
-async def get_configuration(request: Request):
+async def get_configuration(request: Request) -> ConfigResponse:
     """Get current system configuration."""
     try:
         await ensure_initialized_async()
@@ -119,7 +121,7 @@ async def get_configuration(request: Request):
 
 @router.get("/cache", response_model=CacheResponse)
 @requires_auth("admin")
-async def get_cache_stats(request: Request):
+async def get_cache_stats(request: Request) -> CacheResponse:
     """Get cache statistics."""
     try:
         await ensure_initialized_async()
@@ -140,9 +142,9 @@ async def get_cache_stats(request: Request):
 @router.post("/cache/clear", response_model=CacheResponse)
 @requires_auth("admin")
 async def clear_cache(
+    request: Request,
     file_path: Optional[str] = Query(None, description="Clear specific file only"),
-    request: Request = None,
-):
+) -> CacheResponse:
     """Clear validation cache."""
     try:
         await ensure_initialized_async()
@@ -158,6 +160,7 @@ async def clear_cache(
         outputs = result.get("outputs", {})
         return CacheResponse(
             action=outputs.get("action", "clear"),
+            stats=None,
             removed_entries=outputs.get("removed_entries", 0),
         )
 
@@ -168,7 +171,7 @@ async def clear_cache(
 
 
 @router.get("/version", response_model=VersionResponse)
-async def get_version():
+async def get_version() -> VersionResponse:
     """Get version information (no auth required)."""
     try:
         # TODO: Add get_version() to runtime_api
@@ -181,7 +184,7 @@ async def get_version():
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check():
+async def health_check() -> HealthResponse:
     """Basic health check (no auth required)."""
     try:
         # TODO: Add get_health() to runtime_api
@@ -196,7 +199,7 @@ async def health_check():
 
 @router.get("/paths", response_model=PathsResponse)
 @requires_auth("admin")
-async def get_system_paths(request: Request):
+async def get_system_paths(request: Request) -> PathsResponse:
     """Get system directory paths."""
     try:
         await ensure_initialized_async()
