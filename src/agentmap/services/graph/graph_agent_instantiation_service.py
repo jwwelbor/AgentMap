@@ -7,14 +7,17 @@ graph assembly (GraphAssemblyService) by creating actual agent instances with
 injected services.
 """
 
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from agentmap.models.graph_bundle import GraphBundle
 from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from agentmap.services.agent.agent_service_injection_service import (
     AgentServiceInjectionService,
 )
-from agentmap.services.declaration_registry_service import DeclarationRegistryService
+from agentmap.services.declaration_registry_service import (
+    DeclarationRegistryService,
+    RunScopedDeclarationRegistry,
+)
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
 from agentmap.services.file_path_service import FilePathService
 from agentmap.services.graph.graph_agent_validation_service import (
@@ -84,7 +87,9 @@ class GraphAgentInstantiationService:
         self.declaration_registry = declaration_registry_service
         self.telemetry_service = telemetry_service
         self.logger = logging_service.get_class_logger(self)
-        self._graph_runner_service = None  # Late-bound to avoid circular dependency
+        self._graph_runner_service: Any = (
+            None  # Late-bound to avoid circular dependency
+        )
 
         # Initialize helper services
         self._tool_loading_service = GraphToolLoadingService(
@@ -227,7 +232,7 @@ class GraphAgentInstantiationService:
         graph_name: str,
         node_definitions_registry: Dict[str, Any],
         execution_tracker: Optional[Any],
-    ) -> tuple:
+    ) -> Tuple[int, List[Tuple[str, str]]]:
         """
         Instantiate all agents in the bundle.
 
@@ -241,9 +246,12 @@ class GraphAgentInstantiationService:
             Tuple of (instantiated_count, failed_nodes)
         """
         instantiated_count = 0
-        failed_nodes = []
+        failed_nodes: List[Tuple[str, str]] = []
+        nodes = bundle.nodes
+        if nodes is None:
+            return instantiated_count, failed_nodes
 
-        for node_name, node in bundle.nodes.items():
+        for node_name, node in nodes.items():
             try:
                 self._instantiate_single_agent(
                     bundle=bundle,
@@ -324,7 +332,11 @@ class GraphAgentInstantiationService:
         self._configure_tools(bundle, agent_instance, node_name)
 
         # Step 3: Store instance in node_registry
-        bundle.node_instances[node_name] = agent_instance
+        node_instances = bundle.node_instances
+        if node_instances is None:
+            node_instances = {}
+            bundle.node_instances = node_instances
+        node_instances[node_name] = agent_instance
 
         self.logger.debug(
             f"[GraphAgentInstantiationService] Successfully instantiated: {node_name}"
@@ -351,7 +363,9 @@ class GraphAgentInstantiationService:
             return None
 
         # Prefer scoped registry from bundle for thread-safe concurrent execution
-        registry = None
+        registry: Optional[
+            Union[RunScopedDeclarationRegistry, DeclarationRegistryService]
+        ] = None
         if (
             bundle is not None
             and hasattr(bundle, "scoped_registry")
@@ -489,7 +503,7 @@ class GraphAgentInstantiationService:
             node_name: Name of the node for logging
         """
         if isinstance(agent_instance, ToolCapableAgent):
-            tools = bundle.tools.get(node_name, [])
+            tools = (bundle.tools or {}).get(node_name, [])
             if tools:
                 agent_instance.configure_tools(tools)
                 tool_names = [t.name for t in tools]

@@ -257,7 +257,7 @@ class EdgeProcessor:
         self,
         builder: StateGraph[Any],
         node_name: str,
-        failure_target: Optional[str] = None,
+        failure_target: Optional[Union[str, List[str]]] = None,
         all_node_names: Optional[List[str]] = None,
     ) -> None:
         """Add dynamic routing for orchestrator nodes.

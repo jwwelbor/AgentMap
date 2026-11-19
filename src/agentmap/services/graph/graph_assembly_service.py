@@ -55,7 +55,7 @@ class GraphAssemblyService:
 
         state_schema = self.state_schema_builder.get_state_schema_from_config()
         self.builder = StateGraph(state_schema=state_schema)
-        self.orchestrator_nodes: list = []
+        self.orchestrator_nodes: list[str] = []
         self.orchestrator_node_registry: Optional[Dict[str, Any]] = None
         self.injection_stats = {
             "orchestrators_found": 0,
@@ -138,7 +138,7 @@ class GraphAssemblyService:
             )
 
     def _compile_graph(
-        self, graph: Graph, checkpointer: Optional[BaseCheckpointSaver] = None
+        self, graph: Graph, checkpointer: Optional[BaseCheckpointSaver[Any]] = None
     ) -> Any:
         """Compile the graph with optional checkpoint support."""
         if checkpointer:
@@ -166,7 +166,7 @@ class GraphAssemblyService:
         graph: Graph,
         agent_instances: Dict[str, Any],
         node_definitions: Optional[Dict[str, Any]] = None,
-        checkpointer: Optional[BaseCheckpointSaver] = None,
+        checkpointer: Optional[BaseCheckpointSaver[Any]] = None,
     ) -> Any:
         """Assemble an executable LangGraph with checkpoint support."""
         self.logger.info(f"Starting checkpoint-enabled graph assembly: '{graph.name}'")
@@ -179,7 +179,7 @@ class GraphAssemblyService:
         graph: Graph,
         agent_instances: Dict[str, Any],
         orchestrator_node_registry: Optional[Dict[str, Any]],
-        checkpointer: Optional[BaseCheckpointSaver],
+        checkpointer: Optional[BaseCheckpointSaver[Any]],
         use_async: bool = False,
     ) -> Any:
         """Common assembly logic for both standard and checkpoint-enabled graphs."""
@@ -222,7 +222,7 @@ class GraphAssemblyService:
         graph: Graph,
         agent_instances: Dict[str, Any],
         node_definitions: Optional[Dict[str, Any]] = None,
-        checkpointer: Optional[BaseCheckpointSaver] = None,
+        checkpointer: Optional[BaseCheckpointSaver[Any]] = None,
     ) -> Any:
         """Assemble a checkpoint-enabled LangGraph binding async callables.
 
