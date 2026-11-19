@@ -212,6 +212,37 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
             saved_config["configurable"]["checkpoint_id"],
         )
 
+    def test_get_tuple_falls_back_from_newer_invalid_checkpoint_payload(self):
+        config = {"configurable": {"thread_id": "thread-payload"}}
+        saved_config = self.service.put(
+            config=config,
+            checkpoint={"state": {"value": "valid"}},
+            metadata={},
+            new_versions={},
+        )
+        self.file_storage.write(
+            collection="",
+            data=pickle.dumps(
+                {
+                    "checkpoint_id": "invalid",
+                    "checkpoint_ns": "",
+                    "timestamp": "2999-01-01T00:00:00.000000",
+                }
+            ),
+            document_id="thread-payload_invalid.pkl",
+            mode=WriteMode.WRITE,
+            binary_mode=True,
+        )
+
+        result = self.service.get_tuple(config)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.checkpoint["state"]["value"], "valid")
+        self.assertEqual(
+            result.config["configurable"]["checkpoint_id"],
+            saved_config["configurable"]["checkpoint_id"],
+        )
+
     def test_get_tuple_handles_identical_timestamps(self):
         """Test that when timestamps are identical, latest file wins (insertion order)."""
         config = {"configurable": {"thread_id": "thread-timing"}}

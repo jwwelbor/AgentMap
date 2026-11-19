@@ -176,12 +176,10 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                 self.logger.debug(f"no files found for thread {thread_id}")
                 return None
 
-            # Find the latest checkpoint file
-            # We need to get file metadata to sort by timestamp
-            latest_file: Optional[Dict[str, Any]] = None
-            latest_timestamp: Optional[str] = None
-
-            for filename in thread_files:
+            # Collect candidates first so invalid newer records can fall back
+            # to the latest valid checkpoint.
+            candidates: list[tuple[str, int, Dict[str, Any]]] = []
+            for index, filename in enumerate(thread_files):
                 try:
                     file_data = self.file_storage.read(
                         collection="", document_id=filename, binary_mode=True
@@ -200,25 +198,40 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                     ):
                         continue
                     timestamp = str(checkpoint_doc.get("timestamp", ""))
-
-                    # Use >= to prefer later files when timestamps are identical
-                    # (files are in insertion order, so later = more recent)
-                    if latest_timestamp is None or timestamp >= latest_timestamp:
-                        latest_timestamp = timestamp
-                        latest_file = checkpoint_doc
+                    candidates.append((timestamp, index, checkpoint_doc))
                 except Exception as e:
                     self.logger.warning(
                         f"Skipping malformed checkpoint for thread={thread_id}, "
                         f"file={filename}: {e}"
                     )
 
-            if not latest_file:
+            latest_file: Optional[Dict[str, Any]] = None
+            checkpoint: Any = None
+            metadata: Any = None
+            for _, _, candidate in sorted(candidates, reverse=True):
+                try:
+                    candidate_checkpoint = self.serde.loads_typed(
+                        candidate["checkpoint"]
+                    )
+                    candidate_metadata = self.serde.loads_typed(candidate["metadata"])
+                    if not isinstance(candidate_checkpoint, dict) or not isinstance(
+                        candidate_metadata, dict
+                    ):
+                        raise ValueError("checkpoint and metadata must be mappings")
+                    latest_file = candidate
+                    checkpoint = candidate_checkpoint
+                    metadata = candidate_metadata
+                    break
+                except Exception as e:
+                    self.logger.warning(
+                        f"Skipping checkpoint with malformed payload for "
+                        f"thread={thread_id}, "
+                        f"checkpoint={candidate.get('checkpoint_id')}: {e}"
+                    )
+
+            if latest_file is None or checkpoint is None or metadata is None:
                 self.logger.debug(f"no files found for thread {thread_id}")
                 return None
-
-            # Deserialize checkpoint and metadata using serde (LangGraph way)
-            checkpoint = self.serde.loads_typed(latest_file["checkpoint"])
-            metadata = self.serde.loads_typed(latest_file["metadata"])
 
             self.logger.trace(f"Loaded checkpoint for thread {thread_id}: {checkpoint}")
             self.logger.trace(f"Loaded metadata for thread {thread_id}: {metadata}")
