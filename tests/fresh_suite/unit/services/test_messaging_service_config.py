@@ -29,10 +29,15 @@ def test_load_messaging_config_reads_messaging_section() -> None:
 def test_load_messaging_config_rejects_non_mapping_section() -> None:
     config_service = Mock(spec=AppConfigService)
     config_service.get_section.return_value = ["invalid"]
-    logging_service = Mock(spec=LoggingService)
-    logging_service.get_class_logger.return_value = Mock()
-    availability_cache = Mock(spec=AvailabilityCacheService)
 
-    service = MessagingService(config_service, logging_service, availability_cache)
+    service = MessagingService.__new__(MessagingService)
+    service.config = config_service
+    service.logger = Mock()
 
-    assert service.messaging_config == {}
+    assert service._load_messaging_config() == {
+        "default_provider": "local",
+        "providers": {"local": {"enabled": True, "storage_path": "data/messages"}},
+        "message_templates": {},
+        "retry_policy": {"max_retries": 3, "backoff_seconds": [1, 2, 4]},
+    }
+    service.logger.warning.assert_called_once()

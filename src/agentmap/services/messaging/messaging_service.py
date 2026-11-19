@@ -84,23 +84,21 @@ class MessagingService:
 
     def _load_messaging_config(self) -> Dict[str, Any]:
         """Load messaging configuration from app config."""
+        default_config = {
+            "default_provider": "local",
+            "providers": {"local": {"enabled": True, "storage_path": "data/messages"}},
+            "message_templates": {},
+            "retry_policy": {"max_retries": 3, "backoff_seconds": [1, 2, 4]},
+        }
         try:
             config = self.config.get_section("messaging", {})
             if not config:
-                # Default configuration
-                config = {
-                    "default_provider": "local",
-                    "providers": {
-                        "local": {"enabled": True, "storage_path": "data/messages"}
-                    },
-                    "message_templates": {},
-                    "retry_policy": {"max_retries": 3, "backoff_seconds": [1, 2, 4]},
-                }
+                return default_config
             if not isinstance(config, dict):
                 self.logger.warning(
                     "Messaging configuration must be a mapping, using defaults"
                 )
-                return {}
+                return default_config
             return config
         except Exception as e:
             self.logger.warning(f"Failed to load messaging config: {e}, using defaults")

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 from agentmap.exceptions.service_exceptions import FunctionResolutionException
 
@@ -39,8 +39,12 @@ class FunctionResolutionService:
         """Dynamically imports the function from functions dir."""
         try:
             mod = __import__(f"agentmap.functions.{func_name}", fromlist=[func_name])
-            function: Callable[..., Any] = getattr(mod, func_name)
-            return function
+            function = getattr(mod, func_name)
+            if not callable(function):
+                raise FunctionResolutionException(
+                    f"Loaded attribute '{func_name}' is not callable"
+                )
+            return cast(Callable[..., Any], function)
         except (ImportError, AttributeError) as e:
             raise FunctionResolutionException(
                 f"Could not load function '{func_name}': {e}"
