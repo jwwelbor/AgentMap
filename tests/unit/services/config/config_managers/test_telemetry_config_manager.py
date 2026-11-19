@@ -457,3 +457,31 @@ class TestTypedAccessors:
         assert "protocol" in config
         assert "traces" in config
         assert "resource" in config
+
+
+class TestMalformedConfigurationShapes:
+    """Invalid nested mappings fail before typed accessors consume them."""
+
+    def test_non_mapping_telemetry_section_is_rejected(self, make_manager):
+        manager = make_manager({"telemetry": []})
+
+        with pytest.raises(ConfigurationException, match="must be a mapping"):
+            manager.get_telemetry_config()
+
+    def test_non_mapping_traces_section_is_rejected(self, make_manager):
+        manager = make_manager({"telemetry": {"traces": []}})
+
+        with pytest.raises(ConfigurationException, match="traces.*mapping"):
+            manager.get_content_capture_flags()
+
+    def test_non_mapping_resource_section_is_rejected(self, make_manager):
+        manager = make_manager({"telemetry": {"resource": []}})
+
+        with pytest.raises(ConfigurationException, match="resource.*mapping"):
+            manager.get_resource_attributes()
+
+    def test_is_enabled_runs_boolean_validation(self, make_manager):
+        manager = make_manager({"telemetry": {"enabled": "true"}})
+
+        with pytest.raises(ConfigurationException, match="enabled"):
+            manager.is_enabled()

@@ -7,7 +7,7 @@ and CLI presenter utilities for consistent behavior and error handling.
 
 import asyncio
 import json
-from typing import Optional, cast
+from typing import Optional
 
 import typer
 
@@ -78,8 +78,8 @@ def run_command(
 
         # Parse initial state
         try:
-            initial_state = json.loads(state) if state != "{}" else {}
-        except json.JSONDecodeError as e:
+            initial_state = parse_json_state(state)
+        except ValueError as e:
             print_err(f"Invalid JSON in --state: {e}")
             raise typer.Exit(
                 code=map_exception_to_exit_code(ValueError("Invalid JSON in state"))
@@ -184,6 +184,9 @@ def run_command(
 def parse_json_state(state: str) -> dict[str, object]:
     """Helper function to parse JSON state (for backward compatibility)."""
     try:
-        return cast(dict[str, object], json.loads(state)) if state != "{}" else {}
+        parsed = json.loads(state) if state != "{}" else {}
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in state: {e}")
+    if not isinstance(parsed, dict):
+        raise ValueError("JSON state must be an object")
+    return parsed

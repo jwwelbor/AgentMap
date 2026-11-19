@@ -7,7 +7,7 @@ code duplication while maintaining clear error handling and user feedback.
 
 import json
 from pathlib import Path
-from typing import Dict, Optional, cast
+from typing import Dict, Optional
 
 import typer
 
@@ -62,10 +62,14 @@ def parse_json_state(state_str: str) -> Dict[str, object]:
         return {}
 
     try:
-        return cast(Dict[str, object], json.loads(state_str))
+        parsed = json.loads(state_str)
     except json.JSONDecodeError as e:
         typer.secho(f"❌ Invalid JSON in --state: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
+    if not isinstance(parsed, dict):
+        typer.secho("❌ JSON in --state must be an object", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    return parsed
 
 
 def handle_command_error(e: Exception, verbose: bool = False) -> None:

@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, List
 
 from agentmap.models.scaffold_types import (
     ServiceAttribute,
@@ -183,7 +183,7 @@ class ServiceRequirementsParser:
 
         # Handle dict context
         if isinstance(context, dict):
-            return cast(List[str], context.get("services", []))
+            return self._validated_services(context.get("services", []))
 
         # Handle string context
         if isinstance(context, str):
@@ -191,7 +191,8 @@ class ServiceRequirementsParser:
             if context.strip().startswith("{"):
                 try:
                     parsed = json.loads(context)
-                    return cast(List[str], parsed.get("services", []))
+                    if isinstance(parsed, dict):
+                        return self._validated_services(parsed.get("services", []))
                 except json.JSONDecodeError:
                     pass
 
@@ -203,6 +204,13 @@ class ServiceRequirementsParser:
                         services_str = part.split(":", 1)[1].strip()
                         return [s.strip() for s in services_str.split("|")]
 
+        return []
+
+    @staticmethod
+    def _validated_services(value: Any) -> List[str]:
+        """Return service names only when the decoded value has the right shape."""
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return value
         return []
 
     def _get_usage_example(

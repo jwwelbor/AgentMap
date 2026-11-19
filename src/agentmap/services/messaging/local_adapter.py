@@ -271,6 +271,11 @@ class LocalMessageAdapter:
                 try:
                     with open(message_file, "r", encoding="utf-8") as f:
                         message_data = json.load(f)
+                        if not isinstance(message_data, dict):
+                            self.logger.warning(
+                                "Ignoring non-object message file %s", message_file
+                            )
+                            continue
                         messages.append(
                             {
                                 "message_id": message_data.get("message_id"),

@@ -65,6 +65,7 @@ class BundleSerializer:
             "format": "metadata",
             "bundle_format": bundle.bundle_format,
             "created_at": bundle.created_at,
+            "last_updated": bundle.last_updated,
             # Core graph data
             "graph_name": bundle.graph_name,
             "entry_point": bundle.entry_point,
@@ -170,6 +171,8 @@ class BundleSerializer:
                 bundle.bundle_format = data["bundle_format"]
             if "created_at" in data:
                 bundle.created_at = data["created_at"]
+            if "last_updated" in data:
+                bundle.last_updated = data["last_updated"]
 
             bundle_format = data.get("bundle_format", "legacy")
             self.logger.debug(

@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, cast
+from typing import Any, Dict
 
 
 class RequestParser:
@@ -12,9 +12,12 @@ class RequestParser:
             return {}
 
         try:
-            return cast(Dict[str, Any], json.loads(body))
+            parsed = json.loads(body)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in request body: {e}")
+        if not isinstance(parsed, dict):
+            raise ValueError("Request body JSON must be an object")
+        return parsed
 
     @staticmethod
     def extract_query_params(event: Dict[str, Any]) -> Dict[str, Any]:

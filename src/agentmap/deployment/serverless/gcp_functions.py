@@ -6,7 +6,7 @@ by using only the runtime facade for consistent behavior across all deployment a
 """
 
 import json
-from typing import Any, Callable, Dict, Optional, Tuple, cast
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from agentmap.deployment.serverless.base_handler import BaseHandler
 
@@ -34,7 +34,7 @@ class GCPFunctionHandler(BaseHandler):
         if "body" in result:
             try:
                 response_data = json.loads(result["body"])
-                return cast(Dict[str, Any], response_data)
+                return response_data if isinstance(response_data, dict) else result
             except json.JSONDecodeError:
                 return result
 
@@ -46,8 +46,8 @@ class GCPFunctionHandler(BaseHandler):
             if hasattr(request, "method") and request.method == "POST":
                 # Parse JSON body
                 request_json = request.get_json(silent=True)
-                if request_json:
-                    return cast(Dict[str, Any], request_json)
+                if isinstance(request_json, dict) and request_json:
+                    return request_json
 
                 # Fallback to form data
                 if hasattr(request, "form"):
@@ -124,13 +124,15 @@ def gcp_pubsub_handler(event: Any, context: Any) -> None:
         # Decode Pub/Sub message
         import base64
 
-        event_data = {}
+        event_data: Dict[str, Any] = {}
         if "data" in event:
             decoded_data = base64.b64decode(event["data"]).decode("utf-8")
-            event_data = json.loads(decoded_data)
+            parsed_data = json.loads(decoded_data)
+            event_data = parsed_data if isinstance(parsed_data, dict) else {}
         else:
             # Fallback to attributes
-            event_data = event.get("attributes", {})
+            attributes = event.get("attributes", {})
+            event_data = attributes if isinstance(attributes, dict) else {}
 
     except Exception:
         event_data = {"graph": "default", "state": {}}
@@ -198,12 +200,14 @@ def gcp_handler_with_config(
         try:
             import base64
 
-            event_data = {}
+            event_data: Dict[str, Any] = {}
             if "data" in event:
                 decoded_data = base64.b64decode(event["data"]).decode("utf-8")
-                event_data = json.loads(decoded_data)
+                parsed_data = json.loads(decoded_data)
+                event_data = parsed_data if isinstance(parsed_data, dict) else {}
             else:
-                event_data = event.get("attributes", {})
+                attributes = event.get("attributes", {})
+                event_data = attributes if isinstance(attributes, dict) else {}
 
         except Exception:
             event_data = {"graph": "default", "state": {}}
@@ -239,7 +243,8 @@ def run_graph_gcp_handler(request: Any) -> Dict[str, Any]:
 
     if "body" in result:
         try:
-            return cast(Dict[str, Any], json.loads(result["body"]))
+            response_data = json.loads(result["body"])
+            return response_data if isinstance(response_data, dict) else result
         except json.JSONDecodeError:
             return result
     return result

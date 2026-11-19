@@ -10,7 +10,7 @@ exception-based failure when storage configuration is unavailable.
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, TypeVar, Union, cast, overload
+from typing import Any, Dict, Optional, TypeVar, Union, overload
 
 from agentmap.exceptions.service_exceptions import (
     StorageConfigurationNotAvailableException,
@@ -169,6 +169,17 @@ class StorageConfigService:
             )
         return self._config_data
 
+    def _get_dict_config(self, section: str) -> Dict[str, Any]:
+        """Return a mapping section after validating loaded YAML data."""
+        value = self._require_loaded_config().get(section, {})
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise StorageConfigurationNotAvailableException(
+                f"Storage configuration section '{section}' must be a mapping"
+            )
+        return value
+
     # Storage-specific business logic methods
     def get_csv_config(self) -> Dict[str, Any]:
         """
@@ -177,7 +188,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing CSV storage configuration
         """
-        return cast(Dict[str, Any], self._require_loaded_config().get("csv", {}))
+        return self._get_dict_config("csv")
 
     def get_vector_config(self) -> Dict[str, Any]:
         """
@@ -186,7 +197,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing vector storage configuration
         """
-        return cast(Dict[str, Any], self._require_loaded_config().get("vector", {}))
+        return self._get_dict_config("vector")
 
     def get_kv_config(self) -> Dict[str, Any]:
         """
@@ -195,7 +206,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing key-value storage configuration
         """
-        return cast(Dict[str, Any], self._require_loaded_config().get("kv", {}))
+        return self._get_dict_config("kv")
 
     def get_json_config(self) -> Dict[str, Any]:
         """
@@ -204,7 +215,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing JSON storage configuration
         """
-        return cast(Dict[str, Any], self._require_loaded_config().get("json", {}))
+        return self._get_dict_config("json")
 
     def get_blob_config(self) -> Dict[str, Any]:
         """
@@ -213,7 +224,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing blob storage configuration
         """
-        return cast(Dict[str, Any], self._require_loaded_config().get("blob", {}))
+        return self._get_dict_config("blob")
 
     def get_file_config(self) -> Dict[str, Any]:
         """
@@ -222,7 +233,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing file storage configuration
         """
-        return cast(Dict[str, Any], self._require_loaded_config().get("file", {}))
+        return self._get_dict_config("file")
 
     def get_provider_config(self, provider: str) -> Dict[str, Any]:
         """
@@ -234,7 +245,7 @@ class StorageConfigService:
         Returns:
             Dictionary containing provider-specific configuration
         """
-        return cast(Dict[str, Any], self._require_loaded_config().get(provider, {}))
+        return self._get_dict_config(provider)
 
     @overload
     def get_value(self, path: str) -> Any: ...
@@ -270,10 +281,14 @@ class StorageConfigService:
         Returns:
             Dictionary containing collection-specific configuration
         """
-        return cast(
-            Dict[str, Any],
-            self.get_value(f"{storage_type}.collections.{collection_name}", {}),
-        )
+        value: Any = self.get_value(f"{storage_type}.collections.{collection_name}", {})
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise StorageConfigurationNotAvailableException(
+                f"Storage collection '{storage_type}.{collection_name}' must be a mapping"
+            )
+        return value
 
     def get_default_directory(self, storage_type: str) -> str:
         """
@@ -424,7 +439,21 @@ class StorageConfigService:
             Dictionary containing blob provider-specific configuration
         """
         blob_config = self.get_blob_config()
-        return cast(Dict[str, Any], blob_config.get("providers", {}).get(provider, {}))
+        providers = blob_config.get("providers", {})
+        if providers is None:
+            return {}
+        if not isinstance(providers, dict):
+            raise StorageConfigurationNotAvailableException(
+                "Storage configuration section 'blob.providers' must be a mapping"
+            )
+        provider_config = providers.get(provider, {})
+        if provider_config is None:
+            return {}
+        if not isinstance(provider_config, dict):
+            raise StorageConfigurationNotAvailableException(
+                f"Blob provider configuration '{provider}' must be a mapping"
+            )
+        return provider_config
 
     def _get_cached_availability(self, storage_type: str) -> Optional[Dict[str, Any]]:
         """

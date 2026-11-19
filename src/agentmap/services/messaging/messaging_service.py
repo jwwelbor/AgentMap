@@ -3,7 +3,7 @@
 import importlib
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol, cast
+from typing import Any, Dict, List, Optional, Protocol
 
 from agentmap.exceptions import (
     MessagingServiceUnavailableError,
@@ -408,7 +408,7 @@ class MessagingService:
         templates = self.messaging_config.get("message_templates", {})
         template = templates.get(template_name)
 
-        if not template:
+        if not isinstance(template, dict):
             self.logger.warning(f"Template '{template_name}' not found")
             return variables
 
@@ -429,7 +429,8 @@ class MessagingService:
                 return [replace_vars(item) for item in obj]
             return obj
 
-        return cast(Dict[str, Any], replace_vars(result))
+        replaced = replace_vars(result)
+        return replaced if isinstance(replaced, dict) else variables
 
     def get_service_info(self) -> Dict[str, Any]:
         """Get service information for debugging."""

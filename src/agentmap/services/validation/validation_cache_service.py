@@ -206,6 +206,12 @@ class ValidationCacheService:
             try:
                 with open(cache_file, "r") as f:
                     cache_data = json.load(f)
+                if not isinstance(cache_data, dict) or not isinstance(
+                    cache_data.get("cached_at"), str
+                ):
+                    cache_file.unlink(missing_ok=True)
+                    removed_count += 1
+                    continue
                 cached_time = datetime.fromisoformat(cache_data["cached_at"])
                 if datetime.now() - cached_time > self.max_age:
                     cache_file.unlink()
@@ -222,6 +228,11 @@ class ValidationCacheService:
             try:
                 with open(cache_file, "r") as f:
                     cache_data = json.load(f)
+                if not isinstance(cache_data, dict) or not isinstance(
+                    cache_data.get("cached_at"), str
+                ):
+                    stats["corrupted_files"] += 1
+                    continue
                 cached_time = datetime.fromisoformat(cache_data["cached_at"])
                 if datetime.now() - cached_time > self.max_age:
                     stats["expired_files"] += 1

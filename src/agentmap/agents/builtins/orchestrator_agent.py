@@ -107,7 +107,8 @@ class OrchestratorAgent(BaseAgent, LLMCapableAgent, OrchestrationCapableAgent):
     def _parse_node_filter(self, context: Dict[str, Any]) -> str:
         """Parse node filter from various context formats."""
         if "nodes" in context:
-            return cast(str, context["nodes"])
+            nodes = context["nodes"]
+            return nodes if isinstance(nodes, str) else "all"
         elif "node_type" in context:
             return f"nodeType:{context['node_type']}"
         elif "nodeType" in context:

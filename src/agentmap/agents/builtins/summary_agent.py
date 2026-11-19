@@ -3,7 +3,7 @@ Standardized SummaryAgent with consistent prompt resolution.
 """
 
 import logging
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
@@ -160,6 +160,9 @@ class SummaryAgent(BaseAgent, LLMCapableAgent):
         # Check if LLM service is configured first (fail fast for configuration issues)
         if self._llm_service is None:
             raise ValueError(f"LLM service not configured for agent '{self.name}'")
+        provider = self.llm_type
+        if not isinstance(provider, str) or not provider:
+            raise ValueError(f"LLM provider not configured for agent '{self.name}'")
 
         try:
             # Prepare the content to summarize
@@ -173,7 +176,7 @@ class SummaryAgent(BaseAgent, LLMCapableAgent):
 
             # Use LLM Service
             result = self.llm_service.call_llm(
-                provider=cast(str, self.llm_type),
+                provider=provider,
                 messages=messages,
                 model=self.context.get("model"),
                 temperature=self.context.get("temperature"),

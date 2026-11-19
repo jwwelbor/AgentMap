@@ -7,7 +7,7 @@ by using only the runtime facade for consistent behavior across all deployment a
 
 import json
 import logging
-from typing import Any, Callable, Dict, Optional, Tuple, cast
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from agentmap.deployment.serverless.base_handler import BaseHandler
 
@@ -41,8 +41,8 @@ class AzureFunctionHandler(BaseHandler):
                 # Parse JSON body
                 try:
                     request_json = req.get_json()
-                    if request_json:
-                        return cast(Dict[str, Any], request_json)
+                    if isinstance(request_json, dict) and request_json:
+                        return request_json
                 except ValueError:
                     pass
 
@@ -50,7 +50,9 @@ class AzureFunctionHandler(BaseHandler):
                 try:
                     body = req.get_body().decode("utf-8")
                     if body:
-                        return cast(Dict[str, Any], json.loads(body))
+                        request_data = json.loads(body)
+                        if isinstance(request_data, dict):
+                            return request_data
                 except (json.JSONDecodeError, AttributeError):
                     pass
 

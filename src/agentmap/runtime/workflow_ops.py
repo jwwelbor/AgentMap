@@ -674,6 +674,8 @@ def _parse_resume_token(resume_token: Any) -> tuple[str, str, Optional[Dict[str,
 
     try:
         token_data = json.loads(resume_token)
+        if not isinstance(token_data, dict):
+            raise InvalidInputs("Resume token must contain a JSON object")
         thread_id = token_data.get("thread_id")
         # Treat explicit null the same as absent — both default to "continue"
         response_action = token_data.get("response_action")

@@ -8,7 +8,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import typer
 import yaml
@@ -98,7 +98,13 @@ def load_yaml_config(config_path: str) -> dict[str, Any]:
     """Load YAML configuration file."""
     try:
         with open(config_path, "r", encoding="utf-8") as f:
-            return cast(dict[str, Any], yaml.safe_load(f) or {})
+            config = yaml.safe_load(f)
+        if config is None:
+            return {}
+        if isinstance(config, dict):
+            return config
+        typer.secho("❌ YAML configuration must contain a mapping", fg=colors.RED)
+        raise typer.Exit(code=1)
     except FileNotFoundError:
         return {}
     except yaml.YAMLError as e:

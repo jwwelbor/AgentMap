@@ -180,6 +180,14 @@ def mypy_version(root: Path = ROOT) -> str:
     return result.stdout.strip()
 
 
+def normalized_mypy_command() -> str:
+    """Return the exact checker argv with the interpreter path normalized."""
+    command = list(MYPY_COMMAND)
+    if command and Path(command[0]).resolve() == Path(sys.executable).resolve():
+        command[0] = "<python>"
+    return json.dumps(command, separators=(",", ":"))
+
+
 def current_environment(root: Path = ROOT) -> dict[str, str]:
     return {
         "python_version": platform.python_version(),
@@ -195,7 +203,7 @@ def current_environment(root: Path = ROOT) -> dict[str, str]:
             text=True,
             check=True,
         ).stdout.strip(),
-        "command": "uv run mypy src (non-incremental, machine-readable output)",
+        "command": normalized_mypy_command(),
     }
 
 
@@ -232,8 +240,10 @@ def write_baseline(diagnostics: list[Diagnostic], root: Path = ROOT) -> None:
         },
         "diagnostics": diagnostic_counts(diagnostics)["signatures"],
     }
-    BASELINE_PATH.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(f"Updated {BASELINE_PATH.relative_to(root)} with {len(diagnostics)} findings")
+    baseline_path = root / BASELINE_PATH.relative_to(ROOT)
+    baseline_path.parent.mkdir(parents=True, exist_ok=True)
+    baseline_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"Updated {baseline_path.relative_to(root)} with {len(diagnostics)} findings")
 
 
 def check_environment(baseline: dict[str, object], root: Path = ROOT) -> None:
@@ -247,6 +257,7 @@ def check_environment(baseline: dict[str, object], root: Path = ROOT) -> None:
         "uv_lock_sha256",
         "dependency_manifest_sha256",
         "mypy_ini_sha256",
+        "command",
     )
     differences = [
         f"{key}: baseline={expected.get(key)!r}, current={actual[key]!r}"

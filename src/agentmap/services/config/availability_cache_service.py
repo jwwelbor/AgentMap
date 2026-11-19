@@ -3,7 +3,7 @@
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, cast
+from typing import Any, Dict, Optional, Union
 
 from agentmap.services.config.availability_cache import ThreadSafeFileCache
 from agentmap.services.config.cache_invalidation_mixin import CacheInvalidationMixin
@@ -66,8 +66,11 @@ class AvailabilityCacheService(CacheInvalidationMixin, CacheStatisticsMixin):
                     self._stats["cache_misses"] += 1
                     return None
                 result = cache_data.get("availability", {}).get(cache_key)
+                if result is not None and not isinstance(result, dict):
+                    self._stats["cache_misses"] += 1
+                    return None
                 self._stats["cache_hits" if result else "cache_misses"] += 1
-                return cast(Optional[Dict[str, Any]], result)
+                return result
         except Exception:
             self._stats["cache_misses"] += 1
             return None

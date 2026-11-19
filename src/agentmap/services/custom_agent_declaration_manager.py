@@ -10,7 +10,7 @@ clean architecture principles with proper dependency injection.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -104,11 +104,18 @@ agents:"""
                     content = yaml.safe_load(f)
                     if content is None:
                         content = {}
-                    content = cast(Dict[str, Any], content)
+                    if not isinstance(content, dict):
+                        raise ValueError("Custom agent declarations must be a mapping")
 
                     # Ensure proper structure
-                    if "agents" not in content:
-                        content["agents"] = {}
+                    agents = content.get("agents", {})
+                    if agents is None:
+                        agents = {}
+                    if not isinstance(agents, dict):
+                        raise ValueError(
+                            "Custom agent 'agents' section must be a mapping"
+                        )
+                    content["agents"] = agents
 
                     self.logger.debug(
                         f"[CustomAgentDeclarationManager] Loaded {len(content.get('agents', {}))} agent declarations"
@@ -282,10 +289,11 @@ agents:"""
             Agent declaration dictionary or None if not found
         """
         declarations = self.load_declarations()
-        return cast(
-            Optional[Dict[str, Any]],
-            declarations.get("agents", {}).get(agent_type),
-        )
+        agents = declarations.get("agents", {})
+        if not isinstance(agents, dict):
+            return None
+        declaration = agents.get(agent_type)
+        return declaration if isinstance(declaration, dict) else None
 
     def remove_agent_declaration(self, agent_type: str) -> bool:
         """

@@ -10,7 +10,7 @@ Note: This service no longer validates model names against a hardcoded list.
 Model validation is delegated to the provider APIs which return clear error messages.
 """
 
-from typing import TYPE_CHECKING, Dict, Optional, cast
+from typing import TYPE_CHECKING, Dict, Optional
 
 if TYPE_CHECKING:
     from agentmap.services.config.app_config_service import AppConfigService
@@ -115,8 +115,8 @@ class LLMModelsConfigService:
                 fallback_model = self._app_config_service.get_value(
                     "routing.fallback.default_model"
                 )
-                if fallback_model:
-                    return cast(str, fallback_model)
+                if isinstance(fallback_model, str) and fallback_model.strip():
+                    return fallback_model
             except Exception:
                 pass
 

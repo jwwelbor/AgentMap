@@ -178,9 +178,11 @@ class ServiceAdapter:
         # Validate initial_state if it's a JSON string
         if isinstance(initial_state, str) and initial_state.strip():
             try:
-                json.loads(initial_state)
+                parsed_state = json.loads(initial_state)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in initial_state: {e}")
+            if not isinstance(parsed_state, dict):
+                raise ValueError("initial_state JSON must be an object")
 
         # Validate CSV file if it's a file path (not workflow name)
         if (
@@ -259,9 +261,11 @@ def validate_run_parameters(**params: Any) -> None:
 
     if "state" in params and isinstance(params["state"], str):
         try:
-            json.loads(params["state"])
+            parsed_state = json.loads(params["state"])
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in state parameter: {e}")
+        if not isinstance(parsed_state, dict):
+            raise ValueError("state parameter JSON must be an object")
 
     if "bundle_path" in params and params["bundle_path"]:
         bundle_path = Path(params["bundle_path"])

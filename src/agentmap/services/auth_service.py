@@ -12,7 +12,7 @@ import os
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 from agentmap.services.logging_service import LoggingService
 
@@ -30,12 +30,20 @@ class AuthContext:
     expires_at: Optional[datetime] = None
 
     def __post_init__(self) -> None:
-        # Config can explicitly contain null even though omitted values use factories.
-        permissions = cast(Optional[List[str]], self.permissions)
-        metadata = cast(Optional[Dict[str, str]], self.metadata)
-        if permissions is None:
+        permissions: Any = self.permissions
+        if isinstance(permissions, list):
+            self.permissions = [item for item in permissions if isinstance(item, str)]
+        else:
             self.permissions = []
-        if metadata is None:
+
+        metadata: Any = self.metadata
+        if isinstance(metadata, dict):
+            self.metadata = {
+                key: value
+                for key, value in metadata.items()
+                if isinstance(key, str) and isinstance(value, str)
+            }
+        else:
             self.metadata = {}
 
 
@@ -296,13 +304,15 @@ class AuthService:
         Returns:
             List of public endpoint patterns
         """
-        return cast(
-            List[str],
-            self.config.get(
-                "public_endpoints",
-                ["/health", "/docs", "/openapi.json", "/redoc", "/"],
-            ),
+        endpoints = self.config.get(
+            "public_endpoints",
+            ["/health", "/docs", "/openapi.json", "/redoc", "/"],
         )
+        if isinstance(endpoints, list) and all(
+            isinstance(endpoint, str) for endpoint in endpoints
+        ):
+            return endpoints
+        return ["/health", "/docs", "/openapi.json", "/redoc", "/"]
 
     def validate_permissions(
         self, auth_context: AuthContext, required_permissions: List[str]

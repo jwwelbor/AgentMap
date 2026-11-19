@@ -100,7 +100,9 @@ class JSONStorageService(BaseStorageService):
         # Use StorageConfigService named domain methods for configuration
 
         if self.provider_name.startswith("system_json"):
-            system_config = cast(Dict[str, Any], self.configuration)
+            if not isinstance(self.configuration, dict):
+                raise ValueError("System JSON storage configuration must be a mapping")
+            system_config = self.configuration
             base_dir = system_config["base_directory"]
             encoding = system_config.get("encoding") or "utf-8"
             indent = system_config.get("indent") or 2

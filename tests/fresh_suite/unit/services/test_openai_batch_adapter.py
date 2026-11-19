@@ -306,6 +306,19 @@ class TestFetchResults:
         mock_resp.iter_lines.return_value = iter(raw_bytes.split(b"\n"))
         ci.files.content.return_value = mock_resp
 
+    def test_fetch_results_skips_non_object_jsonl_records(self):
+        ci = MagicMock()
+        self._setup_files_content(ci, [[]])
+
+        adapter, _ = _make_adapter(client_instance=ci)
+
+        assert (
+            list(
+                adapter.fetch_results("batch-id", {"s1": "cid1"}, result_ref="file-out")
+            )
+            == []
+        )
+
     def test_fetch_results_demuxes_by_custom_id_not_position(self):
         """
         TC-042: Records must be mapped by custom_id back to request_id.

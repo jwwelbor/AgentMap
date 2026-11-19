@@ -320,6 +320,12 @@ class OpenAIBatchAdapter:
                 )
                 continue
 
+            if not isinstance(item, dict):
+                self._logger.warning(
+                    "OpenAIBatchAdapter.fetch_results: JSONL record must be an object"
+                )
+                continue
+
             custom_id = item.get("custom_id")
             request_id = custom_to_spec.get(custom_id) if custom_id else None
 
@@ -336,6 +342,11 @@ class OpenAIBatchAdapter:
 
             # Item-level error (the request itself failed)
             if error_payload:
+                if not isinstance(error_payload, dict):
+                    self._logger.warning(
+                        "OpenAIBatchAdapter.fetch_results: error payload must be an object"
+                    )
+                    continue
                 yield LLMBatchResult(
                     request_id=request_id,
                     status="errored",
@@ -361,9 +372,19 @@ class OpenAIBatchAdapter:
                     ),
                 )
                 continue
+            if not isinstance(response_payload, dict):
+                self._logger.warning(
+                    "OpenAIBatchAdapter.fetch_results: response payload must be an object"
+                )
+                continue
 
             status_code = response_payload.get("status_code", 200)
             body = response_payload.get("body") or {}
+            if not isinstance(body, dict):
+                self._logger.warning(
+                    "OpenAIBatchAdapter.fetch_results: response body must be an object"
+                )
+                continue
 
             if status_code != 200:
                 # HTTP-level error from the provider
@@ -384,9 +405,12 @@ class OpenAIBatchAdapter:
             # Parse successful response
             choices = body.get("choices") or []
             content: Optional[str] = None
-            if choices and isinstance(choices[0], dict):
+            if isinstance(choices, list) and choices and isinstance(choices[0], dict):
                 msg = choices[0].get("message") or {}
-                content = msg.get("content")
+                if isinstance(msg, dict):
+                    message_content = msg.get("content")
+                    if isinstance(message_content, str):
+                        content = message_content
 
             if not content:
                 yield LLMBatchResult(

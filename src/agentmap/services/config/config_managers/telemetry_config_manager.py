@@ -1,6 +1,6 @@
 """Telemetry configuration manager."""
 
-from typing import Any, Dict, cast
+from typing import Any, Dict
 
 from agentmap.exceptions.base_exceptions import ConfigurationException
 from agentmap.services.config.config_managers.base_config_manager import (
@@ -53,6 +53,8 @@ class TelemetryConfigManager(BaseConfigManager):
         raw: Any = self.get_section("telemetry", {})
         if raw is None:
             raw = {}
+        if not isinstance(raw, dict):
+            raise ConfigurationException("Telemetry configuration must be a mapping")
         merged = self._merge_with_defaults(raw, DEFAULTS)
 
         self._validate(merged)
@@ -66,11 +68,10 @@ class TelemetryConfigManager(BaseConfigManager):
         Returns:
             True if telemetry is enabled, False otherwise.
         """
-        raw: Any = self.get_section("telemetry", {})
-        if raw is None:
-            raw = {}
-        merged = self._merge_with_defaults(raw, DEFAULTS)
-        return cast(bool, merged["enabled"])
+        enabled = self.get_telemetry_config()["enabled"]
+        if not isinstance(enabled, bool):
+            raise ConfigurationException("Telemetry 'enabled' value must be a boolean")
+        return enabled
 
     def get_exporter_config(self) -> Dict[str, str]:
         """
@@ -95,7 +96,7 @@ class TelemetryConfigManager(BaseConfigManager):
             and llm_responses boolean flags.
         """
         config = self.get_telemetry_config()
-        traces = config.get("traces", {})
+        traces = config["traces"]
         return {
             "agent_inputs": traces.get("agent_inputs", False),
             "agent_outputs": traces.get("agent_outputs", False),
@@ -112,9 +113,10 @@ class TelemetryConfigManager(BaseConfigManager):
             to 'agentmap'.
         """
         config = self.get_telemetry_config()
-        return cast(
-            Dict[str, str], config.get("resource", {"service.name": "agentmap"})
-        )
+        resource = config["resource"]
+        if not isinstance(resource, dict):
+            raise ConfigurationException("Telemetry 'resource' value must be a mapping")
+        return resource
 
     def _validate(self, config: Dict[str, Any]) -> None:
         """
@@ -151,25 +153,27 @@ class TelemetryConfigManager(BaseConfigManager):
 
         # Validate traces flags are booleans
         traces = config.get("traces", {})
-        if isinstance(traces, dict):
-            for key in (
-                "agent_inputs",
-                "agent_outputs",
-                "llm_prompts",
-                "llm_responses",
-            ):
-                if key in traces and not isinstance(traces[key], bool):
-                    raise ConfigurationException(
-                        f"Invalid telemetry traces.{key} value: "
-                        f"'{traces[key]}'. Must be a boolean (true/false)"
-                    )
+        if not isinstance(traces, dict):
+            raise ConfigurationException("Telemetry 'traces' value must be a mapping")
+        for key in (
+            "agent_inputs",
+            "agent_outputs",
+            "llm_prompts",
+            "llm_responses",
+        ):
+            if key in traces and not isinstance(traces[key], bool):
+                raise ConfigurationException(
+                    f"Invalid telemetry traces.{key} value: "
+                    f"'{traces[key]}'. Must be a boolean (true/false)"
+                )
 
         # Validate resource attributes are strings
         resource = config.get("resource", {})
-        if isinstance(resource, dict):
-            for key, value in resource.items():
-                if not isinstance(value, str):
-                    raise ConfigurationException(
-                        f"Invalid telemetry resource attribute '{key}': "
-                        f"'{value}'. OTEL resource attributes must be strings"
-                    )
+        if not isinstance(resource, dict):
+            raise ConfigurationException("Telemetry 'resource' value must be a mapping")
+        for key, value in resource.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise ConfigurationException(
+                    f"Invalid telemetry resource attribute '{key}': "
+                    "OTEL resource attribute names and values must be strings"
+                )

@@ -57,6 +57,15 @@ class TestMissingServicesSerialization(unittest.TestCase):
         restored = self.serializer.deserialize_metadata_bundle(data)
         self.assertEqual(restored.missing_services, set())
 
+    def test_round_trip_preserves_last_updated(self):
+        bundle = self._make_bundle(set())
+        bundle.last_updated = "2026-11-19T12:34:56"
+
+        data = self.serializer.serialize_metadata_bundle(bundle)
+        restored = self.serializer.deserialize_metadata_bundle(data)
+
+        self.assertEqual(restored.last_updated, bundle.last_updated)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -336,19 +336,19 @@ class FastAPIAuthAdapter:
         return combined_dependency
 
     # Common permission combinations
-    def require_read_permission(self) -> PermissionDependency:
+    def require_read_permission(self) -> AuthDependency:
         """Dependency that requires read permission."""
         return self.create_permission_dependency(["read"])
 
-    def require_write_permission(self) -> PermissionDependency:
+    def require_write_permission(self) -> AuthDependency:
         """Dependency that requires write permission."""
         return self.create_permission_dependency(["write"])
 
-    def require_admin_permission(self) -> PermissionDependency:
+    def require_admin_permission(self) -> AuthDependency:
         """Dependency that requires admin permission."""
         return self.create_permission_dependency(["admin"])
 
-    def require_execution_permission(self) -> PermissionDependency:
+    def require_execution_permission(self) -> AuthDependency:
         """Dependency that requires execution permission."""
         return self.create_permission_dependency(["execute"])
 
@@ -413,25 +413,25 @@ def optional_auth(auth_service: AuthService) -> AuthDependency:
     return adapter.optional_auth()
 
 
-def require_admin_permission(auth_service: AuthService) -> PermissionDependency:
+def require_admin_permission(auth_service: AuthService) -> AuthDependency:
     """Legacy wrapper for admin permission dependency."""
     adapter = FastAPIAuthAdapter(auth_service)
     return adapter.require_admin_permission()
 
 
-def require_read_permission(auth_service: AuthService) -> PermissionDependency:
+def require_read_permission(auth_service: AuthService) -> AuthDependency:
     """Legacy wrapper for read permission dependency."""
     adapter = FastAPIAuthAdapter(auth_service)
     return adapter.require_read_permission()
 
 
-def require_write_permission(auth_service: AuthService) -> PermissionDependency:
+def require_write_permission(auth_service: AuthService) -> AuthDependency:
     """Legacy wrapper for write permission dependency."""
     adapter = FastAPIAuthAdapter(auth_service)
     return adapter.require_write_permission()
 
 
-def require_execution_permission(auth_service: AuthService) -> PermissionDependency:
+def require_execution_permission(auth_service: AuthService) -> AuthDependency:
     """Legacy wrapper for execution permission dependency."""
     adapter = FastAPIAuthAdapter(auth_service)
     return adapter.require_execution_permission()

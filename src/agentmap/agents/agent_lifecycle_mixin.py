@@ -40,7 +40,7 @@ TD-009
 """
 
 import time
-from typing import TYPE_CHECKING, Any, Dict, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, Tuple
 
 from langgraph.errors import GraphInterrupt
 
@@ -130,13 +130,17 @@ class AgentLifecycleMixin:
         """
         if isinstance(output, dict) and "state_updates" in output:
             state_updates = output["state_updates"]
-            msg = (
-                f"Async returning multiple state updates: {list(state_updates.keys())}"
-                if is_async
-                else f"Returning multiple state updates: {list(state_updates.keys())}"
-            )
-            self.log_debug(msg)
-            result = cast(Dict[str, Any], state_updates)
+            if isinstance(state_updates, dict):
+                msg = (
+                    f"Async returning multiple state updates: {list(state_updates.keys())}"
+                    if is_async
+                    else f"Returning multiple state updates: {list(state_updates.keys())}"
+                )
+                self.log_debug(msg)
+                result = state_updates
+            else:
+                self.log_warning("Ignoring non-mapping agent state_updates output")
+                result = {}
         elif self.output_fields and output is not None:
             if len(self.output_fields) > 1:
                 state_updates = self._validate_multi_output(output)

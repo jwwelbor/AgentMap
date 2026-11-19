@@ -2,6 +2,7 @@ from collections import Counter
 
 import pytest
 
+import tools.mypy_ratchet as mypy_ratchet
 from tools.mypy_ratchet import Diagnostic, find_new_diagnostics, parse_diagnostics
 
 
@@ -61,3 +62,30 @@ def test_find_new_diagnostics_allows_reviewed_reductions():
         find_new_diagnostics(Counter([existing, existing]), Counter([existing]))
         == Counter()
     )
+
+
+def test_check_environment_rejects_mypy_command_drift(monkeypatch):
+    environment = {
+        "python_version": "3.12.0",
+        "mypy_version": "1.0",
+        "uv_lock_sha256": "lock",
+        "dependency_manifest_sha256": "dependencies",
+        "mypy_ini_sha256": "config",
+        "command": '["<python>","-m","mypy","src"]',
+    }
+    monkeypatch.setattr(mypy_ratchet, "current_environment", lambda root: environment)
+    baseline = {"environment": {**environment, "command": '["mypy","src"]'}}
+
+    with pytest.raises(RuntimeError, match="command"):
+        mypy_ratchet.check_environment(baseline)
+
+
+def test_write_baseline_uses_supplied_root(tmp_path, monkeypatch):
+    repository_baseline = mypy_ratchet.BASELINE_PATH.read_bytes()
+    monkeypatch.setattr(mypy_ratchet, "current_environment", lambda root: {})
+
+    mypy_ratchet.write_baseline([], tmp_path)
+
+    alternate_baseline = tmp_path / "tools" / "mypy-baseline.json"
+    assert alternate_baseline.is_file()
+    assert mypy_ratchet.BASELINE_PATH.read_bytes() == repository_baseline
