@@ -3,6 +3,7 @@ Algorithm-based matching utilities for OrchestratorService.
 """
 
 import logging
+from importlib import import_module
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -58,7 +59,7 @@ class AlgorithmMatcher:
         ):
             return 0.0, []
         try:
-            from fuzzywuzzy import fuzz
+            fuzz = import_module("fuzzywuzzy.fuzz")
 
             input_lower = input_text.lower()
             matched_keywords = []
@@ -82,7 +83,7 @@ class AlgorithmMatcher:
         ):
             return []
         try:
-            import spacy
+            spacy = import_module("spacy")
 
             nlp = spacy.load("en_core_web_sm")
             text_fields = [
@@ -125,7 +126,7 @@ class AlgorithmMatcher:
             return []
 
     def algorithm_match(
-        self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]
+        self, input_text: str, available_nodes: Dict[str, Any]
     ) -> Tuple[str, float]:
         input_lower = input_text.lower()
         for node_name in available_nodes:
@@ -153,7 +154,7 @@ class AlgorithmMatcher:
         return best_match or next(iter(available_nodes)), best_score
 
     def basic_keyword_match(
-        self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]
+        self, input_text: str, available_nodes: Dict[str, Any]
     ) -> Tuple[str, float]:
         input_lower = input_text.lower()
         best_match = None
@@ -183,7 +184,7 @@ class AlgorithmMatcher:
         return best_match or next(iter(available_nodes)), best_score
 
     def fuzzy_algorithm_match(
-        self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]
+        self, input_text: str, available_nodes: Dict[str, Any]
     ) -> Tuple[str, float]:
         best_match = None
         best_score = 0.0
@@ -201,10 +202,10 @@ class AlgorithmMatcher:
         return best_match or next(iter(available_nodes)), best_score
 
     def spacy_algorithm_match(
-        self, input_text: str, available_nodes: Dict[str, Dict[str, Any]]
+        self, input_text: str, available_nodes: Dict[str, Any]
     ) -> Tuple[str, float]:
         try:
-            import spacy
+            spacy = import_module("spacy")
 
             nlp = spacy.load("en_core_web_sm")
             input_doc = nlp(input_text.lower())
