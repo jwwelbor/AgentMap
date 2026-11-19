@@ -1,17 +1,23 @@
 """Dependency validation utilities for DependencyCheckerService."""
 
+from __future__ import annotations
+
 import importlib
+import logging
 import sys
 from datetime import datetime, timezone
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List, Tuple
 
 from agentmap.builtin_definition_constants import BuiltinDefinitionConstants
+
+if TYPE_CHECKING:
+    from agentmap.services.cache_manager import CacheHelper
 
 
 class DependencyValidator:
     """Core dependency validation logic."""
 
-    def __init__(self, logger):
+    def __init__(self, logger: logging.Logger) -> None:
         """Initialize with logger."""
         self.logger = logger
 
@@ -127,7 +133,12 @@ class DependencyValidator:
 class ProviderValidator:
     """Provider-specific validation logic with cache integration."""
 
-    def __init__(self, logger, dependency_validator: DependencyValidator, cache_helper):
+    def __init__(
+        self,
+        logger: logging.Logger,
+        dependency_validator: DependencyValidator,
+        cache_helper: CacheHelper,
+    ) -> None:
         """Initialize with logger, dependency validator, and cache helper."""
         self.logger = logger
         self._dependency_validator = dependency_validator

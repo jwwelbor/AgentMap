@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from agentmap.exceptions.service_exceptions import FunctionResolutionException
 
@@ -35,11 +35,12 @@ class FunctionResolutionService:
         """
         return self.extract_reference(value)
 
-    def load_function(self, func_name: str) -> Callable:
+    def load_function(self, func_name: str) -> Callable[..., Any]:
         """Dynamically imports the function from functions dir."""
         try:
             mod = __import__(f"agentmap.functions.{func_name}", fromlist=[func_name])
-            return getattr(mod, func_name)
+            function: Callable[..., Any] = getattr(mod, func_name)
+            return function
         except (ImportError, AttributeError) as e:
             raise FunctionResolutionException(
                 f"Could not load function '{func_name}': {e}"

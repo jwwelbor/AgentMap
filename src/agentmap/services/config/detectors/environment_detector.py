@@ -18,7 +18,7 @@ from typing import Optional
 class EnvironmentChangeDetector:
     """Detects environment changes for automatic cache invalidation."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._env_lock = threading.Lock()
         self._cached_env_hash: Optional[str] = None
         self._last_check_time: float = 0
@@ -41,7 +41,7 @@ class EnvironmentChangeDetector:
             self._last_check_time = current_time
             return self._cached_env_hash
 
-    def invalidate_environment_cache(self):
+    def invalidate_environment_cache(self) -> None:
         """Force recomputation of environment hash on next access."""
         with self._env_lock:
             self._cached_env_hash = None
