@@ -249,8 +249,10 @@ class RunScopedDeclarationRegistry:
         """
         # Create immutable copies using MappingProxyType
         # This prevents any modifications after creation
-        self._agents: MappingProxyType = MappingProxyType(dict(agents))
-        self._services: MappingProxyType = MappingProxyType(dict(services))
+        self._agents: Mapping[str, AgentDeclaration] = MappingProxyType(dict(agents))
+        self._services: Mapping[str, ServiceDeclaration] = MappingProxyType(
+            dict(services)
+        )
 
     def get_agent_declaration(self, agent_type: str) -> Optional[AgentDeclaration]:
         """

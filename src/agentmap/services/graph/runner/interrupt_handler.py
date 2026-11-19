@@ -5,7 +5,7 @@ Handles LangGraph interrupts, suspend operations, and human interactions.
 Extracted from GraphRunnerService to improve separation of concerns.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from agentmap.models.execution.result import ExecutionResult
 from agentmap.models.graph_bundle import GraphBundle
@@ -74,7 +74,7 @@ class GraphInterruptHandler:
 
         interrupt_value = getattr(interrupts[0], "value", {}) or {}
         if isinstance(interrupt_value, dict):
-            return interrupt_value.get("type", "unknown")
+            return cast(str, interrupt_value.get("type", "unknown"))
 
         return "unknown"
 
@@ -122,8 +122,9 @@ class GraphInterruptHandler:
             if pending_node:
                 node_name = getattr(pending_node, "node_name", "unknown")
                 node_config = None
-                if bundle and getattr(bundle, "nodes", None):
-                    node_config = bundle.nodes.get(node_name)
+                nodes = getattr(bundle, "nodes", None)
+                if nodes:
+                    node_config = nodes.get(node_name)
 
                 agent_type = (getattr(node_config, "agent_type", "") or "").lower()
                 if "suspend" in agent_type:

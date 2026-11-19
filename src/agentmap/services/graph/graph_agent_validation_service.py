@@ -48,7 +48,7 @@ class GraphAgentValidationService:
         Returns:
             Validation summary with status and any issues found
         """
-        validation_results = {
+        validation_results: Dict[str, Any] = {
             "valid": True,
             "total_nodes": len(bundle.nodes) if bundle.nodes else 0,
             "instantiated_nodes": 0,
@@ -149,7 +149,7 @@ class GraphAgentValidationService:
         Returns:
             Summary dictionary with instantiation statistics
         """
-        summary = {
+        summary: Dict[str, Any] = {
             "graph_name": bundle.graph_name,
             "total_nodes": len(bundle.nodes) if bundle.nodes else 0,
             "instantiated": 0,
