@@ -177,7 +177,7 @@ class TemplateLoader:
                 try:
                     files = importlib.resources.files(package)
                     template_file = files.joinpath(resource_name)
-                    if template_file.exists():
+                    if template_file.is_file():
                         content = template_file.read_text(encoding="utf-8")
                         return content.strip()
                 except (ImportError, AttributeError, ValueError):
@@ -235,7 +235,7 @@ class TemplateLoader:
             "cached_templates": list(self._template_cache.keys()),
         }
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """
         Clear template cache and reset statistics.
         """

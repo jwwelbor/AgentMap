@@ -1,13 +1,18 @@
 """Host services YAML declaration source."""
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from agentmap.models.declaration_models import AgentDeclaration, ServiceDeclaration
 from agentmap.services.declaration_parser import DeclarationParser
 from agentmap.services.declaration_sources.base import DeclarationSource
 from agentmap.services.declaration_sources.yaml_loader import load_yaml_file
 from agentmap.services.logging_service import LoggingService
+
+if TYPE_CHECKING:
+    from agentmap.services.config.app_config_service import AppConfigService
 
 
 class HostServiceYAMLSource(DeclarationSource):
@@ -23,7 +28,7 @@ class HostServiceYAMLSource(DeclarationSource):
 
     def __init__(
         self,
-        app_config_service,
+        app_config_service: AppConfigService,
         parser: DeclarationParser,
         logging_service: LoggingService,
     ):
