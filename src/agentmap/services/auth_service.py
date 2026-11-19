@@ -10,9 +10,9 @@ import hashlib
 import hmac
 import os
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from agentmap.services.logging_service import LoggingService
 
@@ -25,16 +25,9 @@ class AuthContext:
     auth_method: str
     user_id: Optional[str] = None
     username: Optional[str] = None
-    permissions: List[str] = None
-    metadata: Dict[str, str] = None
+    permissions: List[str] = field(default_factory=list)
+    metadata: Dict[str, str] = field(default_factory=dict)
     expires_at: Optional[datetime] = None
-
-    def __post_init__(self):
-        """Initialize default values."""
-        if self.permissions is None:
-            self.permissions = []
-        if self.metadata is None:
-            self.metadata = {}
 
 
 class AuthService:
@@ -45,7 +38,9 @@ class AuthService:
     configurable per-endpoint protection and graceful degradation.
     """
 
-    def __init__(self, auth_config: Dict[str, any], logging_service: LoggingService):
+    def __init__(
+        self, auth_config: Dict[str, Any], logging_service: LoggingService
+    ) -> None:
         """
         Initialize authentication service.
 
@@ -53,33 +48,35 @@ class AuthService:
             auth_config: Authentication configuration dictionary
             logging_service: Logging service for audit trails
         """
-        self.config = auth_config
+        self.config: Dict[str, Any] = auth_config
         self.logger = logging_service.get_class_logger(self)
-        self.enabled = auth_config.get("enabled", True)
+        self.enabled: bool = auth_config.get("enabled", True)
 
         # Load API keys configuration
-        self._api_keys = self._load_api_keys()
+        self._api_keys: Dict[str, Dict[str, Any]] = self._load_api_keys()
 
         # JWT configuration (for future implementation)
-        self.jwt_secret = auth_config.get("jwt", {}).get("secret")
-        self.jwt_algorithm = auth_config.get("jwt", {}).get("algorithm", "HS256")
+        self.jwt_secret: Optional[str] = auth_config.get("jwt", {}).get("secret")
+        self.jwt_algorithm: str = auth_config.get("jwt", {}).get("algorithm", "HS256")
 
         # Supabase configuration (for future implementation)
-        self.supabase_url = auth_config.get("supabase", {}).get("url")
-        self.supabase_key = auth_config.get("supabase", {}).get("anon_key")
+        self.supabase_url: Optional[str] = auth_config.get("supabase", {}).get("url")
+        self.supabase_key: Optional[str] = auth_config.get("supabase", {}).get(
+            "anon_key"
+        )
 
         self.logger.info(
             f"[AuthService] Initialized with {len(self._api_keys)} API keys"
         )
 
-    def _load_api_keys(self) -> Dict[str, Dict[str, any]]:
+    def _load_api_keys(self) -> Dict[str, Dict[str, Any]]:
         """
         Load API keys from configuration and environment variables.
 
         Returns:
             Dictionary mapping API key hashes to key metadata
         """
-        api_keys = {}
+        api_keys: Dict[str, Dict[str, Any]] = {}
 
         # Load from config file
         config_keys = self.config.get("api_keys", {})
@@ -290,8 +287,12 @@ class AuthService:
         Returns:
             List of public endpoint patterns
         """
-        return self.config.get(
-            "public_endpoints", ["/health", "/docs", "/openapi.json", "/redoc", "/"]
+        return cast(
+            List[str],
+            self.config.get(
+                "public_endpoints",
+                ["/health", "/docs", "/openapi.json", "/redoc", "/"],
+            ),
         )
 
     def validate_permissions(
@@ -317,7 +318,7 @@ class AuthService:
         # Check if user has all required permissions
         return all(perm in auth_context.permissions for perm in required_permissions)
 
-    def get_auth_stats(self) -> Dict[str, any]:
+    def get_auth_stats(self) -> Dict[str, Any]:
         """
         Get authentication statistics for monitoring.
 
