@@ -29,8 +29,21 @@ import cycle to dodge (verified with a direct import smoke test; see
 T-E05-F06-008 rework notes).
 """
 
+from __future__ import annotations
+
 from inspect import isawaitable
-from typing import Any, List, NoReturn, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Awaitable,
+    Iterable,
+    List,
+    NoReturn,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    cast,
+)
 
 from agentmap.exceptions import AttemptLifecycleRefusal
 from agentmap.exceptions.service_exceptions import LLMResolvedCallError
@@ -38,6 +51,21 @@ from agentmap.models.llm_execution import LLMMessage, LLMResponse
 from agentmap.services.llm._budget_guard_refusal import BudgetGuardRefusal
 from agentmap.services.llm.attempt_lifecycle import attempt_lifecycle
 from agentmap.services.llm_message_service import LLMMessageService
+from agentmap.services.logging_service import TraceLogger
+
+
+class _LLMFallbackHost(Protocol):
+    """Host operations used by the extracted async fallback mixin."""
+
+    _logger: TraceLogger
+
+    def _invoke_client_async(
+        self, *args: Any, **kwargs: Any
+    ) -> Awaitable[LLMResponse]: ...
+
+    def _build_tier_plan(
+        self, *args: Any, **kwargs: Any
+    ) -> Iterable[Tuple[str, str]]: ...
 
 
 class LLMFallbackAsyncLadderMixin:
@@ -70,8 +98,9 @@ class LLMFallbackAsyncLadderMixin:
         Extracted from ``try_with_fallback_async`` (NFR-F-006).
         """
         client_resolved = False
+        host = cast(_LLMFallbackHost, self)
         try:
-            self._logger.warning(
+            host._logger.warning(
                 f"Fallback tier: trying '{fallback_provider}:{fallback_model}'"
             )
             config = get_provider_config_fn(fallback_provider)
@@ -86,17 +115,17 @@ class LLMFallbackAsyncLadderMixin:
                 if attempt_lifecycle.get() is not None
                 else {}
             )
-            result = await self._invoke_client_async(
+            result = await host._invoke_client_async(
                 client, langchain_msgs, fallback_provider, fallback_model, **limits
             )
-            self._logger.info(
+            host._logger.info(
                 f"Fallback tier '{fallback_provider}:{fallback_model}' successful"
             )
             return result, None, client_resolved
         except (BudgetGuardRefusal, AttemptLifecycleRefusal):
             raise
         except Exception as tier_error:
-            self._logger.warning(
+            host._logger.warning(
                 f"Fallback tier '{fallback_provider}:{fallback_model}' failed: {tier_error}"
             )
             return None, tier_error, client_resolved
@@ -112,7 +141,7 @@ class LLMFallbackAsyncLadderMixin:
         convert_messages_fn: Any,
         *,
         eligible_providers: Optional[Sequence[str]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Async variant of tiered fallback preserving the sync fallback order.
 
@@ -124,7 +153,8 @@ class LLMFallbackAsyncLadderMixin:
         absorbed as a tier failure -- see ``_run_fallback_ladder_async``
         (E05-F06 REQ-F-003 / NFR-F-003).
         """
-        self._logger.error(
+        host = cast(_LLMFallbackHost, self)
+        host._logger.error(
             f"Model '{original_model}' failed for provider '{original_provider}': {error}"
         )
         # Strip Anthropic-only cache_control before failover — non-Anthropic
@@ -160,11 +190,12 @@ class LLMFallbackAsyncLadderMixin:
         ``BudgetGuardRefusal`` handling pushed it past 50 lines.
         """
         attempted_fallbacks: List[str] = []
+        host = cast(_LLMFallbackHost, self)
         last_attempted_provider = original_provider
         last_attempted_model = original_model
         last_error: Exception = error
 
-        for fallback_provider, fallback_model in self._build_tier_plan(
+        for fallback_provider, fallback_model in host._build_tier_plan(
             original_provider, original_model, eligible_providers
         ):
             attempted_fallbacks.append(f"{fallback_provider}:{fallback_model}")
@@ -177,7 +208,8 @@ class LLMFallbackAsyncLadderMixin:
             )
             if response is not None:
                 return response
-            last_error = tier_error
+            if tier_error is not None:
+                last_error = tier_error
             if client_resolved:
                 last_attempted_provider = fallback_provider
                 last_attempted_model = fallback_model
@@ -218,7 +250,8 @@ class LLMFallbackAsyncLadderMixin:
             f"Attempted fallbacks: {', '.join(attempted_fallbacks) if attempted_fallbacks else 'none'}. "
             f"Original error: {original_error}"
         )
-        self._logger.error(error_msg)
+        host = cast(_LLMFallbackHost, self)
+        host._logger.error(error_msg)
         raise LLMResolvedCallError(
             resolved_provider=last_attempted_provider,
             resolved_model=last_attempted_model,
