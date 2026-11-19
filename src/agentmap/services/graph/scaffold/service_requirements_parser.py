@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 from agentmap.models.scaffold_types import (
     ServiceAttribute,
@@ -10,7 +10,7 @@ from agentmap.models.scaffold_types import (
 class ServiceRequirementsParser:
     """Parses service requirements from CSV context and maps to protocols."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize with service-to-protocol mappings."""
         # Define both approaches - automatically choose based on requested services
         self.unified_service_map = {
@@ -183,7 +183,7 @@ class ServiceRequirementsParser:
 
         # Handle dict context
         if isinstance(context, dict):
-            return context.get("services", [])
+            return cast(List[str], context.get("services", []))
 
         # Handle string context
         if isinstance(context, str):
@@ -191,7 +191,7 @@ class ServiceRequirementsParser:
             if context.strip().startswith("{"):
                 try:
                     parsed = json.loads(context)
-                    return parsed.get("services", [])
+                    return cast(List[str], parsed.get("services", []))
                 except json.JSONDecodeError:
                     pass
 

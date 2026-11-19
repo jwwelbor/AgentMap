@@ -24,7 +24,9 @@ class DeclarationConfigManager(BaseConfigManager):
         Returns:
             List of Path objects for custom declaration directories
         """
-        declaration_paths_config = self.get_value("declarations.custom", [])
+        declaration_paths_config: List[Any] = self.get_value(
+            "declarations.custom", []
+        )
 
         declaration_paths = []
         for path_config in declaration_paths_config:
@@ -72,7 +74,7 @@ class DeclarationConfigManager(BaseConfigManager):
         if not self.is_host_declarations_enabled():
             return []
 
-        host_paths_config = self.get_value("declarations.host.paths", [])
+        host_paths_config: List[Any] = self.get_value("declarations.host.paths", [])
 
         host_paths = []
         for path in host_paths_config:
@@ -123,7 +125,9 @@ class DeclarationConfigManager(BaseConfigManager):
         Returns:
             Dictionary with validation settings
         """
-        validation_config = self.get_value("declarations.validation", {})
+        validation_config: Dict[str, Any] = self.get_value(
+            "declarations.validation", {}
+        )
 
         # Default validation settings
         defaults = {

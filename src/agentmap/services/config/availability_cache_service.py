@@ -3,7 +3,7 @@
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, cast
 
 from agentmap.services.config.availability_cache import ThreadSafeFileCache
 from agentmap.services.config.cache_invalidation_mixin import CacheInvalidationMixin
@@ -35,7 +35,9 @@ class AvailabilityCacheService(CacheInvalidationMixin, CacheStatisticsMixin):
     - storage.vector
     """
 
-    def __init__(self, cache_file_path: Union[str, Path], logger=None):
+    def __init__(
+        self, cache_file_path: Union[str, Path], logger: Optional[Any] = None
+    ) -> None:
         self._cache_file_path = Path(cache_file_path)
         self._logger = logger
         self._file_cache = ThreadSafeFileCache(self._cache_file_path, logger)
@@ -65,7 +67,7 @@ class AvailabilityCacheService(CacheInvalidationMixin, CacheStatisticsMixin):
                     return None
                 result = cache_data.get("availability", {}).get(cache_key)
                 self._stats["cache_hits" if result else "cache_misses"] += 1
-                return result
+                return cast(Optional[Dict[str, Any]], result)
         except Exception:
             self._stats["cache_misses"] += 1
             return None
@@ -102,7 +104,7 @@ class AvailabilityCacheService(CacheInvalidationMixin, CacheStatisticsMixin):
     def is_initialized(self) -> bool:
         return self._cache_file_path.exists()
 
-    def refresh_cache(self, container) -> None:
+    def refresh_cache(self, container: Any) -> None:
         dependency_checker = container.dependency_checker_service()
         self.invalidate_cache()
         dependency_checker.discover_and_validate_providers("llm", force=True)
