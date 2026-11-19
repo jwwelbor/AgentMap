@@ -67,10 +67,14 @@ def extract_graph_name(
     Returns:
         Graph name string
     """
-    if bundle and hasattr(bundle, "graph_name"):
+    if bundle and bundle.graph_name:
         return bundle.graph_name
-    elif bundle_context and "graph_name" in bundle_context:
-        return bundle_context["graph_name"]
-    elif checkpoint_data and "graph_name" in checkpoint_data:
-        return checkpoint_data["graph_name"]
+    if bundle_context:
+        graph_name = bundle_context.get("graph_name")
+        if isinstance(graph_name, str):
+            return graph_name
+    if checkpoint_data:
+        graph_name = checkpoint_data.get("graph_name")
+        if isinstance(graph_name, str):
+            return graph_name
     return fallback

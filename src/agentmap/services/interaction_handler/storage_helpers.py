@@ -1,10 +1,19 @@
 """Storage helper mixin."""
 
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+from agentmap.models.storage.types import StorageResult, WriteMode
+
+if TYPE_CHECKING:
+    from agentmap.services.storage.file_service import FileStorageService
 
 
 class StorageHelpersMixin:
+    if TYPE_CHECKING:
+        file_storage: FileStorageService
+        threads_collection: str
+
     def _normalize_collection_name(self, collection: str) -> str:
         if not collection:
             return ""
@@ -17,14 +26,29 @@ class StorageHelpersMixin:
             return collection_normalized[len(base_dir_normalized) :].lstrip("/") or ""
         return collection_normalized
 
-    def _write_collection(self, collection: str, **kwargs):
+    def _write_collection(
+        self,
+        collection: str,
+        data: Any,
+        document_id: Optional[str] = None,
+        mode: WriteMode = WriteMode.WRITE,
+        **kwargs: Any,
+    ) -> StorageResult[Any]:
         return self.file_storage.write(
-            collection=self._normalize_collection_name(collection), **kwargs
+            collection=self._normalize_collection_name(collection),
+            data=data,
+            document_id=document_id,
+            mode=mode,
+            **kwargs,
         )
 
-    def _read_collection(self, collection: str, **kwargs):
+    def _read_collection(
+        self, collection: str, document_id: Optional[str] = None, **kwargs: Any
+    ) -> Any:
         return self.file_storage.read(
-            collection=self._normalize_collection_name(collection), **kwargs
+            collection=self._normalize_collection_name(collection),
+            document_id=document_id,
+            **kwargs,
         )
 
     def _find_legacy_thread_file(self, thread_id: str) -> Optional[Path]:
