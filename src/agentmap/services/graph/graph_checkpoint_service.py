@@ -19,8 +19,10 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Sequence, Tuple
 from uuid import uuid4
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
+    ChannelVersions,
     Checkpoint,
     CheckpointMetadata,
     CheckpointTuple,
@@ -31,7 +33,7 @@ from agentmap.services.logging_service import LoggingService
 from agentmap.services.storage.system_manager import SystemStorageManager
 
 
-class GraphCheckpointService(BaseCheckpointSaver):
+class GraphCheckpointService(BaseCheckpointSaver[Any]):
     """Service for managing graph execution checkpoints with pickle serialization."""
 
     def __init__(
@@ -61,20 +63,22 @@ class GraphCheckpointService(BaseCheckpointSaver):
 
     def put(
         self,
-        config: Dict[str, Any],
+        config: RunnableConfig,
         checkpoint: Checkpoint,
         metadata: CheckpointMetadata,
-        new_versions: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        new_versions: ChannelVersions,
+    ) -> RunnableConfig:
         """Save a checkpoint (LangGraph interface)."""
-        thread_id = config["configurable"]["thread_id"]
-        checkpoint_id = str(uuid4())
+        configurable = config["configurable"]
+        thread_id = configurable["thread_id"]
+        checkpoint_id = str(checkpoint.get("id") or uuid4())
+        checkpoint_ns = configurable.get("checkpoint_ns", "")
 
         try:
             # NOTE: LangGraph sometimes creates checkpoints with sets in versions_seen.
             # The serde (JsonPlusSerializer) can handle this, but we need to make a copy
             # first to avoid modifying the original checkpoint passed by LangGraph.
-            checkpoint_copy = {**checkpoint}
+            checkpoint_copy = {**checkpoint, "id": checkpoint_id}
 
             # Convert sets to lists in versions_seen for proper serialization
             if "versions_seen" in checkpoint_copy:
@@ -98,7 +102,10 @@ class GraphCheckpointService(BaseCheckpointSaver):
                 "metadata": metadata_typed,  # tuple[str, bytes] from dumps_typed
                 "timestamp": datetime.utcnow().isoformat(),
                 "version": "2.0",
-                "new_versions": new_versions or {},
+                "checkpoint_id": checkpoint_id,
+                "parent_checkpoint_id": configurable.get("checkpoint_id"),
+                "checkpoint_ns": checkpoint_ns,
+                "new_versions": new_versions,
             }
 
             # Serialize entire document with pickle
@@ -115,23 +122,33 @@ class GraphCheckpointService(BaseCheckpointSaver):
                 binary_mode=True,
             )
 
-            if result.success:
-                self.logger.debug(
-                    f"Checkpoint saved: thread={thread_id}, id={checkpoint_id}, "
-                    f"size={len(document_bytes)} bytes"
-                )
-                return {"success": True, "checkpoint_id": checkpoint_id}
-            else:
-                raise Exception(f"Checkpoint save failed: {result.error}")
+            if not result.success:
+                raise RuntimeError(f"Checkpoint save failed: {result.error}")
+
+            self.logger.debug(
+                f"Checkpoint saved: thread={thread_id}, id={checkpoint_id}, "
+                f"size={len(document_bytes)} bytes"
+            )
 
         except Exception as e:
             error_msg = f"Failed to save checkpoint: {str(e)}"
             self.logger.error(error_msg)
-            return {"success": False, "error": error_msg}
+            raise RuntimeError(error_msg) from e
 
-    def get_tuple(self, config: Dict[str, Any]) -> Optional[CheckpointTuple]:
+        return {
+            "configurable": {
+                "thread_id": thread_id,
+                "checkpoint_ns": checkpoint_ns,
+                "checkpoint_id": checkpoint_id,
+            }
+        }
+
+    def get_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
         """Load the latest checkpoint for a thread (LangGraph interface)."""
-        thread_id = config["configurable"]["thread_id"]
+        configurable = config["configurable"]
+        thread_id = configurable["thread_id"]
+        checkpoint_ns = configurable.get("checkpoint_ns", "")
+        requested_checkpoint_id = configurable.get("checkpoint_id")
         self.logger.trace(f"Loading checkpoint for thread {thread_id}")
 
         try:
@@ -145,6 +162,13 @@ class GraphCheckpointService(BaseCheckpointSaver):
 
             # Filter files by thread_id prefix
             thread_files = [f for f in files if f.startswith(f"{thread_id}_")]
+            if requested_checkpoint_id:
+                requested_filename = f"{thread_id}_{requested_checkpoint_id}.pkl"
+                thread_files = [
+                    filename
+                    for filename in thread_files
+                    if filename == requested_filename
+                ]
 
             if not thread_files:
                 self.logger.debug(f"no files found for thread {thread_id}")
@@ -152,8 +176,8 @@ class GraphCheckpointService(BaseCheckpointSaver):
 
             # Find the latest checkpoint file
             # We need to get file metadata to sort by timestamp
-            latest_file = None
-            latest_timestamp = None
+            latest_file: Optional[Dict[str, Any]] = None
+            latest_timestamp: Optional[str] = None
 
             for filename in thread_files:
                 # Read the file
@@ -164,7 +188,9 @@ class GraphCheckpointService(BaseCheckpointSaver):
                 if file_data:
                     # Deserialize document
                     checkpoint_doc = pickle.loads(file_data)
-                    timestamp = checkpoint_doc.get("timestamp", "")
+                    if checkpoint_doc.get("checkpoint_ns", "") != checkpoint_ns:
+                        continue
+                    timestamp = str(checkpoint_doc.get("timestamp", ""))
 
                     # Use >= to prefer later files when timestamps are identical
                     # (files are in insertion order, so later = more recent)
@@ -195,10 +221,26 @@ class GraphCheckpointService(BaseCheckpointSaver):
                     }
 
             return CheckpointTuple(
-                config=config,
+                config={
+                    "configurable": {
+                        "thread_id": thread_id,
+                        "checkpoint_ns": checkpoint_ns,
+                        "checkpoint_id": latest_file.get("checkpoint_id", ""),
+                    }
+                },
                 checkpoint=checkpoint,
                 metadata=metadata,
-                parent_config=None,
+                parent_config=(
+                    {
+                        "configurable": {
+                            "thread_id": thread_id,
+                            "checkpoint_ns": checkpoint_ns,
+                            "checkpoint_id": latest_file["parent_checkpoint_id"],
+                        }
+                    }
+                    if latest_file.get("parent_checkpoint_id")
+                    else None
+                ),
             )
 
         except Exception as e:
@@ -209,7 +251,7 @@ class GraphCheckpointService(BaseCheckpointSaver):
 
     def put_writes(
         self,
-        config: Dict[str, Any],
+        config: RunnableConfig,
         writes: Sequence[Tuple[str, Any]],
         task_id: str,
         task_path: str = "",
@@ -286,17 +328,17 @@ class GraphCheckpointService(BaseCheckpointSaver):
     # We delegate to the sync variants via asyncio.to_thread so the file I/O
     # stays off the event loop without blocking it.
 
-    async def aget_tuple(self, config: Dict[str, Any]) -> Optional[CheckpointTuple]:
+    async def aget_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
         """Async variant of get_tuple. Delegates via worker-thread seam."""
         return await asyncio.to_thread(self.get_tuple, config)
 
     async def aput(
         self,
-        config: Dict[str, Any],
+        config: RunnableConfig,
         checkpoint: Checkpoint,
         metadata: CheckpointMetadata,
-        new_versions: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        new_versions: ChannelVersions,
+    ) -> RunnableConfig:
         """Async variant of put. Delegates via worker-thread seam."""
         return await asyncio.to_thread(
             self.put, config, checkpoint, metadata, new_versions
@@ -304,7 +346,7 @@ class GraphCheckpointService(BaseCheckpointSaver):
 
     async def aput_writes(
         self,
-        config: Dict[str, Any],
+        config: RunnableConfig,
         writes: Sequence[Tuple[str, Any]],
         task_id: str,
         task_path: str = "",

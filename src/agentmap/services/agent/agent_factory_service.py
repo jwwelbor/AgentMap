@@ -37,11 +37,11 @@ class AgentFactoryService:
         self._validator = AgentValidator(logging_service)
 
     @property
-    def _class_cache(self) -> Dict[str, Type]:
+    def _class_cache(self) -> Dict[str, Type[Any]]:
         """Property that exposes the resolver's class cache for testing."""
         return self._resolver.get_class_cache()
 
-    def get_class_cache(self) -> Dict[str, Type]:
+    def get_class_cache(self) -> Dict[str, Type[Any]]:
         """
         Get the class cache for testing purposes.
 
@@ -55,7 +55,7 @@ class AgentFactoryService:
         agent_type: str,
         agent_mappings: Dict[str, str],
         custom_agents: Optional[Set[str]] = None,
-    ) -> Type:
+    ) -> Type[Any]:
         """
         Resolve an agent class using provided mappings.
 
@@ -206,7 +206,7 @@ class AgentFactoryService:
 
     def _build_constructor_args(
         self,
-        agent_class: Type,
+        agent_class: Type[Any],
         node: Any,
         context: Dict[str, Any],
         execution_tracking_service: Optional[Any],
@@ -240,7 +240,7 @@ class AgentFactoryService:
             logger=self.logger,
         )
 
-    def _import_class_from_path(self, class_path: str) -> Type:
+    def _import_class_from_path(self, class_path: str) -> Type[Any]:
         """
         Import a class from its fully qualified path.
 
@@ -254,7 +254,7 @@ class AgentFactoryService:
         """
         return self._resolver._import_class_from_path(class_path)
 
-    def _try_load_custom_agent(self, agent_type: str) -> Optional[Type]:
+    def _try_load_custom_agent(self, agent_type: str) -> Optional[Type[Any]]:
         """
         Try to load a custom agent as fallback.
 
@@ -268,7 +268,7 @@ class AgentFactoryService:
         """
         return self._resolver._try_load_custom_agent(agent_type)
 
-    def _get_default_agent_class(self) -> Type:
+    def _get_default_agent_class(self) -> Type[Any]:
         """
         Get default agent class as fallback.
 
@@ -279,7 +279,7 @@ class AgentFactoryService:
         """
         return self._resolver._get_default_agent_class()
 
-    def _resolve_agent_class_with_fallback(self, agent_type: str) -> Type:
+    def _resolve_agent_class_with_fallback(self, agent_type: str) -> Type[Any]:
         """
         Resolve agent class with comprehensive fallback logic.
 

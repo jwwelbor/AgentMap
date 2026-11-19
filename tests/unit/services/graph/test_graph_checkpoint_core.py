@@ -95,10 +95,15 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         metadata = {"source": "unit"}
 
         result = self.service.put(
-            config=config, checkpoint=checkpoint, metadata=metadata
+            config=config,
+            checkpoint=checkpoint,
+            metadata=metadata,
+            new_versions={},
         )
 
-        self.assertTrue(result["success"])
+        self.assertEqual(result["configurable"]["thread_id"], "thread-123")
+        checkpoint_id = result["configurable"]["checkpoint_id"]
+        self.assertTrue(checkpoint_id)
         stored = self.file_storage.read(collection="")
         self.assertEqual(len(stored), 1)
         document_id = stored[0]
@@ -112,6 +117,7 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         self.assertIn("metadata", payload)
         restored_checkpoint = self.service.serde.loads_typed(payload["checkpoint"])
         self.assertIsInstance(restored_checkpoint["versions_seen"]["node"], list)
+        self.assertEqual(restored_checkpoint["id"], checkpoint_id)
 
     def test_put_handles_storage_failure(self):
         self.service.file_storage.write = mock.Mock(
@@ -122,12 +128,13 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         checkpoint = {"state": {}}
         metadata = {}
 
-        result = self.service.put(
-            config=config, checkpoint=checkpoint, metadata=metadata
-        )
-
-        self.assertFalse(result["success"])
-        self.assertIn("error", result)
+        with self.assertRaisesRegex(RuntimeError, "Checkpoint save failed: boom"):
+            self.service.put(
+                config=config,
+                checkpoint=checkpoint,
+                metadata=metadata,
+                new_versions={},
+            )
         self.logger.error.assert_called()
 
     def test_get_tuple_returns_latest_checkpoint(self):
@@ -135,14 +142,23 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         checkpoint1 = {"state": {"value": "first"}}
         checkpoint2 = {"state": {"value": "second"}}
 
-        self.service.put(config=config, checkpoint=checkpoint1, metadata={"idx": 1})
-        self.service.put(config=config, checkpoint=checkpoint2, metadata={"idx": 2})
+        first_config = self.service.put(
+            config=config, checkpoint=checkpoint1, metadata={"idx": 1}, new_versions={}
+        )
+        second_config = self.service.put(
+            config=config, checkpoint=checkpoint2, metadata={"idx": 2}, new_versions={}
+        )
 
         result = self.service.get_tuple(config)
 
         self.assertIsNotNone(result)
         self.assertEqual(result.checkpoint["state"]["value"], "second")
         self.assertEqual(result.metadata["idx"], 2)
+        first_result = self.service.get_tuple(first_config)
+        self.assertIsNotNone(first_result)
+        self.assertEqual(first_result.checkpoint["state"]["value"], "first")
+        self.assertEqual(first_result.config, first_config)
+        self.assertEqual(second_config["configurable"]["thread_id"], "thread-1")
 
     def test_get_tuple_returns_none_for_missing_thread(self):
         config = {"configurable": {"thread_id": "missing"}}
@@ -161,8 +177,18 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
             fixed_time = "2025-10-15T12:00:00.000000"
             mock_dt.utcnow.return_value.isoformat.return_value = fixed_time
 
-            self.service.put(config=config, checkpoint=checkpoint1, metadata={"idx": 1})
-            self.service.put(config=config, checkpoint=checkpoint2, metadata={"idx": 2})
+            self.service.put(
+                config=config,
+                checkpoint=checkpoint1,
+                metadata={"idx": 1},
+                new_versions={},
+            )
+            self.service.put(
+                config=config,
+                checkpoint=checkpoint2,
+                metadata={"idx": 2},
+                new_versions={},
+            )
 
         # Should return the second checkpoint (latest by insertion order)
         result = self.service.get_tuple(config)

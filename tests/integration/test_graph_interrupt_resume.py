@@ -127,13 +127,12 @@ providers:
         )
         metadata = {"source": "integration_test", "step": 1}
 
-        result = checkpoint_service.put(config, checkpoint, metadata)
-        self.assertTrue(result["success"])
-        self.assertIn("checkpoint_id", result)
+        result = checkpoint_service.put(config, checkpoint, metadata, new_versions={})
+        self.assertIn("checkpoint_id", result["configurable"])
 
-        retrieved_tuple = checkpoint_service.get_tuple(config)
+        retrieved_tuple = checkpoint_service.get_tuple(result)
         self.assertIsNotNone(retrieved_tuple)
-        self.assertEqual(retrieved_tuple.config, config)
+        self.assertEqual(retrieved_tuple.config, result)
         self.assertEqual(
             retrieved_tuple.checkpoint["channel_values"], checkpoint["channel_values"]
         )
@@ -219,16 +218,22 @@ providers:
 
         config = {"configurable": {"thread_id": thread_id}}
         checkpoint_result = checkpoint_service.put(
-            config, initial_checkpoint, {"source": "workflow_test", "step": 1}
+            config,
+            initial_checkpoint,
+            {"source": "workflow_test", "step": 1},
+            new_versions={},
         )
-        self.assertTrue(checkpoint_result["success"])
+        self.assertIn("checkpoint_id", checkpoint_result["configurable"])
+        config = checkpoint_result
 
         interaction_request = self._create_test_interaction_request(thread_id)
         bundle = self._create_test_bundle()
 
         checkpoint_data = {
             "inputs": {"current_state": "paused"},
-            "agent_context": {"checkpoint_id": checkpoint_result["checkpoint_id"]},
+            "agent_context": {
+                "checkpoint_id": checkpoint_result["configurable"]["checkpoint_id"]
+            },
             "execution_tracker": {"completed_nodes": ["start"]},
             "node_name": "test_node",
         }
@@ -266,13 +271,14 @@ providers:
             config,
             resumed_checkpoint,
             {"source": "workflow_test", "step": 2, "resumed": True},
+            new_versions={},
         )
-        self.assertTrue(resume_result["success"])
+        self.assertIn("checkpoint_id", resume_result["configurable"])
 
         completion_success = interaction_service.mark_thread_completed(thread_id)
         self.assertTrue(completion_success)
 
-        final_tuple = checkpoint_service.get_tuple(config)
+        final_tuple = checkpoint_service.get_tuple(resume_result)
         self.assertIsNotNone(final_tuple)
         self.assertEqual(
             final_tuple.checkpoint["channel_values"]["nodes"]["test_node"], "processed"
@@ -416,8 +422,9 @@ providers:
                 config,
                 checkpoint,
                 {"source": "concurrent_test", "thread": thread_id},
+                new_versions={},
             )
-            self.assertTrue(result["success"])
+            self.assertEqual(result["configurable"]["thread_id"], thread_id)
 
         with patch("agentmap.deployment.cli.display_utils.display_interaction_request"):
             for thread_id in threads:

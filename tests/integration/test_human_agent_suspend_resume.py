@@ -165,13 +165,12 @@ csv:
             "test": "metadata",
         }
 
-        result = checkpoint_service.put(config, checkpoint, metadata)
-        self.assertTrue(result["success"])
-        self.assertIn("checkpoint_id", result)
+        result = checkpoint_service.put(config, checkpoint, metadata, new_versions={})
+        self.assertIn("checkpoint_id", result["configurable"])
 
-        checkpoint_tuple = checkpoint_service.get_tuple(config)
+        checkpoint_tuple = checkpoint_service.get_tuple(result)
         self.assertIsNotNone(checkpoint_tuple)
-        self.assertEqual(checkpoint_tuple.config, config)
+        self.assertEqual(checkpoint_tuple.config, result)
 
         # Verify checkpoint channel values round-trip correctly
         self.assertEqual(checkpoint_tuple.checkpoint["channel_values"]["key"], "value")
@@ -249,8 +248,10 @@ csv:
                 "test_type": "concurrent",
             }
 
-            result = checkpoint_service.put(config, checkpoint, metadata)
-            self.assertTrue(result["success"])
+            result = checkpoint_service.put(
+                config, checkpoint, metadata, new_versions={}
+            )
+            self.assertEqual(result["configurable"]["thread_id"], thread_id)
 
         # Verify each thread's checkpoint can be independently retrieved
         for i, thread_id in enumerate(threads):
@@ -258,7 +259,9 @@ csv:
             checkpoint_tuple = checkpoint_service.get_tuple(config)
 
             self.assertIsNotNone(checkpoint_tuple)
-            self.assertEqual(checkpoint_tuple.config, config)
+            self.assertEqual(
+                checkpoint_tuple.config["configurable"]["thread_id"], thread_id
+            )
 
             # Verify the correct data was stored for each thread
             channel_values = checkpoint_tuple.checkpoint["channel_values"]
