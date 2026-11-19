@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from agentmap.services.config.config_service import ConfigService
+
 
 class PathResolver:
     """
@@ -26,7 +28,7 @@ class PathResolver:
     def __init__(
         self,
         config_data: Dict[str, Any],
-        config_service,
+        config_service: ConfigService,
         logger: Optional[logging.Logger] = None,
     ):
         """
@@ -41,7 +43,7 @@ class PathResolver:
         self._config_service = config_service
         self._logger = logger or logging.getLogger(__name__)
 
-    def set_logger(self, logger: logging.Logger):
+    def set_logger(self, logger: logging.Logger) -> None:
         """
         Set the logger instance.
 
@@ -81,7 +83,7 @@ class PathResolver:
         if isinstance(config, dict):
             # Check for explicit default_directory
             default_dir = config.get("default_directory")
-            if default_dir:
+            if isinstance(default_dir, str) and default_dir:
                 # If it's an absolute path, extract just the directory name
                 if os.path.isabs(default_dir):
                     return Path(default_dir).name
@@ -169,5 +171,11 @@ class PathResolver:
             f"{storage_type}.collections.{collection_name}",
             {},
         )
-        filename = collection_config.get("filename", f"{collection_name}.{extension}")
+        filename = (
+            collection_config.get("filename")
+            if isinstance(collection_config, dict)
+            else None
+        )
+        if not isinstance(filename, str):
+            filename = f"{collection_name}.{extension}"
         return storage_path / filename
