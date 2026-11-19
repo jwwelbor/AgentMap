@@ -7,7 +7,11 @@ allowing the main service to delegate caching operations.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+from agentmap.services.config.availability_cache_service import (
+    AvailabilityCacheService,
+)
 
 
 class AvailabilityCacheManager:
@@ -20,8 +24,10 @@ class AvailabilityCacheManager:
     """
 
     def __init__(
-        self, availability_cache_service=None, logger: Optional[logging.Logger] = None
-    ):
+        self,
+        availability_cache_service: Optional[AvailabilityCacheService] = None,
+        logger: Optional[logging.Logger] = None,
+    ) -> None:
         """
         Initialize the cache manager.
 
@@ -32,7 +38,7 @@ class AvailabilityCacheManager:
         self._availability_cache_service = availability_cache_service
         self._logger = logger or logging.getLogger(__name__)
 
-    def set_logger(self, logger: logging.Logger):
+    def set_logger(self, logger: logging.Logger) -> None:
         """
         Set the logger instance.
 
@@ -51,7 +57,7 @@ class AvailabilityCacheManager:
         Returns:
             Cached availability data or None if not found/invalid
         """
-        if not self._availability_cache_service:
+        if self._availability_cache_service is None:
             return None
 
         try:
@@ -75,7 +81,7 @@ class AvailabilityCacheManager:
         Returns:
             True if successfully cached, False otherwise
         """
-        if not self._availability_cache_service:
+        if self._availability_cache_service is None:
             return False
 
         try:
@@ -91,7 +97,7 @@ class AvailabilityCacheManager:
         enabled: bool,
         last_error: Optional[str] = None,
         config_present: bool = True,
-        warnings: Optional[list] = None,
+        warnings: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Create a standardized cache result dictionary.
