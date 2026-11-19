@@ -160,6 +160,29 @@ class TestGraphCheckpointServiceCore(unittest.TestCase):
         self.assertEqual(first_result.config, first_config)
         self.assertEqual(second_config["configurable"]["thread_id"], "thread-1")
 
+    def test_get_tuple_does_not_match_thread_id_prefix_collisions(self):
+        short_config = self.service.put(
+            config={"configurable": {"thread_id": "thread"}},
+            checkpoint={"state": {"owner": "thread"}},
+            metadata={},
+            new_versions={},
+        )
+        self.service.put(
+            config={"configurable": {"thread_id": "thread_extra"}},
+            checkpoint={"state": {"owner": "thread_extra"}},
+            metadata={},
+            new_versions={},
+        )
+
+        result = self.service.get_tuple({"configurable": {"thread_id": "thread"}})
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.config["configurable"]["thread_id"], "thread")
+        self.assertEqual(result.checkpoint["state"]["owner"], "thread")
+        self.assertEqual(
+            result.checkpoint["id"], short_config["configurable"]["checkpoint_id"]
+        )
+
     def test_get_tuple_returns_none_for_missing_thread(self):
         config = {"configurable": {"thread_id": "missing"}}
         self.assertIsNone(self.service.get_tuple(config))

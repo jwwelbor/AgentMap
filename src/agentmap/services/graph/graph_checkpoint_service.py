@@ -190,7 +190,12 @@ class GraphCheckpointService(BaseCheckpointSaver[Any]):
                 if file_data:
                     # Deserialize document
                     checkpoint_doc = pickle.loads(file_data)
-                    if checkpoint_doc.get("checkpoint_ns", "") != checkpoint_ns:
+                    checkpoint_id = checkpoint_doc.get("checkpoint_id")
+                    if (
+                        not isinstance(checkpoint_id, str)
+                        or filename != f"{thread_id}_{checkpoint_id}.pkl"
+                        or checkpoint_doc.get("checkpoint_ns", "") != checkpoint_ns
+                    ):
                         continue
                     timestamp = str(checkpoint_doc.get("timestamp", ""))
 
