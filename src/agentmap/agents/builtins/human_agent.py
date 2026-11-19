@@ -27,10 +27,11 @@ class HumanAgent(SuspendAgent):
         context: Optional[Dict[str, Any]] = None,
         logger: Optional[logging.Logger] = None,
     ):
+        interaction_context = context if context is not None else {}
         super().__init__(  # call into SuspendAgent
             name=name,
             prompt=prompt,
-            context=context,
+            context=interaction_context,
             logger=logger,
             execution_tracking_service=execution_tracking_service,
             state_adapter_service=state_adapter_service,
@@ -42,10 +43,10 @@ class HumanAgent(SuspendAgent):
         # timeout_seconds: Optional[int] = None,
         # default_action: Optional[str] = None,
 
-        interaction_type = context.get("interaction_type", "text_input")
-        options = context.get("options")
-        timeout_seconds = context.get("timeout_seconds")
-        default_option = context.get("default_option")
+        interaction_type = interaction_context.get("interaction_type", "text_input")
+        options = interaction_context.get("options")
+        timeout_seconds = interaction_context.get("timeout_seconds")
+        default_option = interaction_context.get("default_option")
 
         try:
             self.interaction_type = InteractionType(interaction_type.lower())

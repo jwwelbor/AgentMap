@@ -21,7 +21,7 @@ from agentmap.services.graph.graph_runner_service import GraphRunnerService
 from .init_ops import ensure_initialized, ensure_initialized_async
 
 
-def _resolve_csv_path(graph_identifier: str, container) -> tuple[Path, str]:
+def _resolve_csv_path(graph_identifier: str, container: Any) -> tuple[Path, str]:
     """
     Resolve (csv_path, resolved_graph_name) from a graph identifier.
 
@@ -58,23 +58,23 @@ def _resolve_csv_path(graph_identifier: str, container) -> tuple[Path, str]:
     if "::" in identifier:
         if identifier.count("::") != 1:
             raise GraphNotFound(graph_identifier, "Invalid :: syntax")
-        csv_path, graph_name = (p.strip() for p in identifier.split("::", 1))
-        if not csv_path or not graph_name:
+        csv_token, graph_name = (p.strip() for p in identifier.split("::", 1))
+        if not csv_token or not graph_name:
             raise GraphNotFound(graph_identifier, "Empty workflow name or graph name")
-        workflow_token, graph_token = csv_path, graph_name
-        fallback_path = Path(csv_path)
+        workflow_token, graph_token = csv_token, graph_name
+        fallback_path = Path(csv_token)
         # Log the detected :: syntax
         logger.debug(
             f"Detected :: syntax in graph identifier '{identifier}': workflow='{workflow_token}', graph='{graph_token}'"
         )
     elif "/" in identifier:
-        csv_path = identifier.split("/", 1)[0].strip()
+        csv_token = identifier.split("/", 1)[0].strip()
         graph_name = identifier.rsplit("/", 1)[-1].strip()
-        if not csv_path or not graph_name:
+        if not csv_token or not graph_name:
             raise GraphNotFound(
                 graph_identifier, "Empty workflow or graph name in '/' syntax"
             )
-        workflow_token, graph_token = csv_path, graph_name
+        workflow_token, graph_token = csv_token, graph_name
         fallback_path = Path(identifier)
 
     repo_candidate = csv_repo / f"{workflow_token}.csv"
@@ -589,15 +589,15 @@ def validate_workflow(
 
 
 def _graph_entry(
-    csv_file,
-    file_stat,
-    workflow_name,
-    graph_name,
-    total_nodes,
-    graph_count,
-    profile,
-    csv_repository,
-):
+    csv_file: Path,
+    file_stat: os.stat_result,
+    workflow_name: str,
+    graph_name: Any,
+    total_nodes: int,
+    graph_count: int,
+    profile: Optional[str],
+    csv_repository: Path,
+) -> Dict[str, Any]:
     """Create a graph entry dictionary."""
     return {
         "name": graph_name,
