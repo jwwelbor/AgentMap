@@ -6,7 +6,7 @@ Handles custom agents, built-in agents, and fallback logic.
 """
 
 import importlib
-from typing import Any, Dict, Optional, Set, Type
+from typing import Any, Dict, Optional, Set, Type, cast
 
 from agentmap.services.custom_agent_loader import CustomAgentLoader
 from agentmap.services.logging_service import LoggingService
@@ -31,14 +31,14 @@ class AgentClassResolver:
         """Initialize resolver with dependencies."""
         self.logger = logging_service.get_class_logger(self)
         self._custom_agent_loader = custom_agent_loader
-        self._class_cache: Dict[str, Type] = {}
+        self._class_cache: Dict[str, Type[Any]] = {}
 
     def resolve_agent_class(
         self,
         agent_type: str,
         agent_mappings: Dict[str, str],
         custom_agents: Optional[Set[str]] = None,
-    ) -> Type:
+    ) -> Type[Any]:
         """
         Resolve an agent class using provided mappings.
 
@@ -87,7 +87,7 @@ class AgentClassResolver:
             self.logger.error(f"[AgentClassResolver] {error_msg}")
             raise ImportError(error_msg) from e
 
-    def resolve_agent_class_with_fallback(self, agent_type: str) -> Type:
+    def resolve_agent_class_with_fallback(self, agent_type: str) -> Type[Any]:
         """
         Resolve agent class with comprehensive fallback logic.
 
@@ -126,7 +126,7 @@ class AgentClassResolver:
         )
         return self._get_default_agent_class()
 
-    def get_class_cache(self) -> Dict[str, Type]:
+    def get_class_cache(self) -> Dict[str, Type[Any]]:
         """
         Get the class cache for testing purposes.
 
@@ -169,7 +169,7 @@ class AgentClassResolver:
                 "_resolution_method": "AgentClassResolver.resolve_agent_class",
             }
 
-    def _import_class_from_path(self, class_path: str) -> Type:
+    def _import_class_from_path(self, class_path: str) -> Type[Any]:
         """
         Import a class from its fully qualified path.
 
@@ -216,7 +216,7 @@ class AgentClassResolver:
             module = importlib.import_module(module_path)
 
             # Get the class from the module
-            agent_class = getattr(module, class_name)
+            agent_class = cast(Type[Any], getattr(module, class_name))
 
             # Cache the class for performance
             self._class_cache[class_path] = agent_class
@@ -233,7 +233,7 @@ class AgentClassResolver:
             )
             raise
 
-    def _try_load_custom_agent(self, agent_type: str) -> Optional[Type]:
+    def _try_load_custom_agent(self, agent_type: str) -> Optional[Type[Any]]:
         """
         Try to load a custom agent as fallback.
 
@@ -254,7 +254,7 @@ class AgentClassResolver:
 
             try:
                 module = __import__(modname, fromlist=[classname])
-                agent_class = getattr(module, classname)
+                agent_class = cast(Type[Any], getattr(module, classname))
                 self.logger.debug(
                     f"[AgentClassResolver] Successfully loaded custom agent: {agent_class.__name__}"
                 )
@@ -271,7 +271,7 @@ class AgentClassResolver:
             )
             return None
 
-    def _get_default_agent_class(self) -> Type:
+    def _get_default_agent_class(self) -> Type[Any]:
         """
         Get default agent class as fallback.
 
@@ -290,13 +290,13 @@ class AgentClassResolver:
 
             # Fallback class that implements the basic agent interface
             class BasicAgent:
-                def __init__(self, **kwargs):
+                def __init__(self, **kwargs: Any) -> None:
                     self.name = kwargs.get("name", "default")
                     self.prompt = kwargs.get("prompt", "")
                     self.context = kwargs.get("context", {})
                     self.logger = kwargs.get("logger")
 
-                def run(self, state):
+                def run(self, state: Any) -> Any:
                     """Basic run method that passes through state unchanged."""
                     return state
 
