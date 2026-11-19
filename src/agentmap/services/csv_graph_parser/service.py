@@ -8,7 +8,7 @@ CSVValidationService.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
 
 import pandas as pd
 
@@ -207,15 +207,21 @@ class CSVGraphParserService:
         """Delegate to parser component."""
         return self.parser.parse_dataframe_to_spec(df, csv_path)
 
-    def _parse_edge_targets(self, edge_value: str):
+    def _parse_edge_targets(
+        self, edge_value: str
+    ) -> Optional[Union[str, List[str]]]:
         """Delegate to parser component."""
         return self.parser.parse_edge_targets(edge_value)
 
-    def _parse_row_to_node_spec(self, row, line_number: int):
+    def _parse_row_to_node_spec(
+        self, row: pd.Series, line_number: int
+    ) -> Optional[NodeSpec]:
         """Delegate to parser component."""
         return self.parser.parse_row_to_node_spec(row, line_number)
 
-    def _safe_get_field(self, row, field_name: str, default: str = "") -> str:
+    def _safe_get_field(
+        self, row: pd.Series, field_name: str, default: str = ""
+    ) -> str:
         """Delegate to parser component."""
         return self.parser._safe_get_field(row, field_name, default)
 

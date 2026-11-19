@@ -8,7 +8,7 @@ implements (LLMCapableAgent, StorageCapableAgent, etc).
 
 from typing import Any, Dict, Optional, Set, Type
 
-from agentmap.services.agent.agent_factory_service import AgentFactoryService
+from agentmap.services.agent.agent_registry_service import AgentRegistryService
 from agentmap.services.csv_graph_parser_service import CSVGraphParserService
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocols import (
@@ -55,7 +55,7 @@ class ProtocolBasedRequirementsAnalyzer:
     def __init__(
         self,
         csv_parser: CSVGraphParserService,
-        agent_factory_service: AgentFactoryService,
+        agent_registry_service: AgentRegistryService,
         logging_service: LoggingService,
     ):
         """
@@ -63,11 +63,11 @@ class ProtocolBasedRequirementsAnalyzer:
 
         Args:
             csv_parser: Service for parsing CSV files into GraphSpec models
-            agent_factory_service: Service for resolving agent classes
+        agent_registry_service: Service for resolving registered agent classes
             logging_service: Service for logging operations
         """
         self.csv_parser = csv_parser
-        self.agent_factory = agent_factory_service
+        self.agent_registry = agent_registry_service
         self.logger = logging_service.get_class_logger(self)
         self.logger.debug("[ProtocolBasedRequirementsAnalyzer] Initialized")
 
@@ -135,7 +135,7 @@ class ProtocolBasedRequirementsAnalyzer:
             required_agents.add(agent_type)
 
             # Resolve agent class
-            agent_class = self.agent_factory.get_agent_class(agent_type)
+            agent_class = self.agent_registry.get_agent_class(agent_type)
             if agent_class is None:
                 self.logger.warning(
                     f"[ProtocolBasedRequirementsAnalyzer] Could not resolve "
@@ -159,7 +159,9 @@ class ProtocolBasedRequirementsAnalyzer:
             "required_services": required_services,
         }
 
-    def _analyze_agent_protocols(self, agent_class: Type, node_name: str) -> Set[str]:
+    def _analyze_agent_protocols(
+        self, agent_class: Type[Any], node_name: str
+    ) -> Set[str]:
         """
         Analyze which protocols an agent class implements.
 
@@ -189,7 +191,7 @@ class ProtocolBasedRequirementsAnalyzer:
         return required_services
 
     def _implements_protocol(
-        self, agent_class: Optional[Type], protocol_name: str
+        self, agent_class: Optional[Type[Any]], protocol_name: str
     ) -> bool:
         """
         Check if an agent class implements a specific protocol.
@@ -224,7 +226,7 @@ class ProtocolBasedRequirementsAnalyzer:
             )
             return False
 
-    def _get_protocol_class(self, protocol_name: str) -> Optional[Type]:
+    def _get_protocol_class(self, protocol_name: str) -> Optional[Type[Any]]:
         """
         Get the protocol class by name.
 

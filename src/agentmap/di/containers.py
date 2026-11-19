@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 def _expose(
-    container_provider: providers.Provider, attribute: str
+    container_provider: providers.Provider[Any], attribute: str
 ) -> providers.Callable:
     """Return a provider that resolves an attribute from a nested container."""
 
@@ -111,8 +111,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
     # (GraphCoreContainer needs it, but GraphAgentContainer is defined later)
     @staticmethod
     def _create_orchestrator_service(
-        prompt_manager_service, logging_service, llm_service, features_registry_service
-    ):
+        prompt_manager_service: Any,
+        logging_service: Any,
+        llm_service: Any,
+        features_registry_service: Any,
+    ) -> Any:
         from agentmap.services.orchestrator_service import OrchestratorService
 
         return OrchestratorService(
@@ -277,19 +280,19 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_graph_runner_service(
-        app_config_service,
-        graph_bootstrap_service,
-        graph_agent_instantiation_service,
-        graph_assembly_service,
-        graph_execution_service,
-        execution_tracking_service,
-        logging_service,
-        interaction_handler_service,
-        graph_checkpoint_service,
-        graph_bundle_service,
-        declaration_registry_service,
-        telemetry_service,
-    ):
+        app_config_service: Any,
+        graph_bootstrap_service: Any,
+        graph_agent_instantiation_service: Any,
+        graph_assembly_service: Any,
+        graph_execution_service: Any,
+        execution_tracking_service: Any,
+        logging_service: Any,
+        interaction_handler_service: Any,
+        graph_checkpoint_service: Any,
+        graph_bundle_service: Any,
+        declaration_registry_service: Any,
+        telemetry_service: Any,
+    ) -> Any:
         from agentmap.services.graph.graph_runner_service import GraphRunnerService
 
         return GraphRunnerService(
@@ -325,7 +328,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
 
     # --- Delegated helper methods ----------------------------------------------
 
-    def get_cache_status(self):
+    def get_cache_status(self) -> Any:
         return self._core().get_cache_status()
 
     def invalidate_all_caches(self) -> bool:

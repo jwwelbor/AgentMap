@@ -103,9 +103,10 @@ def test_service_provider_instantiates(container, service_name):
         pytest.fail(f"Failed to instantiate provider '{service_name}': {e}")
 
 
-def test_graph_services_share_the_agent_factory(container):
+def test_graph_services_receive_registry_and_factory(container):
     agent_factory = container.agent_factory_service()
+    agent_registry = container.agent_registry_service()
 
     assert isinstance(agent_factory, AgentFactoryService)
-    assert container.protocol_requirements_analyzer().agent_factory is agent_factory
+    assert container.protocol_requirements_analyzer().agent_registry is agent_registry
     assert container.graph_bundle_service().agent_factory_service is agent_factory

@@ -27,7 +27,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
         """Set up test fixtures."""
         # Create mock dependencies
         self.mock_csv_parser = Mock()
-        self.mock_agent_factory = Mock()
+        self.mock_agent_registry = Mock()
         self.mock_logging_service = Mock()
         self.mock_logger = Mock()
         self.mock_logging_service.get_class_logger.return_value = self.mock_logger
@@ -35,7 +35,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
         # Create service instance
         self.service = ProtocolBasedRequirementsAnalyzer(
             csv_parser=self.mock_csv_parser,
-            agent_factory_service=self.mock_agent_factory,
+            agent_registry_service=self.mock_agent_registry,
             logging_service=self.mock_logging_service,
         )
 
@@ -155,7 +155,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
                 return MockStorageAgent
             return None
 
-        self.mock_agent_factory.get_agent_class.side_effect = mock_get_agent_class
+        self.mock_agent_registry.get_agent_class.side_effect = mock_get_agent_class
 
         # Execute with nodes directly
         result = self.service.analyze_graph_requirements(mock_nodes)
@@ -174,7 +174,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
         self.assertEqual(result, expected_result)
 
         # Verify agent factory calls
-        self.assertEqual(self.mock_agent_factory.get_agent_class.call_count, 2)
+        self.assertEqual(self.mock_agent_registry.get_agent_class.call_count, 2)
 
     def test_analyze_graph_requirements_with_unknown_agent_types(self):
         """Test analyze_graph_requirements gracefully handles unknown agent types."""
@@ -199,7 +199,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
                 return None  # Simulate unknown agent
             return None
 
-        self.mock_agent_factory.get_agent_class.side_effect = mock_get_agent_class
+        self.mock_agent_registry.get_agent_class.side_effect = mock_get_agent_class
 
         # Execute with nodes directly
         result = self.service.analyze_graph_requirements(mock_nodes)
@@ -274,7 +274,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
                 return MockComplexAgent
             return None
 
-        self.mock_agent_factory.get_agent_class.side_effect = mock_get_agent_class
+        self.mock_agent_registry.get_agent_class.side_effect = mock_get_agent_class
 
         # Execute with nodes directly
         result = self.service.analyze_graph_requirements(mock_nodes)
@@ -341,7 +341,7 @@ class TestProtocolBasedRequirementsAnalyzer(unittest.TestCase):
                 return None  # Handle None agent type
             return None
 
-        self.mock_agent_factory.get_agent_class.side_effect = mock_get_agent_class
+        self.mock_agent_registry.get_agent_class.side_effect = mock_get_agent_class
 
         # Execute - should handle missing agent type gracefully
         result = self.service.analyze_graph_requirements(mock_nodes)

@@ -8,6 +8,7 @@ from dependency_injector import containers, providers
 
 if TYPE_CHECKING:
     from agentmap.services.agent.agent_factory_service import AgentFactoryService
+    from agentmap.services.agent.agent_registry_service import AgentRegistryService
     from agentmap.services.execution_formatter_service import ExecutionFormatterService
     from agentmap.services.execution_policy_service import ExecutionPolicyService
     from agentmap.services.execution_tracking_service import ExecutionTrackingService
@@ -151,7 +152,7 @@ class GraphCoreContainer(containers.DeclarativeContainer):
     @staticmethod
     def _create_protocol_requirements_analyzer(
         csv_graph_parser_service: Any,
-        agent_factory_service: AgentFactoryService,
+        agent_registry_service: AgentRegistryService,
         logging_service: Any,
     ) -> ProtocolBasedRequirementsAnalyzer:
         from agentmap.services.protocol_requirements_analyzer import (
@@ -160,14 +161,14 @@ class GraphCoreContainer(containers.DeclarativeContainer):
 
         return ProtocolBasedRequirementsAnalyzer(
             csv_graph_parser_service,
-            agent_factory_service,
+            agent_registry_service,
             logging_service,
         )
 
     protocol_requirements_analyzer = providers.Singleton(
         _create_protocol_requirements_analyzer,
         csv_graph_parser_service,
-        agent_factory_service,
+        agent_registry_service,
         logging_service,
     )
 
