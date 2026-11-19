@@ -2,25 +2,34 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, Optional
+
 from dependency_injector import containers, providers
+
+if TYPE_CHECKING:
+    from agentmap.services.config.storage_config_service import StorageConfigService
+    from agentmap.services.storage.blob_storage_service import BlobStorageService
+    from agentmap.services.storage.json_service import JSONStorageService
+    from agentmap.services.storage.manager import StorageServiceManager
+    from agentmap.services.storage.system_manager import SystemStorageManager
 
 
 class StorageContainer(containers.DeclarativeContainer):
     """Provides storage configuration and related services."""
 
-    config_service = providers.Dependency()
-    app_config_service = providers.Dependency()
-    availability_cache_service = providers.Dependency()
-    logging_service = providers.Dependency()
-    file_path_service = providers.Dependency()
-    telemetry_service = providers.Dependency()
+    config_service: Any = providers.Dependency()
+    app_config_service: Any = providers.Dependency()
+    availability_cache_service: Any = providers.Dependency()
+    logging_service: Any = providers.Dependency()
+    file_path_service: Any = providers.Dependency()
+    telemetry_service: Any = providers.Dependency()
 
     @staticmethod
     def _create_storage_config_service(
-        config_service,
-        app_config_service,
-        availability_cache_service,
-    ):
+        config_service: Any,
+        app_config_service: Any,
+        availability_cache_service: Any,
+    ) -> Optional[StorageConfigService]:
         from agentmap.exceptions.service_exceptions import (
             StorageConfigurationNotAvailableException,
         )
@@ -45,10 +54,10 @@ class StorageContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_blob_storage_service(
-        storage_config_service,
-        logging_service,
-        availability_cache_service,
-    ):
+        storage_config_service: Optional[StorageConfigService],
+        logging_service: Any,
+        availability_cache_service: Any,
+    ) -> Optional[BlobStorageService]:
         if storage_config_service is None:
             logging_service.get_logger("agentmap.blob_storage").info(
                 "Storage configuration not available - blob storage service disabled",
@@ -83,7 +92,9 @@ class StorageContainer(containers.DeclarativeContainer):
     )
 
     @staticmethod
-    def _create_json_storage_service(storage_config_service, logging_service):
+    def _create_json_storage_service(
+        storage_config_service: Optional[StorageConfigService], logging_service: Any
+    ) -> Optional[JSONStorageService]:
         if storage_config_service is None:
             logging_service.get_logger("agentmap.json_storage").info(
                 "Storage configuration not available - json storage service disabled",
@@ -111,12 +122,12 @@ class StorageContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_storage_service_manager(
-        storage_config_service,
-        logging_service,
-        file_path_service,
-        blob_storage_service,
-        telemetry_service,
-    ):
+        storage_config_service: Optional[StorageConfigService],
+        logging_service: Any,
+        file_path_service: Any,
+        blob_storage_service: Optional[BlobStorageService],
+        telemetry_service: Any,
+    ) -> Optional[StorageServiceManager]:
         from agentmap.exceptions.service_exceptions import (
             StorageConfigurationNotAvailableException,
         )
@@ -152,8 +163,10 @@ class StorageContainer(containers.DeclarativeContainer):
 
     @staticmethod
     def _create_system_storage_manager(
-        app_config_service, logging_service, file_path_service
-    ):
+        app_config_service: Any,
+        logging_service: Any,
+        file_path_service: Any,
+    ) -> SystemStorageManager:
         from agentmap.services.storage.system_manager import SystemStorageManager
 
         return SystemStorageManager(

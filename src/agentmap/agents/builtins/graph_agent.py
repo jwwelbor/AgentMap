@@ -1,6 +1,6 @@
 # agentmap/agents/builtins/graph_agent.py
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 from agentmap.agents.base_agent import BaseAgent
 from agentmap.services.execution_tracking_service import ExecutionTrackingService
@@ -36,7 +36,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
         self,
         name: str,
         prompt: str,
-        context: Optional[Dict[str, Any]] = None,
+        context: Optional[Union[str, Dict[str, Any]]] = None,
         # Infrastructure services only
         logger: Optional[logging.Logger] = None,
         execution_tracking_service: Optional[ExecutionTrackingService] = None,
@@ -64,9 +64,9 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
         )
 
         # Business services — injected via DI protocols
-        self._graph_runner_service = None
-        self._function_resolution_service = None
-        self._graph_bundle_service = None
+        self._graph_runner_service: Optional[GraphRunnerServiceProtocol] = None
+        self._function_resolution_service: Optional[FunctionResolutionService] = None
+        self._graph_bundle_service: Optional[GraphBundleServiceProtocol] = None
 
     # --- Protocol-based service configuration ---
 
@@ -260,10 +260,13 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
                 "last_action_success": graph_success,
             }
 
-        return {
-            self.output_field: output,
-            "last_action_success": graph_success,
-        }
+        output_field = self.output_field
+        if isinstance(output_field, str) and output_field:
+            state_updates = {output_field: output}
+        else:
+            state_updates = dict(output)
+        state_updates["last_action_success"] = graph_success
+        return state_updates
 
     def _prepare_subgraph_state(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -351,7 +354,7 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
             return {k: v for k, v in inputs.items() if k != "subgraph_bundles"}
 
         try:
-            mapping_func = self.function_resolution_service.import_function(func_ref)
+            mapping_func = self.function_resolution_service.load_function(func_ref)
             mapped_state = mapping_func(inputs)
 
             if not isinstance(mapped_state, dict):
@@ -379,8 +382,9 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
         """
         # Handle output field mapping
         target_field = self._get_output_mapping_target()
-        if target_field:
-            _, source_field = self.output_field.split("=", 1)
+        output_field = self.output_field
+        if target_field and isinstance(output_field, str):
+            _, source_field = output_field.split("=", 1)
             if source_field in result:
                 processed = {target_field: result[source_field]}
                 self.log_debug(
@@ -389,15 +393,16 @@ class GraphAgent(BaseAgent, GraphBundleCapableAgent, GraphRunnerCapableAgent):
                 return processed
 
         # Handle specific output field
-        elif self.output_field and self.output_field in result:
-            return result[self.output_field]
+        elif isinstance(output_field, str) and output_field in result:
+            return result[output_field]
 
         # Default: return entire result
         return result
 
     def _get_output_mapping_target(self) -> Optional[str]:
         """Return the parent target field for `target=source` output mapping."""
-        if self.output_field and "=" in self.output_field:
-            target_field, _ = self.output_field.split("=", 1)
+        output_field = self.output_field
+        if isinstance(output_field, str) and "=" in output_field:
+            target_field, _ = output_field.split("=", 1)
             return target_field
         return None

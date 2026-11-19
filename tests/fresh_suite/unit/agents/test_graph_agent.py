@@ -57,7 +57,7 @@ class TestGraphAgent(unittest.TestCase):
         self.mock_function_resolution_service.extract_func_ref.return_value = (
             "test.mapping_function"
         )
-        self.mock_function_resolution_service.import_function.return_value = lambda x: {
+        self.mock_function_resolution_service.load_function.return_value = lambda x: {
             "mapped": x.get("input", "default")
         }
 
@@ -341,7 +341,7 @@ class TestGraphAgent(unittest.TestCase):
         self.mock_function_resolution_service.extract_func_ref.assert_called_with(
             "func:test.mapping_function"
         )
-        self.mock_function_resolution_service.import_function.assert_called_with(
+        self.mock_function_resolution_service.load_function.assert_called_with(
             "test.mapping_function"
         )
 
@@ -354,7 +354,7 @@ class TestGraphAgent(unittest.TestCase):
         )
 
         # Configure service to raise error
-        self.mock_function_resolution_service.import_function.side_effect = Exception(
+        self.mock_function_resolution_service.load_function.side_effect = Exception(
             "Import error"
         )
 
@@ -381,7 +381,7 @@ class TestGraphAgent(unittest.TestCase):
         )
 
         # Configure function to return non-dict
-        self.mock_function_resolution_service.import_function.return_value = (
+        self.mock_function_resolution_service.load_function.return_value = (
             lambda x: "not a dict"
         )
 
