@@ -3,7 +3,6 @@
 from typing import Dict, Optional, Set, Tuple
 
 from agentmap.models.node import Node
-from agentmap.services.agent.agent_factory_service import AgentFactoryService
 from agentmap.services.declaration_registry_service import DeclarationRegistryService
 from agentmap.services.logging_service import LoggingService
 
@@ -19,16 +18,16 @@ class BundleMetadataExtractor:
     def __init__(
         self,
         logging_service: LoggingService,
-        agent_factory_service: AgentFactoryService,
+        declaration_registry_service: DeclarationRegistryService,
     ):
         """Initialize the metadata extractor.
 
         Args:
             logging_service: Service for logging operations
-            agent_factory_service: Service for agent-related operations
+            declaration_registry_service: Registry for agent declarations
         """
         self.logger = logging_service.get_class_logger(self)
-        self.agent_factory_service = agent_factory_service
+        self.declaration_registry = declaration_registry_service
 
     def filter_actual_services(self, services: Set[str]) -> Set[str]:
         """Filter out non-service entries from service requirements.
@@ -87,7 +86,13 @@ class BundleMetadataExtractor:
             Dictionary mapping agent types to their class import paths
         """
         try:
-            mappings = self.agent_factory_service.get_agent_class_mappings(agent_types)
+            mappings: Dict[str, str] = {}
+            for agent_type in agent_types:
+                declaration = self.declaration_registry.get_agent_declaration(
+                    agent_type
+                )
+                if declaration is not None:
+                    mappings[agent_type] = declaration.class_path
 
             self.logger.debug(
                 f"Extracted {len(mappings)} agent mappings: {list(mappings.keys())}"
@@ -110,11 +115,13 @@ class BundleMetadataExtractor:
         builtin_agents = set()
         custom_agents = set()
 
-        # Standard framework agent types
-        framework_agents = DeclarationRegistryService.get_all_agent_types()
-
         for agent_type in agent_types:
-            if agent_type in framework_agents:
+            declaration = self.declaration_registry.get_agent_declaration(agent_type)
+            is_builtin = declaration is not None and (
+                declaration.source == "builtin"
+                or declaration.class_path.startswith("agentmap.agents.builtins.")
+            )
+            if is_builtin:
                 builtin_agents.add(agent_type)
             else:
                 custom_agents.add(agent_type)

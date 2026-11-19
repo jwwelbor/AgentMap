@@ -45,7 +45,7 @@ class GraphRegistryService:
         self.system_storage_manager = system_storage_manager
 
         # Thread-safe cache
-        self._registry_cache: Dict[str, Dict] = {}
+        self._registry_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self._cache_lock = threading.RLock()
         self._dirty = False
 
@@ -166,12 +166,13 @@ class GraphRegistryService:
                     return None
             else:
                 # Specific graph lookup using composite key
-                entry = hash_entry.get(graph_name)
-                if not entry:
+                candidate_entry = hash_entry.get(graph_name)
+                if not candidate_entry:
                     self.logger.debug(
                         f"No bundle found for hash {csv_hash[:8]}... and graph {graph_name}"
                     )
                     return None
+                entry = candidate_entry
 
             # Validate bundle exists
             bundle_path = Path(entry["bundle_path"])
@@ -244,12 +245,10 @@ class GraphRegistryService:
         with self._cache_lock:
             # Initialize nested structure if csv_hash doesn't exist
             hash_entry = self._registry_cache.get(csv_hash)
-            is_new_hash = False
-
-            if csv_hash not in self._registry_cache:
-                self._registry_cache[csv_hash] = {}
-                hash_entry = self._registry_cache[csv_hash]
-                is_new_hash = True
+            is_new_hash = hash_entry is None
+            if hash_entry is None:
+                hash_entry = {}
+                self._registry_cache[csv_hash] = hash_entry
 
             is_update = graph_name in hash_entry
 
