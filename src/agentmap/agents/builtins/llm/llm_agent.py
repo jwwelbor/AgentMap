@@ -78,7 +78,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         self._prompt_manager_service = prompt_manager_service
 
         # Configuration from context with sensible defaults
-        self.routing_enabled = self.context.get("routing_enabled", False)
+        self.routing_enabled: bool = self.context.get("routing_enabled", False)
 
         if self.routing_enabled:
             # Routing mode: Provider will be determined dynamically
@@ -191,7 +191,7 @@ class LLMAgent(BaseAgent, LLMCapableAgent, PromptCapableAgent):
         # If we have a prompt manager service, use it to resolve the prompt
         if self.prompt_manager_service:
             try:
-                resolved = self.prompt_manager_service.resolve_prompt(prompt)
+                resolved: str = self.prompt_manager_service.resolve_prompt(prompt)
                 if (
                     resolved != prompt
                 ):  # Only log if resolution actually changed the prompt

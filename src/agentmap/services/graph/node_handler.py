@@ -5,7 +5,7 @@ This module handles adding nodes to the graph and injecting orchestrator
 services into orchestration-capable agents.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from agentmap.services.logging_service import LoggingService
 from agentmap.services.protocols import OrchestrationCapableAgent
@@ -27,7 +27,7 @@ class NodeHandler:
         """
         self.logger = logging_service.get_class_logger(self)
         self.orchestrator_service = orchestrator_service
-        self.orchestrator_nodes = []
+        self.orchestrator_nodes: List[str] = []
         self.orchestrator_node_registry: Optional[Dict[str, Any]] = None
         self.injection_stats = {
             "orchestrators_found": 0,
@@ -116,7 +116,7 @@ class NodeHandler:
             self.logger.error(f"❌ {error_msg}")
             raise ValueError(error_msg) from e
 
-    def get_orchestrator_nodes(self) -> list:
+    def get_orchestrator_nodes(self) -> List[str]:
         """Get list of orchestrator node names.
 
         Returns:
