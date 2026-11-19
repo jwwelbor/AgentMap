@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "captured_at_utc": "2026-11-19T00:54:16.777956+00:00",
+  "captured_at_utc": "2026-11-19T01:07:52.593547+00:00",
   "environment": {
     "python_version": "3.11.14",
     "mypy_version": "mypy 1.19.1 (compiled: yes)",
     "uv_lock_sha256": "effde2c9bd1a6d96c14030df7daa313921ac59ac481aff2211e1bcedccac7dc4",
     "dependency_manifest_sha256": "7600c6380338a0bdbe5a70c233753440fb3bf570d81d8c25fa7c04b024612eff",
-    "mypy_ini_sha256": "6ba1616e17f1cd56f0bb6ae6eac599b2dfa0a7a5bbdff73155a47dd52fe27ebd",
-    "source_sha256": "a640c5aefb35ce0911573186d54c5275e5cf4f33400306eecc06ef97d0c59ea1",
-    "git_commit": "a6f751ec09c266b70ca0d623885b6e00fc2e9e17",
+    "mypy_ini_sha256": "1d16836184631741cfdaaeacb72cfdc5a6642027aa0ab5887123cb1837e38b95",
+    "source_sha256": "29d3b8eff2e80b5a622da23799e92cc6d26a4c65722b00167afa6c60ca7d5a55",
+    "git_commit": "c5263449c8717a14d61bee813325560ae414d752",
     "command": "uv run mypy src (non-incremental, machine-readable output)"
   },
   "counts": {
