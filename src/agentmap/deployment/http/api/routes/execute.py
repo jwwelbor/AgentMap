@@ -127,20 +127,26 @@ def _extract_execution_summary(payload: Dict[str, Any]) -> Optional[Dict[str, An
     """Extract and serialize an execution summary from a runtime payload."""
     summary = payload.get("execution_summary")
     if summary:
-        return to_serializable(summary)
+        return _to_serializable_dict(summary)
 
     outputs = payload.get("outputs")
     if isinstance(outputs, dict) and outputs.get("__execution_summary"):
-        return to_serializable(outputs.get("__execution_summary"))
+        return _to_serializable_dict(outputs.get("__execution_summary"))
 
     final_state = payload.get("final_state")
     if isinstance(final_state, dict) and final_state.get("__execution_summary"):
-        return to_serializable(final_state.get("__execution_summary"))
+        return _to_serializable_dict(final_state.get("__execution_summary"))
 
     return None
 
 
-def _sanitize_outputs(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _to_serializable_dict(value: Any) -> Optional[Dict[str, Any]]:
+    """Serialize a value and keep it only when its top-level shape is a mapping."""
+    serialized = to_serializable(value)
+    return serialized if isinstance(serialized, dict) else None
+
+
+def _sanitize_outputs(payload: Dict[str, Any]) -> Any:
     """Return workflow outputs without the embedded execution summary."""
     outputs = payload.get("outputs")
     if outputs is None:
@@ -287,7 +293,7 @@ async def _execute_workflow_internal(
 @requires_auth("execute")
 async def execute_workflow_two_param(
     workflow: str, graph: str, request_body: ExecuteRequest, request: Request
-):
+) -> ExecuteResponse:
     """
     Execute a workflow using separate workflow and graph parameters.
 
@@ -309,7 +315,7 @@ async def execute_workflow_two_param(
 @requires_auth("execute")
 async def execute_workflow(
     graph_id: str, request_body: ExecuteRequest, request: Request
-):
+) -> ExecuteResponse:
     """
     Execute a workflow using its graph identifier.
 
@@ -324,7 +330,7 @@ async def execute_workflow(
 @requires_auth("execute")
 async def execute_workflow_single_param(
     workflow_graph: str, request_body: ExecuteRequest, request: Request
-):
+) -> ExecuteResponse:
     """
     Execute a workflow using a single parameter that can be:
     - Graph identifier format: workflow::graph
@@ -356,7 +362,7 @@ async def execute_workflow_single_param(
 @requires_auth("execute")
 async def resume_execution(
     thread_id: str, request_body: ResumeRequest, request: Request
-):
+) -> ResumeResponse:
     """
     Resume a paused workflow execution.
 
@@ -374,7 +380,7 @@ async def resume_execution(
         # Build resume token
         import json
 
-        resume_payload = {
+        resume_payload: Dict[str, Any] = {
             "thread_id": thread_id,
             "response_action": request_body.action,
         }
