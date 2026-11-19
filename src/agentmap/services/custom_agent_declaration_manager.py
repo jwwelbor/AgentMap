@@ -10,7 +10,7 @@ clean architecture principles with proper dependency injection.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import yaml
 
@@ -50,7 +50,7 @@ class CustomAgentDeclarationManager:
         self.config = app_config_service
         self.logger = logging_service.get_class_logger(self)
         self.template_composer = template_composer
-        self._declarations = None
+        self._declarations: Optional[Dict[str, Any]] = None
         self.file_path = self.get_custom_agents_yaml_path()
 
         # Template strings for YAML generation
@@ -104,6 +104,7 @@ agents:"""
                     content = yaml.safe_load(f)
                     if content is None:
                         content = {}
+                    content = cast(Dict[str, Any], content)
 
                     # Ensure proper structure
                     if "agents" not in content:
@@ -221,11 +222,9 @@ agents:"""
             }
 
             # Add or update the agent
-            declarations["agents"][agent_type] = agent_entry
-
-            action = (
-                "Updated" if agent_type in declarations.get("agents", {}) else "Added"
-            )
+            agents = declarations.setdefault("agents", {})
+            action = "Updated" if agent_type in agents else "Added"
+            agents[agent_type] = agent_entry
             self.logger.info(
                 f"[CustomAgentDeclarationManager] {action} agent declaration for {agent_type}"
             )
@@ -283,7 +282,10 @@ agents:"""
             Agent declaration dictionary or None if not found
         """
         declarations = self.load_declarations()
-        return declarations.get("agents", {}).get(agent_type)
+        return cast(
+            Optional[Dict[str, Any]],
+            declarations.get("agents", {}).get(agent_type),
+        )
 
     def remove_agent_declaration(self, agent_type: str) -> bool:
         """

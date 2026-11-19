@@ -26,7 +26,7 @@ class DependencyCheckerService:
         self,
         logging_service: LoggingService,
         features_registry_service: FeaturesRegistryService,
-        availability_cache_service=None,
+        availability_cache_service: Optional[Any] = None,
     ):
         self.logger = logging_service.get_class_logger(self)
         self.features_registry = features_registry_service
@@ -163,10 +163,10 @@ class DependencyCheckerService:
     ) -> Tuple[bool, List[str]]:
         return self._provider_validator.validate_storage_type(storage_type, force)
 
-    def clear_dependency_cache(self, dependency_group: Optional[str] = None):
+    def clear_dependency_cache(self, dependency_group: Optional[str] = None) -> None:
         self._cache_helper.clear_dependency_cache(dependency_group)
 
-    def invalidate_environment_cache(self):
+    def invalidate_environment_cache(self) -> None:
         self._cache_helper.invalidate_environment_cache()
 
     def get_cache_status(self) -> Dict[str, Any]:
