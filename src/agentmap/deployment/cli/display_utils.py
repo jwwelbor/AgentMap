@@ -32,8 +32,9 @@ def display_interaction_request(request: HumanInteractionRequest) -> None:
     typer.echo(f"🔗 Thread: {request.thread_id}")
 
     # Handle interaction type display with fallback for None
-    if request.interaction_type is not None:
-        typer.echo(f"⚡ Type: {request.interaction_type.value.upper()}")
+    interaction_type: Optional[InteractionType] = request.interaction_type
+    if interaction_type is not None:
+        typer.echo(f"⚡ Type: {interaction_type.value.upper()}")
     else:
         typer.echo("⚡ Type: UNKNOWN")
 
@@ -80,7 +81,7 @@ def _display_context(context: Dict[str, Any]) -> None:
 
 def _display_interaction_instructions(request: HumanInteractionRequest) -> None:
     """Display type-specific interaction instructions."""
-    interaction_type = request.interaction_type
+    interaction_type: Optional[InteractionType] = request.interaction_type
 
     if interaction_type == InteractionType.APPROVAL:
         typer.echo("✅ APPROVAL REQUIRED:")

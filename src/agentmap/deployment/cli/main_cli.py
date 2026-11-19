@@ -29,7 +29,7 @@ from agentmap.deployment.cli.validate_command import validate_command
 
 
 # Version callback
-def version_callback(value: bool):
+def version_callback(value: bool) -> None:
     """Show version and exit."""
     if value:
         typer.echo(f"AgentMap {__version__}")
@@ -53,7 +53,7 @@ def main(
         is_eager=True,
         help="Show version and exit",
     )
-):
+) -> None:
     """AgentMap CLI with service-based architecture.
 
     Supports shorthand syntax: agentmap run file.csv is equivalent to agentmap run --csv file.csv
@@ -99,7 +99,7 @@ app.command("diagnose")(diagnose_cmd)
 # app.command("inspect-graph")(inspect_graph_cmd)
 
 
-def main_cli():
+def main_cli() -> None:
     """Main CLI entry point for new service-based architecture."""
     try:
         app()

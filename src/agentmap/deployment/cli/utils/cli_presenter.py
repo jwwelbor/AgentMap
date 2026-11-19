@@ -22,20 +22,42 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
-try:
-    # Prefer importing canonical exceptions if available.
-    from agentmap.exceptions.runtime_exceptions import (
-        AgentMapNotInitialized,
-        GraphNotFound,
-        InvalidInputs,
+
+def _load_runtime_exceptions() -> (
+    tuple[type[Exception], type[Exception], type[Exception]]
+):
+    """Load canonical exceptions, with placeholders for standalone usage."""
+    try:
+        from agentmap.exceptions.runtime_exceptions import (
+            AgentMapNotInitialized as CanonicalAgentMapNotInitialized,
+        )
+        from agentmap.exceptions.runtime_exceptions import (
+            GraphNotFound as CanonicalGraphNotFound,
+        )
+        from agentmap.exceptions.runtime_exceptions import (
+            InvalidInputs as CanonicalInvalidInputs,
+        )
+    except Exception:  # pragma: no cover
+
+        class AgentMapNotInitialized(Exception):
+            pass
+
+        class GraphNotFound(Exception):
+            pass
+
+        class InvalidInputs(Exception):
+            pass
+
+        return AgentMapNotInitialized, GraphNotFound, InvalidInputs
+
+    return (
+        CanonicalAgentMapNotInitialized,
+        CanonicalGraphNotFound,
+        CanonicalInvalidInputs,
     )
-except Exception:  # pragma: no cover
-    # Fallback placeholders to avoid hard failures in stub usage.
-    class AgentMapNotInitialized(Exception): ...  # noqa: E701
 
-    class GraphNotFound(Exception): ...  # noqa: E701
 
-    class InvalidInputs(Exception): ...  # noqa: E701
+AgentMapNotInitialized, GraphNotFound, InvalidInputs = _load_runtime_exceptions()
 
 
 class AgentMapJSONEncoder(json.JSONEncoder):
@@ -72,7 +94,7 @@ class AgentMapJSONEncoder(json.JSONEncoder):
             return obj
 
 
-def print_json(payload: dict) -> None:
+def print_json(payload: object) -> None:
     """Pretty-print JSON to stdout."""
     sys.stdout.write(
         json.dumps(payload, indent=2, ensure_ascii=False, cls=AgentMapJSONEncoder)

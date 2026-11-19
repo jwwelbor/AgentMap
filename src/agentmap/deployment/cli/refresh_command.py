@@ -24,7 +24,7 @@ def refresh_cmd(
     config_file: Optional[str] = typer.Option(
         None, "--config", "-c", help="Path to custom config file"
     ),
-):
+) -> None:
     """
     Refresh availability cache by discovering and validating all providers.
 

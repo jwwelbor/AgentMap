@@ -43,7 +43,7 @@ def scaffold_command(
         "--force",
         help="Force rescafolding even if no changes detected typically combined with --overwrite",
     ),
-):
+) -> None:
     """
     Scaffold agents and routing functions using bundle analysis.
 

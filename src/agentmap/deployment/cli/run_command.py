@@ -7,7 +7,7 @@ and CLI presenter utilities for consistent behavior and error handling.
 
 import asyncio
 import json
-from typing import Optional
+from typing import Optional, cast
 
 import typer
 
@@ -50,7 +50,7 @@ def run_command(
         "--force-create",
         help="Force recreation of the bundle even if cached version exists",
     ),
-):
+) -> None:
     """
     Run a graph using the runtime facade.
 
@@ -181,9 +181,9 @@ def run_command(
         raise typer.Exit(code=exit_code)
 
 
-def parse_json_state(state: str) -> dict:
+def parse_json_state(state: str) -> dict[str, object]:
     """Helper function to parse JSON state (for backward compatibility)."""
     try:
-        return json.loads(state) if state != "{}" else {}
+        return cast(dict[str, object], json.loads(state)) if state != "{}" else {}
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in state: {e}")

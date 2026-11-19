@@ -7,7 +7,7 @@ code duplication while maintaining clear error handling and user feedback.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional, cast
 
 import typer
 
@@ -45,7 +45,7 @@ def resolve_csv_path(
     return csv_path
 
 
-def parse_json_state(state_str: str) -> Dict[str, Any]:
+def parse_json_state(state_str: str) -> Dict[str, object]:
     """
     Parse JSON state string with error handling.
 
@@ -62,7 +62,7 @@ def parse_json_state(state_str: str) -> Dict[str, Any]:
         return {}
 
     try:
-        return json.loads(state_str)
+        return cast(Dict[str, object], json.loads(state_str))
     except json.JSONDecodeError as e:
         typer.secho(f"❌ Invalid JSON in --state: {e}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
@@ -88,7 +88,7 @@ def handle_command_error(e: Exception, verbose: bool = False) -> None:
 
 
 # Helper functions for backward compatibility and easier testing
-def diagnose_command(config_file: Optional[str] = None) -> dict:
+def diagnose_command(config_file: Optional[str] = None) -> dict[str, object]:
     """
     Programmatic version of diagnose_cmd that returns structured data.
     Used by API endpoints and testing.
@@ -145,7 +145,7 @@ def diagnose_command(config_file: Optional[str] = None) -> dict:
     }
 
 
-def cache_info_command() -> dict:
+def cache_info_command() -> dict[str, object]:
     """
     Programmatic version of cache info that returns structured data.
     Used by API endpoints and testing.
@@ -174,7 +174,7 @@ def cache_info_command() -> dict:
 
 def clear_cache_command(
     file_path: Optional[str] = None, cleanup_expired: bool = False
-) -> dict:
+) -> dict[str, object]:
     """
     Programmatic version of cache clearing that returns structured data.
     Used by API endpoints and testing.

@@ -15,7 +15,7 @@ def config_cmd(
     config_file: Optional[str] = typer.Option(
         None, "--path", "-p", help="Path to config file to display"
     )
-):
+) -> None:
     """Print the current configuration values."""
     # Lazy import to avoid DI container initialization at module load
     from agentmap.runtime_api import get_config
