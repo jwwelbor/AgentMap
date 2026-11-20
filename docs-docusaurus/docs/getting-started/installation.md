@@ -59,7 +59,7 @@ Storage feature enabled: True
   vector: ✅ Available [Registry: reg=True, val=True, avail=True]
 
 Environment Information:
-  Python Version: 3.11.4
+  Python Version: 3.11.5
   Current Directory: /path/to/your/project
 ```
 

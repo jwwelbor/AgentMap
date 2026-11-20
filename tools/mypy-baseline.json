@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "captured_at_utc": "2026-11-20T11:18:09.784810+00:00",
+  "captured_at_utc": "2026-11-20T11:41:03.812648+00:00",
   "environment": {
     "python_version": "3.11.14",
     "mypy_version": "mypy 1.19.1 (compiled: yes)",
-    "uv_lock_sha256": "7412cb39b42d609b104801735814d5a366a41172eb8f099ad244ca3b4c325b47",
+    "uv_lock_sha256": "c680b776ad9f0b71160b67bdb986212fb2a8880c6f23232f99ac259bdd91a32e",
     "dependency_manifest_sha256": "348b2e98a78fc4d7c20a1e6a01b6b79dcb8f818e2ec582c53a2a53d583ebef15",
     "mypy_ini_sha256": "1d16836184631741cfdaaeacb72cfdc5a6642027aa0ab5887123cb1837e38b95",
     "source_sha256": "5144ce0a8e511964b39597c5702a53f4499fce5dafa229cb5fb16adfc86b4910",
-    "git_commit": "52d75347b06fd0310bcce9715feea68b70a7b959",
+    "git_commit": "80ca3555d5dcd22add3540a998c56248f36d09a4",
     "command": "[\"<python>\",\"-m\",\"mypy\",\"--no-incremental\",\"--no-pretty\",\"--show-column-numbers\",\"--show-error-codes\",\"--no-error-summary\",\"src\"]"
   },
   "counts": {
