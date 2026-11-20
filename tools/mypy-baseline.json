@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "captured_at_utc": "2026-11-20T08:12:24.605740+00:00",
+  "captured_at_utc": "2026-11-20T08:28:31.998828+00:00",
   "environment": {
     "python_version": "3.11.14",
     "mypy_version": "mypy 1.19.1 (compiled: yes)",
-    "uv_lock_sha256": "0ca1542715ce8fc86c5ad79fc747c1109f6e456bcc8bf1172c34e928d318f02e",
-    "dependency_manifest_sha256": "882ffcb8014546509efb268f3cf3a071577559d5e1561877ad790af55798f721",
+    "uv_lock_sha256": "3df2492615804629880b6d5193743709618ed892cb0f9fc6c35cbeea01e2cb77",
+    "dependency_manifest_sha256": "1e7bf9f2493c4233258b1eab6f634ae676f3ac5d79492126c92e8c3b4c852f52",
     "mypy_ini_sha256": "1d16836184631741cfdaaeacb72cfdc5a6642027aa0ab5887123cb1837e38b95",
     "source_sha256": "5144ce0a8e511964b39597c5702a53f4499fce5dafa229cb5fb16adfc86b4910",
-    "git_commit": "d2579350e7ce79675aebf43647421d2351bbbed9",
+    "git_commit": "dd9c90427424029a7ad2c4a753d0e24c676b62db",
     "command": "[\"<python>\",\"-m\",\"mypy\",\"--no-incremental\",\"--no-pretty\",\"--show-column-numbers\",\"--show-error-codes\",\"--no-error-summary\",\"src\"]"
   },
   "counts": {
