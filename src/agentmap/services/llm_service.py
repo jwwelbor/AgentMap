@@ -14,6 +14,7 @@ import random
 import re
 import time
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import (
@@ -69,6 +70,12 @@ from agentmap.services.llm._budget_guard_refusal import (
 )
 from agentmap.services.llm.attempt_lifecycle import (
     attempt_lifecycle as _attempt_lifecycle,
+)
+from agentmap.services.llm.attempt_lifecycle import (
+    compose_attempt_lifecycles,
+)
+from agentmap.services.llm.attempt_lifecycle import (
+    file_attempt_logger as _file_attempt_logger,
 )
 from agentmap.services.llm.attempt_lifecycle import (
     get_async_client,
@@ -607,13 +614,30 @@ class LLMService:
         """
         kwargs["cache_system_prompt"] = cache_system_prompt
         kwargs["tools"] = tools
-        return await run_governed_invocation(
-            attempt_lifecycle or self._attempt_lifecycle,
-            self._client_factory,
-            lambda: self._dispatch_call_llm_async(
-                messages, provider, model, temperature, routing_context, **kwargs
-            ),
+        configured_logger = (
+            self._attempt_lifecycle
+            if isinstance(self._attempt_lifecycle, LLMAttemptFileLogger)
+            else None
         )
+        host_lifecycle = (
+            None if configured_logger is not None else self._attempt_lifecycle
+        )
+        lifecycle = compose_attempt_lifecycles(attempt_lifecycle, host_lifecycle)
+        if attempt_lifecycle is not None and configured_logger is not None:
+            lifecycle = compose_attempt_lifecycles(lifecycle, configured_logger)
+        logger_token = _file_attempt_logger.set(
+            configured_logger if attempt_lifecycle is None else None
+        )
+        try:
+            return await run_governed_invocation(
+                lifecycle,
+                self._client_factory,
+                lambda: self._dispatch_call_llm_async(
+                    messages, provider, model, temperature, routing_context, **kwargs
+                ),
+            )
+        finally:
+            _file_attempt_logger.reset(logger_token)
 
     async def _dispatch_call_llm_async(
         self,
@@ -1008,6 +1032,7 @@ class LLMService:
         """
         config: Dict[str, Any] = {}
         original_messages = messages
+        single_dispatch = isinstance(self._attempt_lifecycle, LLMAttemptFileLogger)
         try:
             # Extract cache_system_prompt before forwarding kwargs to the provider.
             # This must happen before validation so the flag triggers the support check.
@@ -1041,7 +1066,9 @@ class LLMService:
                     config["max_tokens"] = max_tokens
 
             # Get or create LangChain client
-            client = self._client_factory.get_or_create_client(provider, config)
+            client = self._client_factory.get_or_create_client(
+                provider, config, single_dispatch=single_dispatch
+            )
 
             # Inject provider-specific cache metadata (E05-F05).
             # Placed after provider resolution and before LangChain conversion
@@ -1079,7 +1106,13 @@ class LLMService:
                         original_messages,
                         typed_error,
                         self._provider_utils.get_provider_config,
-                        self._client_factory.get_or_create_client,
+                        lambda fallback_provider, fallback_config: (
+                            self._client_factory.get_or_create_client(
+                                fallback_provider,
+                                fallback_config,
+                                single_dispatch=single_dispatch,
+                            )
+                        ),
                         self._message_utils.convert_messages_to_langchain,
                         eligible_providers=eligible_providers,
                         **kwargs,
@@ -1428,18 +1461,20 @@ class LLMService:
         self._logger.debug(f"LLM call to {provider}:{model} ({attempt}/{max_attempts})")
         start_time = time.monotonic()
         lifecycle = self._attempt_lifecycle
+        logger = lifecycle if isinstance(lifecycle, LLMAttemptFileLogger) else None
         attempt_id = None
-        if isinstance(lifecycle, LLMAttemptFileLogger):
-            attempt_id = lifecycle.before_attempt_sync(
+        if logger is not None:
+            attempt_id = logger.before_attempt_sync(
                 LLMAttemptDescription(
                     provider, model, "primary", attempt, None, None, None
                 )
             )
         try:
             response = client.invoke(langchain_messages)
+            response_datetime = datetime.now(timezone.utc)
         except Exception as error:
-            if attempt_id is not None:
-                lifecycle.after_attempt_sync(
+            if attempt_id is not None and logger is not None:
+                logger.after_attempt_sync(
                     attempt_id,
                     LLMAttemptOutcome(
                         classification="provider_error", error_type=type(error).__name__
@@ -1447,13 +1482,51 @@ class LLMService:
                 )
             raise
         duration = time.monotonic() - start_time
-        result, _ = normalize_response_content(response)
+        try:
+            result, _ = normalize_response_content(response)
+        except Exception as error:
+            if attempt_id is not None and logger is not None:
+                failure_usage: Optional[LLMUsage] = None
+                try:
+                    failure_usage = self._extract_llm_usage(response)
+                except Exception as usage_error:
+                    self._logger.warning(
+                        "Could not extract LLM attempt log usage (%s)",
+                        type(usage_error).__name__,
+                    )
+                failure_cost_usd = self._calculate_attempt_log_cost(
+                    failure_usage, provider, model
+                )
+                logger.after_attempt_sync(
+                    attempt_id,
+                    LLMAttemptOutcome(
+                        classification="receipt_error",
+                        usage=failure_usage,
+                        cost_usd=failure_cost_usd,
+                        error_type=type(error).__name__,
+                        response_datetime=response_datetime,
+                    ),
+                )
+            raise
+        usage: Optional[LLMUsage] = None
+        cost_usd = None
         if attempt_id is not None:
-            lifecycle.after_attempt_sync(
+            try:
+                usage = self._extract_llm_usage(response)
+            except Exception as error:
+                self._logger.warning(
+                    "Could not extract LLM attempt log usage (%s)",
+                    type(error).__name__,
+                )
+            cost_usd = self._calculate_attempt_log_cost(usage, provider, model)
+        if attempt_id is not None and logger is not None:
+            logger.after_attempt_sync(
                 attempt_id,
                 LLMAttemptOutcome(
                     classification="text" if result else "empty",
-                    usage=self._extract_llm_usage(response),
+                    usage=usage,
+                    cost_usd=cost_usd,
+                    response_datetime=response_datetime,
                 ),
             )
         was_open = self._circuit_breaker.is_open(provider, model)
@@ -1463,6 +1536,44 @@ class LLMService:
         self._record_llm_response_attributes(response, provider, model)
         self._log_resilient_success(response, provider, result)
         return result
+
+    def _calculate_attempt_log_cost(
+        self, usage: Optional[LLMUsage], provider: str, model: str
+    ) -> Optional[Decimal]:
+        """Return only a trustworthy USD cost; logging diagnostics never fail calls."""
+        if (
+            usage is not None
+            and provider.lower() == "anthropic"
+            and (
+                usage.cache_read_input_tokens is not None
+                or usage.cache_creation_input_tokens is not None
+            )
+        ):
+            cached_tokens = (usage.cache_read_input_tokens or 0) + (
+                usage.cache_creation_input_tokens or 0
+            )
+            if usage.input_tokens is None or usage.input_tokens < cached_tokens:
+                self._logger.warning(
+                    "Skipping Anthropic LLM attempt cost with inconsistent cache usage"
+                )
+                return None
+            usage = replace(usage, input_tokens=usage.input_tokens - cached_tokens)
+        try:
+            cost = self._cost_calculator.calculate(usage, provider, model)
+        except Exception as error:
+            self._logger.warning(
+                "Could not calculate LLM attempt log cost (%s)",
+                type(error).__name__,
+            )
+            return None
+        if cost is None:
+            return None
+        if cost.currency.upper() != "USD":
+            self._logger.warning(
+                "Skipping non-USD LLM attempt log cost (%s)", cost.currency
+            )
+            return None
+        return cost.total_cost
 
     def _wait_before_retry(
         self,
@@ -1789,6 +1900,19 @@ class LLMService:
         max_output_tokens: Optional[int] = None,
     ) -> LLMResponse:
         """Admit after preparation, settle before any return, retry or fallback."""
+        logger = _file_attempt_logger.get()
+        if logger is not None and _attempt_lifecycle.get() is None:
+            return await self._attempt_llm_call_async_with_file_logger(
+                logger,
+                client,
+                langchain_messages,
+                provider,
+                model,
+                attempt_timeout,
+                attempt_kind=attempt_kind,
+                retry_ordinal=retry_ordinal,
+                max_output_tokens=max_output_tokens,
+            )
         return await invoke_accounted_attempt(
             _attempt_lifecycle.get(),
             self._cost_calculator,
@@ -1804,6 +1928,148 @@ class LLMService:
             ),
             lambda raw, duration, accounting: self._build_success_llm_response(
                 raw, provider, model, duration, accounting=accounting
+            ),
+        )
+
+    async def _attempt_llm_call_async_with_file_logger(
+        self,
+        logger: LLMAttemptLifecycleProtocol,
+        client: Any,
+        langchain_messages: List[Any],
+        provider: str,
+        model: str,
+        attempt_timeout: float,
+        *,
+        attempt_kind: str,
+        retry_ordinal: int,
+        max_output_tokens: Optional[int],
+    ) -> LLMResponse:
+        """Observe an ordinary async provider attempt without governed accounting."""
+        description = LLMAttemptDescription(
+            provider, model, attempt_kind, retry_ordinal, None, None, max_output_tokens
+        )
+        attempt_id = await logger.before_attempt(description)
+        raw_response: list[Any] = []
+        response_datetime: list[datetime] = []
+        try:
+            result = await self._invoke_file_logged_async_attempt(
+                provider,
+                model,
+                attempt_kind,
+                retry_ordinal,
+                max_output_tokens,
+                client,
+                langchain_messages,
+                attempt_timeout,
+                raw_response,
+                response_datetime,
+            )
+        except BaseException as error:
+            await self._settle_file_logged_async_failure(
+                logger,
+                attempt_id,
+                error,
+                raw_response,
+                response_datetime,
+                provider,
+                model,
+            )
+            raise
+        await self._settle_file_logged_async_success(
+            logger, attempt_id, result, response_datetime, provider, model
+        )
+        return result
+
+    async def _invoke_file_logged_async_attempt(
+        self,
+        provider: str,
+        model: str,
+        attempt_kind: str,
+        retry_ordinal: int,
+        max_output_tokens: Optional[int],
+        client: Any,
+        langchain_messages: List[Any],
+        attempt_timeout: float,
+        raw_response: List[Any],
+        response_datetime: List[datetime],
+    ) -> LLMResponse:
+        async def invoke_provider() -> Any:
+            response = await self._invoke_provider_async(client, langchain_messages)
+            raw_response.append(response)
+            response_datetime.append(datetime.now(timezone.utc))
+            return response
+
+        return await invoke_accounted_attempt(
+            None,
+            self._cost_calculator,
+            provider,
+            model,
+            attempt_kind,
+            retry_ordinal,
+            max_output_tokens,
+            invoke_provider,
+            attempt_timeout,
+            lambda response: self._extract_provider_request_id(
+                getattr(response, "response_metadata", {}) or {}, provider
+            ),
+            lambda raw, duration, accounting: self._build_success_llm_response(
+                raw, provider, model, duration, accounting=accounting
+            ),
+        )
+
+    async def _settle_file_logged_async_failure(
+        self,
+        logger: LLMAttemptLifecycleProtocol,
+        attempt_id: str,
+        error: BaseException,
+        raw_response: List[Any],
+        response_datetime: List[datetime],
+        provider: str,
+        model: str,
+    ) -> None:
+        usage: Optional[LLMUsage] = None
+        if raw_response:
+            try:
+                usage = self._extract_llm_usage(raw_response[0])
+            except Exception as usage_error:
+                self._logger.warning(
+                    "Could not extract LLM attempt log usage (%s)",
+                    type(usage_error).__name__,
+                )
+        classification = (
+            "cancelled"
+            if isinstance(error, asyncio.CancelledError)
+            else "receipt_error" if raw_response else "provider_error"
+        )
+        await logger.after_attempt(
+            attempt_id,
+            LLMAttemptOutcome(
+                classification=classification,
+                usage=usage,
+                cost_usd=self._calculate_attempt_log_cost(usage, provider, model),
+                error_type=type(error).__name__,
+                response_datetime=response_datetime[0] if response_datetime else None,
+            ),
+        )
+
+    async def _settle_file_logged_async_success(
+        self,
+        logger: LLMAttemptLifecycleProtocol,
+        attempt_id: str,
+        result: LLMResponse,
+        response_datetime: List[datetime],
+        provider: str,
+        model: str,
+    ) -> None:
+        await logger.after_attempt(
+            attempt_id,
+            LLMAttemptOutcome(
+                classification=result.text_status,
+                usage=result.usage,
+                cost_usd=self._calculate_attempt_log_cost(
+                    result.usage, provider, model
+                ),
+                response_datetime=response_datetime[0] if response_datetime else None,
             ),
         )
 
@@ -2013,6 +2279,29 @@ class LLMService:
         for attempt in range(1, max_attempts + 1):
             # first_chunk_delivered is per-attempt — reset at the top of each retry
             first_chunk_delivered = False
+            configured_lifecycle = getattr(self, "_attempt_lifecycle", None)
+            attempt_logger: Optional[LLMAttemptFileLogger] = (
+                configured_lifecycle
+                if isinstance(configured_lifecycle, LLMAttemptFileLogger)
+                else None
+            )
+            attempt_id = None
+            if attempt_logger is not None:
+                attempt_id = await attempt_logger.before_attempt(
+                    LLMAttemptDescription(
+                        provider,
+                        model,
+                        "primary",
+                        attempt,
+                        None,
+                        None,
+                        params.get("max_tokens"),
+                    )
+                )
+            stream_usage: Optional[LLMUsage] = None
+            has_text = False
+            final_chunk_delivered = False
+            response_datetime: Optional[datetime] = None
             try:
                 self._logger.debug(
                     f"LLM streaming call to {provider}:{model} "
@@ -2044,15 +2333,68 @@ class LLMService:
 
                     # Cut point: once the first chunk is yielded, errors are terminal
                     first_chunk_delivered = True
+                    if chunk.text_delta:
+                        has_text = True
+                    if chunk.is_final:
+                        stream_usage = chunk.usage
+                        final_chunk_delivered = True
+                        response_datetime = datetime.now(timezone.utc)
                     yield chunk
 
                 # Clean completion
+                if attempt_id is not None and attempt_logger is not None:
+                    cost_usd = self._calculate_attempt_log_cost(
+                        stream_usage, provider, model
+                    )
+                    await attempt_logger.after_attempt(
+                        attempt_id,
+                        LLMAttemptOutcome(
+                            classification="text" if has_text else "empty",
+                            usage=stream_usage,
+                            cost_usd=cost_usd,
+                            response_datetime=response_datetime
+                            or datetime.now(timezone.utc),
+                        ),
+                    )
                 was_open = self._circuit_breaker.is_open(provider, model)
                 self._circuit_breaker.record_success(provider, model)
                 self._record_circuit_breaker_metric_on_close(was_open, provider, model)
                 return
 
-            except Exception as e:
+            except BaseException as e:
+                if attempt_id is not None and attempt_logger is not None:
+                    if final_chunk_delivered:
+                        cost_usd = self._calculate_attempt_log_cost(
+                            stream_usage, provider, model
+                        )
+                        await attempt_logger.after_attempt(
+                            attempt_id,
+                            LLMAttemptOutcome(
+                                classification="text" if has_text else "empty",
+                                usage=stream_usage,
+                                cost_usd=cost_usd,
+                                response_datetime=response_datetime,
+                            ),
+                        )
+                    else:
+                        await attempt_logger.after_attempt(
+                            attempt_id,
+                            LLMAttemptOutcome(
+                                classification=(
+                                    "cancelled"
+                                    if not isinstance(e, Exception)
+                                    else "provider_error"
+                                ),
+                                error_type=type(e).__name__,
+                                response_datetime=(
+                                    datetime.now(timezone.utc)
+                                    if first_chunk_delivered
+                                    else None
+                                ),
+                            ),
+                        )
+                if not isinstance(e, Exception):
+                    raise
                 if first_chunk_delivered:
                     # Post-first-chunk error: terminal, no retry, no fallback.
                     # CB still records the failure (REQ-F-005); no _on_open metric
@@ -3896,22 +4238,40 @@ class LLMService:
         fallback tier). Without this unwrap, the internal marker type would
         leak to a stream caller instead of the guard's own exception.
         """
-        async for chunk in isolated_llm_stream(
-            lambda: create_llm_stream_async(
-                (messages, provider, model, temperature, routing_context),
-                cache_system_prompt,
-                kwargs,
-                self._call_llm_stream_async_with_telemetry,
-                self._call_llm_stream_async_core,
-                self._telemetry_service is not None,
-            )
-        ):
-            yield chunk
+        configured_lifecycle = getattr(self, "_attempt_lifecycle", None)
+        configured_logger = (
+            configured_lifecycle
+            if isinstance(configured_lifecycle, LLMAttemptFileLogger)
+            else None
+        )
+        logger_token = _file_attempt_logger.set(configured_logger)
+        try:
+            async for chunk in isolated_llm_stream(
+                lambda: create_llm_stream_async(
+                    (messages, provider, model, temperature, routing_context),
+                    cache_system_prompt,
+                    kwargs,
+                    self._call_llm_stream_async_with_telemetry,
+                    self._call_llm_stream_async_core,
+                    self._telemetry_service is not None,
+                )
+            ):
+                yield chunk
+        finally:
+            _file_attempt_logger.reset(logger_token)
 
     async def _close_async_stream_preserving_primary(
         self, stream: Any, primary_error: Optional[BaseException]
     ) -> None:
         await close_async_stream_preserving_primary(stream, primary_error)
+
+    def _get_stream_fallback_client(self, provider: str, config: Dict[str, Any]) -> Any:
+        """Match SDK retries to the logger's per-attempt accounting mode."""
+        if isinstance(getattr(self, "_attempt_lifecycle", None), LLMAttemptFileLogger):
+            return self._client_factory.get_or_create_client(
+                provider, config, single_dispatch=True
+            )
+        return self._client_factory.get_or_create_client(provider, config)
 
     async def _call_llm_stream_async_with_telemetry(
         self,
@@ -4216,9 +4576,14 @@ class LLMService:
         params: Dict[str, Any] = {k: v for k, v in config.items() if k != "api_key"}
 
         # Obtain the F02 streaming-aware client (AC-12).
-        streaming_client = self._client_factory.get_or_create_client(
-            provider, config, streaming=True
-        )
+        if isinstance(getattr(self, "_attempt_lifecycle", None), LLMAttemptFileLogger):
+            streaming_client = self._client_factory.get_or_create_client(
+                provider, config, streaming=True, single_dispatch=True
+            )
+        else:
+            streaming_client = self._client_factory.get_or_create_client(
+                provider, config, streaming=True
+            )
 
         # Extract credentials from config for the seam (REQ-NF-004).
         api_key = config.get("api_key")
@@ -4270,17 +4635,26 @@ class LLMService:
 
             # Pre-first-chunk error: check fallback eligibility (mirrors :1124).
             if self.features_registry and self.routing_config:
-                resp = await self._fallback_handler.try_with_fallback_async(
-                    provider,
-                    current_model,
-                    original_messages,
-                    e,
-                    self._provider_utils.get_provider_config,
-                    self._client_factory.get_or_create_client,
-                    self._message_utils.convert_messages_to_langchain,
-                    eligible_providers=eligible_providers,
-                    **kwargs,
+                configured_logger = getattr(self, "_attempt_lifecycle", None)
+                logger_token = _file_attempt_logger.set(
+                    configured_logger
+                    if isinstance(configured_logger, LLMAttemptFileLogger)
+                    else _file_attempt_logger.get()
                 )
+                try:
+                    resp = await self._fallback_handler.try_with_fallback_async(
+                        provider,
+                        current_model,
+                        original_messages,
+                        e,
+                        self._provider_utils.get_provider_config,
+                        self._get_stream_fallback_client,
+                        self._message_utils.convert_messages_to_langchain,
+                        eligible_providers=eligible_providers,
+                        **kwargs,
+                    )
+                finally:
+                    _file_attempt_logger.reset(logger_token)
                 # Materialize the fallback LLMResponse. The non-streaming fallback
                 # returns a COMPLETE response, so deliver its text as a non-final
                 # chunk (the streaming text contract — non-final chunks carry

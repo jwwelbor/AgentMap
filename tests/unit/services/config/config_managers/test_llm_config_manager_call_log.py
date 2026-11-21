@@ -34,6 +34,15 @@ def test_call_log_config_preserves_enabled_and_custom_directory():
     }
 
 
+def test_null_call_log_config_uses_disabled_defaults():
+    manager = _manager({"llm": {"call_log": None}})
+
+    assert manager.get_call_log_config() == {
+        "enabled": False,
+        "directory": "agentmap/llm_call_logs",
+    }
+
+
 def test_call_log_config_survives_application_config_validation():
     config = ConfigModel.model_validate(
         {"llm": {"call_log": {"enabled": True, "directory": "/tmp/calls"}}}

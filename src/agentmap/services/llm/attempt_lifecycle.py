@@ -7,10 +7,13 @@ provider failures. No host exception message is sent to telemetry.
 
 import asyncio
 import time
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
+from threading import Lock
 from typing import Any, Awaitable, Callable, NoReturn, Optional, Tuple, TypeVar
 
 from agentmap.exceptions import (
@@ -46,6 +49,62 @@ def accounting_refusal() -> AttemptLifecycleRefusal:
     )
 
 
+class CompositeAttemptLifecycle:
+    """Fan out one attempt lifecycle to each configured host observer."""
+
+    def __init__(self, lifecycles: tuple[LLMAttemptLifecycleProtocol, ...]):
+        self._lifecycles = lifecycles
+        self._pending: dict[str, tuple[str, ...]] = {}
+        self._lock = Lock()
+
+    async def before_attempt(self, description: LLMAttemptDescription) -> str:
+        attempt_ids = []
+        for lifecycle in self._lifecycles:
+            try:
+                attempt_ids.append(await lifecycle.before_attempt(description))
+            except BaseException as error:
+                for admitted, admitted_id in zip(self._lifecycles, attempt_ids):
+                    try:
+                        await admitted.after_attempt(
+                            admitted_id,
+                            LLMAttemptOutcome(
+                                classification="provider_error",
+                                error_type=type(error).__name__,
+                            ),
+                        )
+                    except BaseException:
+                        pass
+                raise
+        composite_id = uuid.uuid4().hex
+        with self._lock:
+            self._pending[composite_id] = tuple(attempt_ids)
+        return composite_id
+
+    async def after_attempt(self, attempt_id: str, outcome: LLMAttemptOutcome) -> None:
+        with self._lock:
+            attempt_ids = self._pending.pop(attempt_id, ())
+        failures = []
+        for lifecycle, attempt_id in zip(self._lifecycles, attempt_ids):
+            try:
+                await lifecycle.after_attempt(attempt_id, outcome)
+            except BaseException as error:
+                failures.append(error)
+        if failures:
+            raise failures[0]
+
+
+def compose_attempt_lifecycles(
+    first: Optional[LLMAttemptLifecycleProtocol],
+    second: Optional[LLMAttemptLifecycleProtocol],
+) -> Optional[LLMAttemptLifecycleProtocol]:
+    """Combine distinct lifecycle hooks while preserving their order."""
+    if first is None:
+        return second
+    if second is None or first is second:
+        return first
+    return CompositeAttemptLifecycle((first, second))
+
+
 def _prefer_attempt_failure(
     current: Optional[BaseException], candidate: Optional[BaseException]
 ) -> Optional[BaseException]:
@@ -61,6 +120,9 @@ def _prefer_attempt_failure(
 
 attempt_lifecycle: ContextVar[Optional[LLMAttemptLifecycleProtocol]] = ContextVar(
     "agentmap_attempt_lifecycle", default=None
+)
+file_attempt_logger: ContextVar[Optional[LLMAttemptLifecycleProtocol]] = ContextVar(
+    "agentmap_file_attempt_logger", default=None
 )
 _T = TypeVar("_T")
 
@@ -94,6 +156,8 @@ async def get_async_client(factory: Any, provider: str, config: dict[str, Any]) 
     try:
         if attempt_lifecycle.get() is not None:
             return await factory.get_or_create_governed_client(provider, config)
+        if file_attempt_logger.get() is not None:
+            return factory.get_or_create_client(provider, config, single_dispatch=True)
         return factory.get_or_create_client(provider, config)
     except LLMLifecycleCleanupError as error:
         raise AttemptLifecycleRefusal(error) from None
@@ -313,6 +377,9 @@ async def invoke_governed_attempt(
     try:
         try:
             response, duration = await invoke()
+            accumulator.outcome = replace(
+                accumulator.outcome, response_datetime=datetime.now(timezone.utc)
+            )
         except BaseException as error:
             failure = error
         return await finalize_attempt(

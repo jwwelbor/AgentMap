@@ -31,7 +31,12 @@ class OrdinaryClientLifecycleMixin:
         _closing: bool
 
         def _cache_key(
-            self, provider: str, config: Dict[str, Any], streaming: bool, governed: bool
+            self,
+            provider: str,
+            config: Dict[str, Any],
+            streaming: bool,
+            governed: bool,
+            single_dispatch: bool = False,
         ) -> str: ...
 
         def _create_langchain_client(
@@ -41,6 +46,7 @@ class OrdinaryClientLifecycleMixin:
             streaming: bool = False,
             *,
             governed: bool = False,
+            single_dispatch: bool = False,
             owner: Any = None,
         ) -> Any: ...
 
@@ -56,10 +62,16 @@ class OrdinaryClientLifecycleMixin:
         self._ordinary_cleanup_error = None
 
     def _get_or_create_ordinary(
-        self, provider: str, config: Dict[str, Any], streaming: bool
+        self,
+        provider: str,
+        config: Dict[str, Any],
+        streaming: bool,
+        single_dispatch: bool = False,
     ) -> Any:
         with self._cache_lock:
-            cache_key = self._cache_key(provider, config, streaming, False)
+            cache_key = self._cache_key(
+                provider, config, streaming, False, single_dispatch
+            )
             api_key = config.get("api_key") or ""
             token = self._api_key_tokens[api_key]
             if cache_key in self._ordinary_threads.get(get_ident(), ()):
@@ -77,7 +89,12 @@ class OrdinaryClientLifecycleMixin:
                     self._ensure_open()
                     if cache_key in self._clients:
                         return self._clients[cache_key]
-                client = self._create_langchain_client(provider, config, streaming)
+                if single_dispatch:
+                    client = self._create_langchain_client(
+                        provider, config, streaming, single_dispatch=True
+                    )
+                else:
+                    client = self._create_langchain_client(provider, config, streaming)
                 with self._cache_lock:
                     self._clients[cache_key] = client
                     self._published_tokens.add(token)

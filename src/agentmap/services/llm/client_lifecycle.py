@@ -31,6 +31,7 @@ class GovernedClientLifecycleMixin(OrdinaryClientLifecycleMixin):
             streaming: bool = False,
             *,
             governed: bool = False,
+            single_dispatch: bool = False,
             owner: ObservedResources | None = None,
         ) -> Any: ...
 
@@ -230,7 +231,12 @@ class GovernedClientLifecycleMixin(OrdinaryClientLifecycleMixin):
         return client
 
     def _cache_key(
-        self, provider: str, config: Dict[str, Any], streaming: bool, governed: bool
+        self,
+        provider: str,
+        config: Dict[str, Any],
+        streaming: bool,
+        governed: bool,
+        single_dispatch: bool = False,
     ) -> str:
         api_key = config.get("api_key") or ""
         with self._cache_lock:
@@ -244,7 +250,8 @@ class GovernedClientLifecycleMixin(OrdinaryClientLifecycleMixin):
         return (
             f"{provider}_{config.get('model')}_{api_key_identity}_"
             f"{config.get('max_tokens')}_{config.get('temperature', 0.7)!r}_{streaming}"
-            + ("_single_dispatch" if governed else "")
+            + ("_governed_single_dispatch" if governed else "")
+            + ("_ordinary_single_dispatch" if single_dispatch else "")
         )
 
     def _finish_pending_token(self, api_key: str, token: str) -> None:

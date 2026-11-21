@@ -95,7 +95,7 @@ class LLMConfigManager(BaseConfigManager):
 
     def get_call_log_config(self) -> Dict[str, Any]:
         """Return opt-in local per-attempt file logging configuration."""
-        config: Dict[str, Any] = self.get_value("llm.call_log", {})
+        config: Dict[str, Any] = self.get_value("llm.call_log", {}) or {}
         return self._merge_with_defaults(
             config,
             {"enabled": False, "directory": "agentmap/llm_call_logs"},

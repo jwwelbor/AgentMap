@@ -278,7 +278,9 @@ class LLMContainer(containers.DeclarativeContainer):
         return svc
 
     @staticmethod
-    def _create_attempt_file_logger(app_config_service: Any) -> Any:
+    def _create_attempt_file_logger(
+        app_config_service: Any, logging_service: Any
+    ) -> Any:
         from pathlib import Path
 
         from agentmap.services.llm_attempt_file_logger import LLMAttemptFileLogger
@@ -287,11 +289,12 @@ class LLMContainer(containers.DeclarativeContainer):
         if not isinstance(config, dict) or not config.get("enabled", False):
             return None
         directory = Path(config.get("directory", "agentmap/llm_call_logs")).expanduser()
-        return LLMAttemptFileLogger(directory)
+        return LLMAttemptFileLogger(directory, logging_service)
 
     attempt_file_logger = providers.Singleton(
         _create_attempt_file_logger,
         app_config_service,
+        logging_service,
     )
 
     llm_service = providers.Singleton(

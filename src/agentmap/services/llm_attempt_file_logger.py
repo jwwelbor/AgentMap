@@ -25,8 +25,9 @@ class LLMAttemptFileLogger:
     _SUCCESS = frozenset({"text", "empty", "non_text"})
     _SAFE_ERROR_TYPE = re.compile(r"[^A-Za-z0-9_.-]")
 
-    def __init__(self, directory: Path):
+    def __init__(self, directory: Path, logging_service: Any):
         self._directory = directory
+        self._logger = logging_service.get_class_logger(self)
         self._pending: Dict[str, _PendingAttempt] = {}
         self._pending_lock = threading.Lock()
         self._write_lock = threading.Lock()
@@ -53,11 +54,11 @@ class LLMAttemptFileLogger:
             return
 
         success = outcome.classification in self._SUCCESS
-        response_datetime = (
-            datetime.now(timezone.utc)
-            if success or outcome.response_evidence.unavailable_reason != "no_response"
-            else None
-        )
+        response_datetime = outcome.response_datetime
+        if response_datetime is None and (
+            success or outcome.response_evidence.unavailable_reason != "no_response"
+        ):
+            response_datetime = datetime.now(timezone.utc)
         error_message = None
         if not success:
             error_type = self._SAFE_ERROR_TYPE.sub(
@@ -77,7 +78,12 @@ class LLMAttemptFileLogger:
             "was_success": success,
             "error_message": error_message,
         }
-        self._append_record(pending.request_datetime, record)
+        try:
+            self._append_record(pending.request_datetime, record)
+        except OSError as error:
+            self._logger.warning(
+                "Local LLM attempt log write failed (%s)", type(error).__name__
+            )
 
     def _append_record(
         self, request_datetime: datetime, record: Dict[str, Any]
