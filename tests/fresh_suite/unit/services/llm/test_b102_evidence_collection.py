@@ -60,6 +60,8 @@ def test_independent_fields_and_first_failure_precedence_are_preserved__b102(fai
     assert events == ["usage", "cost", "identity"]
     assert outcome.usage == usage
     assert outcome.cost_usd == (None if "cost" in failures else Decimal("0.30"))
+    assert outcome.cost_amount == (None if "cost" in failures else Decimal("0.30"))
+    assert outcome.cost_currency == (None if "cost" in failures else "USD")
     assert outcome.provider_request_id == (
         None if "identity" in failures else "provider-request"
     )

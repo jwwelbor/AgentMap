@@ -159,10 +159,9 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         single_dispatch: bool = False,
         owner: ObservedResources | None = None,
     ) -> Any:
-        """Build OpenAI client, with streaming usage or governed observation."""
+        """Build OpenAI client with optional single-dispatch controls."""
         client_class: Any
         try:
-            # Try the new langchain-openai package first
             from langchain_openai import ChatOpenAI
 
             client_class = ChatOpenAI
@@ -171,7 +170,6 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 raise LLMDependencyError(
                     "Governed calls require the verified langchain-openai wrapper"
                 )
-            # Fall back to legacy import
             try:
                 client_class = getattr(
                     importlib.import_module("langchain.chat_models"), "ChatOpenAI"
@@ -272,10 +270,9 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         single_dispatch: bool = False,
         owner: ObservedResources | None = None,
     ) -> Any:
-        """Build Google client; streaming has no verified usage opt-in."""
+        """Build Google client with optional single-dispatch controls."""
         client_class: Any
         try:
-            # Try langchain-google-genai first
             from langchain_google_genai import ChatGoogleGenerativeAI
 
             client_class = ChatGoogleGenerativeAI
@@ -285,7 +282,6 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                     "Governed calls require the verified langchain-google-genai wrapper"
                 )
             try:
-                # Fall back to community package
                 client_class = getattr(
                     importlib.import_module("langchain_community.chat_models"),
                     "ChatGoogleGenerativeAI",

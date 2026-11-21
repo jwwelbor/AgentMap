@@ -66,6 +66,11 @@ class LLMAttemptFileLogger:
             )
             error_message = f"Provider attempt failed ({error_type or 'ProviderError'})"
 
+        cost_amount = outcome.cost_amount
+        cost_currency = outcome.cost_currency
+        if cost_amount is None and outcome.cost_usd is not None:
+            cost_amount, cost_currency = outcome.cost_usd, "USD"
+
         record = {
             "request_datetime": pending.request_datetime.isoformat(),
             "response_datetime": (
@@ -75,6 +80,8 @@ class LLMAttemptFileLogger:
             "input_tokens": outcome.usage.input_tokens if outcome.usage else None,
             "output_tokens": outcome.usage.output_tokens if outcome.usage else None,
             "cost_usd": str(outcome.cost_usd) if outcome.cost_usd is not None else None,
+            "cost_amount": str(cost_amount) if cost_amount is not None else None,
+            "cost_currency": cost_currency,
             "was_success": success,
             "error_message": error_message,
         }

@@ -1,6 +1,7 @@
 import errno
 import json
 from datetime import datetime
+from decimal import Decimal
 from unittest.mock import Mock
 
 import pytest
@@ -82,6 +83,28 @@ async def test_does_not_include_raw_exception_text(tmp_path):
 
     content = next(tmp_path.glob("*.jsonl")).read_text()
     assert "secret token" not in content
+
+
+@pytest.mark.asyncio
+async def test_records_configured_cost_amount_and_currency(tmp_path):
+    logger = LLMAttemptFileLogger(tmp_path, Mock())
+    attempt_id = await logger.before_attempt(
+        LLMAttemptDescription("openai", "model", "primary", 1, None, None, None)
+    )
+
+    await logger.after_attempt(
+        attempt_id,
+        LLMAttemptOutcome(
+            classification="text",
+            cost_amount=Decimal("0.25"),
+            cost_currency="CAD",
+        ),
+    )
+
+    record = json.loads(next(tmp_path.glob("*.jsonl")).read_text())
+    assert record["cost_usd"] is None
+    assert record["cost_amount"] == "0.25"
+    assert record["cost_currency"] == "CAD"
 
 
 @pytest.mark.asyncio

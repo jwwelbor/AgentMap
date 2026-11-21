@@ -79,6 +79,7 @@ from agentmap.services.llm.attempt_lifecycle import (
 )
 from agentmap.services.llm.attempt_lifecycle import (
     get_async_client,
+    provider_error_response_datetime,
     run_governed_invocation,
 )
 from agentmap.services.llm.batch_lifecycle import reject_batch_lifecycle_options
@@ -586,31 +587,10 @@ class LLMService:
         attempt_lifecycle: Optional[LLMAttemptLifecycleProtocol] = None,
         **kwargs: Any,
     ) -> LLMResponse:
-        """
-        Make an async LLM call and return a rich ``LLMResponse``.
+        """Make an async call, returning resolved identity, text, and usage.
 
-        ``LLMResponse.text`` carries response text; ``.resolved_provider`` and
-        ``.resolved_model`` report the provider and model that handled the
-        request after routing or fallback. ``.usage`` carries returned token counts.
-
-        When routing_context is provided, routing owns all provider and model
-        selection. Explicit provider and model inputs are ignored with the same
-        warnings used by the sync path.
-
-        Args:
-            cache_system_prompt: When True, inject provider-specific prompt-caching
-                                 metadata into system messages (Anthropic only; no-op
-                                 for other providers).
-            tools: Optional JSON-Schema tool definitions (REQ-F-006). When
-                   supplied and non-empty, they are bound to the resolved
-                   provider client before invocation so the provider can
-                   return tool calls. A primary-tier failure on a tool-bound
-                   call raises ``LLMResolvedCallError`` without attempting
-                   the fallback ladder (REQ-F-008) -- a fallback tier is a
-                   different model that may not honor the same tool schema.
-            attempt_lifecycle: Optional mandatory admission/settlement hooks for
-                each physical attempt. Isolated per invocation, including nested
-                plain calls. SDK retries are disabled only for governed clients.
+        Routing selects provider/model when ``routing_context`` is set. Optional
+        lifecycle hooks are scoped to this invocation.
         """
         kwargs["cache_system_prompt"] = cache_system_prompt
         kwargs["tools"] = tools
@@ -1413,6 +1393,11 @@ class LLMService:
                 f"skipping call (resets after {self._circuit_breaker.reset}s)"
             )
 
+    @staticmethod
+    def _provider_error_response_datetime(error: BaseException) -> Optional[datetime]:
+        """Timestamp failures that prove the provider returned an HTTP response."""
+        return provider_error_response_datetime(error)
+
     def _retry_resilient_invocation(
         self,
         client: Any,
@@ -1472,44 +1457,53 @@ class LLMService:
         try:
             response = client.invoke(langchain_messages)
             response_datetime = datetime.now(timezone.utc)
-        except Exception as error:
+        except BaseException as error:
             if attempt_id is not None and logger is not None:
                 logger.after_attempt_sync(
                     attempt_id,
                     LLMAttemptOutcome(
-                        classification="provider_error", error_type=type(error).__name__
+                        classification="provider_error",
+                        error_type=type(error).__name__,
+                        response_datetime=self._provider_error_response_datetime(error),
                     ),
                 )
             raise
         duration = time.monotonic() - start_time
         try:
             result, _ = normalize_response_content(response)
-        except Exception as error:
+        except BaseException as error:
             if attempt_id is not None and logger is not None:
                 failure_usage: Optional[LLMUsage] = None
                 try:
                     failure_usage = self._extract_llm_usage(response)
-                except Exception as usage_error:
+                except BaseException as usage_error:
                     self._logger.warning(
                         "Could not extract LLM attempt log usage (%s)",
                         type(usage_error).__name__,
                     )
-                failure_cost_usd = self._calculate_attempt_log_cost(
-                    failure_usage, provider, model
-                )
+                try:
+                    failure_cost = self._calculate_attempt_log_cost(
+                        failure_usage, provider, model
+                    )
+                except BaseException as cost_error:
+                    self._logger.warning(
+                        "Could not calculate LLM attempt log cost (%s)",
+                        type(cost_error).__name__,
+                    )
+                    failure_cost = None
                 logger.after_attempt_sync(
                     attempt_id,
                     LLMAttemptOutcome(
                         classification="receipt_error",
                         usage=failure_usage,
-                        cost_usd=failure_cost_usd,
+                        **self._attempt_log_cost_fields(failure_cost),
                         error_type=type(error).__name__,
                         response_datetime=response_datetime,
                     ),
                 )
             raise
         usage: Optional[LLMUsage] = None
-        cost_usd = None
+        cost = None
         if attempt_id is not None:
             try:
                 usage = self._extract_llm_usage(response)
@@ -1518,14 +1512,14 @@ class LLMService:
                     "Could not extract LLM attempt log usage (%s)",
                     type(error).__name__,
                 )
-            cost_usd = self._calculate_attempt_log_cost(usage, provider, model)
+            cost = self._calculate_attempt_log_cost(usage, provider, model)
         if attempt_id is not None and logger is not None:
             logger.after_attempt_sync(
                 attempt_id,
                 LLMAttemptOutcome(
                     classification="text" if result else "empty",
                     usage=usage,
-                    cost_usd=cost_usd,
+                    **self._attempt_log_cost_fields(cost),
                     response_datetime=response_datetime,
                 ),
             )
@@ -1538,11 +1532,17 @@ class LLMService:
         return result
 
     def _calculate_attempt_log_cost(
-        self, usage: Optional[LLMUsage], provider: str, model: str
-    ) -> Optional[Decimal]:
-        """Return only a trustworthy USD cost; logging diagnostics never fail calls."""
+        self,
+        usage: Optional[LLMUsage],
+        provider: str,
+        model: str,
+        *,
+        input_includes_cache_tokens: bool = True,
+    ) -> Optional[LLMCostBreakdown]:
+        """Return configured-currency cost; diagnostics never fail provider calls."""
         if (
-            usage is not None
+            input_includes_cache_tokens
+            and usage is not None
             and provider.lower() == "anthropic"
             and (
                 usage.cache_read_input_tokens is not None
@@ -1568,12 +1568,20 @@ class LLMService:
             return None
         if cost is None:
             return None
-        if cost.currency.upper() != "USD":
-            self._logger.warning(
-                "Skipping non-USD LLM attempt log cost (%s)", cost.currency
-            )
-            return None
-        return cost.total_cost
+        return cost
+
+    @staticmethod
+    def _attempt_log_cost_fields(
+        cost: Optional[LLMCostBreakdown],
+    ) -> Dict[str, Any]:
+        if cost is None:
+            return {"cost_usd": None, "cost_amount": None, "cost_currency": None}
+        currency = cost.currency.upper()
+        return {
+            "cost_usd": cost.total_cost if currency == "USD" else None,
+            "cost_amount": cost.total_cost,
+            "cost_currency": currency,
+        }
 
     def _wait_before_retry(
         self,
@@ -2041,14 +2049,19 @@ class LLMService:
             if isinstance(error, asyncio.CancelledError)
             else "receipt_error" if raw_response else "provider_error"
         )
+        cost = self._calculate_attempt_log_cost(usage, provider, model)
         await logger.after_attempt(
             attempt_id,
             LLMAttemptOutcome(
                 classification=classification,
                 usage=usage,
-                cost_usd=self._calculate_attempt_log_cost(usage, provider, model),
+                **self._attempt_log_cost_fields(cost),
                 error_type=type(error).__name__,
-                response_datetime=response_datetime[0] if response_datetime else None,
+                response_datetime=(
+                    response_datetime[0]
+                    if response_datetime
+                    else self._provider_error_response_datetime(error)
+                ),
             ),
         )
 
@@ -2061,14 +2074,13 @@ class LLMService:
         provider: str,
         model: str,
     ) -> None:
+        cost = self._calculate_attempt_log_cost(result.usage, provider, model)
         await logger.after_attempt(
             attempt_id,
             LLMAttemptOutcome(
                 classification=result.text_status,
                 usage=result.usage,
-                cost_usd=self._calculate_attempt_log_cost(
-                    result.usage, provider, model
-                ),
+                **self._attempt_log_cost_fields(cost),
                 response_datetime=response_datetime[0] if response_datetime else None,
             ),
         )
@@ -2343,15 +2355,18 @@ class LLMService:
 
                 # Clean completion
                 if attempt_id is not None and attempt_logger is not None:
-                    cost_usd = self._calculate_attempt_log_cost(
-                        stream_usage, provider, model
+                    cost = self._calculate_attempt_log_cost(
+                        stream_usage,
+                        provider,
+                        model,
+                        input_includes_cache_tokens=False,
                     )
                     await attempt_logger.after_attempt(
                         attempt_id,
                         LLMAttemptOutcome(
                             classification="text" if has_text else "empty",
                             usage=stream_usage,
-                            cost_usd=cost_usd,
+                            **self._attempt_log_cost_fields(cost),
                             response_datetime=response_datetime
                             or datetime.now(timezone.utc),
                         ),
@@ -2364,15 +2379,18 @@ class LLMService:
             except BaseException as e:
                 if attempt_id is not None and attempt_logger is not None:
                     if final_chunk_delivered:
-                        cost_usd = self._calculate_attempt_log_cost(
-                            stream_usage, provider, model
+                        cost = self._calculate_attempt_log_cost(
+                            stream_usage,
+                            provider,
+                            model,
+                            input_includes_cache_tokens=False,
                         )
                         await attempt_logger.after_attempt(
                             attempt_id,
                             LLMAttemptOutcome(
                                 classification="text" if has_text else "empty",
                                 usage=stream_usage,
-                                cost_usd=cost_usd,
+                                **self._attempt_log_cost_fields(cost),
                                 response_datetime=response_datetime,
                             ),
                         )
@@ -2389,7 +2407,7 @@ class LLMService:
                                 response_datetime=(
                                     datetime.now(timezone.utc)
                                     if first_chunk_delivered
-                                    else None
+                                    else self._provider_error_response_datetime(e)
                                 ),
                             ),
                         )
@@ -4218,25 +4236,10 @@ class LLMService:
         cache_system_prompt: bool = False,
         **kwargs: Any,
     ) -> AsyncIterator[LLMStreamChunk]:
-        """Return an async iterator of ``LLMStreamChunk`` for token-streaming.
+        """Stream text and a terminal result with invocation-scoped logging.
 
-        Mirrors ``call_llm_async`` (:425) with the same parameter list. Dispatches
-        to the telemetry wrapper when ``_telemetry_service`` is set; otherwise
-        iterates ``_call_llm_stream_async_core`` directly (REQ-F-001).
-
-        The caller iterates the result with ``async for chunk in ...``. Non-final
-        chunks carry ``text_delta`` and ``chunk_index``; exactly one terminal chunk
-        (``is_final=True``) closes the stream with accumulated usage/finish_reason
-        and reconstructed provider/model identity (REQ-F-011, SC-1).
-
-        REQ-F-003 / NFR-F-003: this is the streaming sibling of
-        ``_dispatch_call_llm_async``'s outermost unwrap boundary -- a
-        ``BudgetGuardRefusal`` can reach here from the pre-first-chunk
-        fallback path (``_call_llm_stream_async_direct`` re-enters the
-        guarded non-streaming resilience seam via
-        ``LLMFallbackHandler.try_with_fallback_async`` when materializing a
-        fallback tier). Without this unwrap, the internal marker type would
-        leak to a stream caller instead of the guard's own exception.
+        Unwrap budget refusals here so internal marker types do not escape to
+        stream callers.
         """
         configured_lifecycle = getattr(self, "_attempt_lifecycle", None)
         configured_logger = (

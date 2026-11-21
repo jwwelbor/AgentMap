@@ -1,3 +1,5 @@
+import sys
+from types import ModuleType
 from unittest.mock import Mock
 
 import pytest
@@ -46,3 +48,51 @@ async def test_file_logger_uses_ordinary_single_dispatch_client():
         "openai", {"model": "model"}, single_dispatch=True
     )
     factory.get_or_create_governed_client.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("provider", "module_name", "class_name", "retry_setting"),
+    [
+        ("openai", "langchain_openai", "ChatOpenAI", 0),
+        ("anthropic", None, None, 0),
+        ("google", "langchain_google_genai", "ChatGoogleGenerativeAI", 1),
+    ],
+)
+def test_provider_builders_configure_one_sdk_attempt(
+    monkeypatch, provider, module_name, class_name, retry_setting
+):
+    send = Mock(side_effect=RuntimeError("provider failed"))
+    constructed = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            constructed.update(kwargs)
+
+        def invoke(self, _messages):
+            max_retries = constructed["max_retries"]
+            total_attempts = max_retries if provider == "google" else max_retries + 1
+            for attempt in range(total_attempts):
+                try:
+                    return send()
+                except RuntimeError:
+                    if attempt + 1 == total_attempts:
+                        raise
+
+    factory = LLMClientFactory(Mock())
+    if module_name:
+        module = ModuleType(module_name)
+        setattr(module, class_name, FakeClient)
+        monkeypatch.setitem(sys.modules, module_name, module)
+    else:
+        monkeypatch.setattr(factory, "_load_anthropic_client_class", lambda: FakeClient)
+
+    client = factory._create_langchain_client(
+        provider,
+        {"api_key": "key", "model": "model"},
+        single_dispatch=True,
+    )
+
+    assert constructed["max_retries"] == retry_setting
+    with pytest.raises(RuntimeError, match="provider failed"):
+        client.invoke([])
+    send.assert_called_once_with()

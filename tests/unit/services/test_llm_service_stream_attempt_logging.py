@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -27,7 +28,10 @@ def test_stream_fallback_preserves_sdk_retry_defaults_when_logging_disabled():
 
 
 @pytest.mark.asyncio
-async def test_stream_retry_logs_each_physical_attempt(tmp_path, monkeypatch):
+@pytest.mark.parametrize("has_response", [False, True])
+async def test_stream_retry_logs_each_physical_attempt(
+    tmp_path, monkeypatch, has_response
+):
     logger = LLMAttemptFileLogger(tmp_path, Mock())
     service = LLMService.__new__(LLMService)
     service._attempt_lifecycle = logger
@@ -46,7 +50,10 @@ async def test_stream_retry_logs_each_physical_attempt(tmp_path, monkeypatch):
         nonlocal calls
         calls += 1
         if calls == 1:
-            raise LLMProviderError("temporary provider failure")
+            error = LLMProviderError("temporary provider failure")
+            if has_response:
+                error.response = object()
+            raise error
         yield LLMStreamChunk(
             text_delta="done",
             chunk_index=0,
@@ -80,7 +87,7 @@ async def test_stream_retry_logs_each_physical_attempt(tmp_path, monkeypatch):
     assert len(chunks) == 2
     assert len(records) == 2
     assert [record["was_success"] for record in records] == [False, True]
-    assert records[0]["response_datetime"] is None
+    assert (records[0]["response_datetime"] is not None) is has_response
     assert records[1]["input_tokens"] == 5
     assert records[1]["output_tokens"] == 2
 
@@ -240,3 +247,54 @@ async def test_stream_prechunk_fallback_logs_fallback_attempt(tmp_path, monkeypa
             {"single_dispatch": True},
         ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_native_stream_cost_keeps_disjoint_anthropic_input_tokens(
+    tmp_path, monkeypatch
+):
+    logger = LLMAttemptFileLogger(tmp_path, Mock())
+    service = LLMService.__new__(LLMService)
+    service._attempt_lifecycle = logger
+    service._logger = Mock()
+    service._circuit_breaker = Mock()
+    service._circuit_breaker.is_open.return_value = False
+    service._record_circuit_breaker_state = Mock()
+    service._record_circuit_breaker_metric_on_close = Mock()
+    service._record_error_metric = Mock()
+    service._record_circuit_breaker_metric_on_open = Mock()
+    service._resolve_retry_config = Mock(return_value=(1, 0, 0, False, 1))
+    service._cost_calculator = Mock()
+    service._cost_calculator.calculate.return_value = SimpleNamespace(
+        currency="USD", total_cost=Decimal("0.004")
+    )
+    usage = LLMUsage(
+        input_tokens=100,
+        output_tokens=10,
+        cache_read_input_tokens=20,
+        cache_creation_input_tokens=5,
+    )
+
+    async def stream_native_usage(*_args, **_kwargs):
+        yield LLMStreamChunk(
+            text_delta="",
+            chunk_index=0,
+            is_final=True,
+            usage=usage,
+        )
+
+    monkeypatch.setattr(
+        "agentmap.services.llm_service.stream_provider", stream_native_usage
+    )
+    async for _ in service._invoke_with_resilience_stream_async(
+        [], {}, "anthropic", "model", Mock(), None
+    ):
+        pass
+
+    service._cost_calculator.calculate.assert_called_once_with(
+        usage, "anthropic", "model"
+    )
+    record = json.loads(next(tmp_path.glob("*.jsonl")).read_text())
+    assert record["cost_usd"] == "0.004"
+    assert record["cost_amount"] == "0.004"
+    assert record["cost_currency"] == "USD"

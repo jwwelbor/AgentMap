@@ -35,4 +35,6 @@ def test_governed_currency_receipt_only_publishes_usd_cost__b102(
     )
     assert error is None
     assert outcome.cost_usd == expected_cost
+    assert outcome.cost_amount == Decimal("0.20")
+    assert outcome.cost_currency == currency.upper()
     assert outcome.usage == LLMUsage(input_tokens=10, output_tokens=20)

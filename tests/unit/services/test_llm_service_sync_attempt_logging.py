@@ -160,6 +160,8 @@ def test_sync_log_does_not_label_non_usd_cost_as_usd(tmp_path):
 
     record = json.loads(next(tmp_path.glob("*.jsonl")).read_text())
     assert record["cost_usd"] is None
+    assert record["cost_amount"] == "0.25"
+    assert record["cost_currency"] == "CAD"
     assert record["was_success"] is True
 
 
@@ -193,6 +195,8 @@ def test_sync_anthropic_log_prices_disjoint_cache_token_buckets(tmp_path):
     assert priced_usage[0].cache_creation_input_tokens == 0
     record = json.loads(next(tmp_path.glob("*.jsonl")).read_text())
     assert record["cost_usd"] == "0.00342"
+    assert record["cost_amount"] == "0.00342"
+    assert record["cost_currency"] == "USD"
 
 
 def test_sync_normalization_failure_settles_attempt_then_reraises(
@@ -226,7 +230,68 @@ def test_sync_normalization_failure_settles_attempt_then_reraises(
     assert record["input_tokens"] == 12
     assert record["output_tokens"] == 4
     assert record["cost_usd"] == "0.42"
+    assert record["cost_amount"] == "0.42"
+    assert record["cost_currency"] == "USD"
     assert record["error_message"] == "Provider attempt failed (ValueError)"
+
+
+@pytest.mark.parametrize("phase", ["invoke", "normalize"])
+def test_sync_control_flow_failure_settles_attempt_then_reraises(
+    tmp_path, monkeypatch, phase
+):
+    class ProviderInterruption(BaseException):
+        pass
+
+    logger = LLMAttemptFileLogger(tmp_path, Mock())
+    service = _service_with_logger(logger)
+    response = SimpleNamespace(
+        content="ok",
+        usage_metadata={"input_tokens": 12, "output_tokens": 4},
+        response_metadata={},
+    )
+    provider_client = Mock(invoke=Mock(return_value=response))
+    if phase == "invoke":
+        provider_client.invoke.side_effect = ProviderInterruption("stop")
+    else:
+        monkeypatch.setattr(
+            "agentmap.services.llm_service.normalize_response_content",
+            Mock(side_effect=ProviderInterruption("stop")),
+        )
+
+    with pytest.raises(ProviderInterruption, match="stop"):
+        service._complete_resilient_invocation(
+            provider_client, [], "openai", "model", 1, 1
+        )
+
+    record = json.loads(next(tmp_path.glob("*.jsonl")).read_text())
+    assert record["was_success"] is False
+    assert record["error_message"] == "Provider attempt failed (ProviderInterruption)"
+    assert (record["response_datetime"] is not None) is (phase == "normalize")
+    if phase == "normalize":
+        assert record["input_tokens"] == 12
+        assert record["output_tokens"] == 4
+
+
+@pytest.mark.parametrize("has_response", [False, True])
+def test_sync_provider_failure_timestamps_only_response_bearing_errors(
+    tmp_path, has_response
+):
+    class ProviderError(Exception):
+        pass
+
+    error = ProviderError("request failed")
+    if has_response:
+        error.response = object()
+    logger = LLMAttemptFileLogger(tmp_path, Mock())
+    service = _service_with_logger(logger)
+
+    with pytest.raises(ProviderError):
+        service._complete_resilient_invocation(
+            Mock(invoke=Mock(side_effect=error)), [], "openai", "model", 1, 1
+        )
+
+    record = json.loads(next(tmp_path.glob("*.jsonl")).read_text())
+    assert (record["response_datetime"] is not None) is has_response
 
 
 @pytest.mark.asyncio
@@ -304,6 +369,36 @@ async def test_async_file_logging_does_not_enable_governed_pricing_refusal(tmp_p
     assert record["was_success"] is True
     assert record["input_tokens"] == 3
     assert record["cost_usd"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_response", [False, True])
+async def test_async_provider_failure_timestamps_only_response_bearing_errors(
+    tmp_path, has_response
+):
+    class ProviderError(Exception):
+        pass
+
+    error = ProviderError("request failed")
+    if has_response:
+        error.response = object()
+    logger = LLMAttemptFileLogger(tmp_path, Mock())
+    service = LLMService.__new__(LLMService)
+    service._attempt_lifecycle = None
+    service._client_factory = Mock()
+    service._logger = Mock()
+    service._cost_calculator = Mock(calculate=Mock(return_value=None))
+    client = Mock()
+    client.ainvoke = AsyncMock(side_effect=error)
+    token = file_attempt_logger.set(logger)
+    try:
+        with pytest.raises(ProviderError):
+            await service._attempt_llm_call_async(client, [], "openai", "model", 1)
+    finally:
+        file_attempt_logger.reset(token)
+
+    record = json.loads(next(tmp_path.glob("*.jsonl")).read_text())
+    assert (record["response_datetime"] is not None) is has_response
 
 
 @pytest.mark.asyncio

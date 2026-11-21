@@ -65,6 +65,8 @@ class LLMAttemptOutcome:
     classification: str
     usage: Optional[LLMUsage] = None
     cost_usd: Optional[Decimal] = None
+    cost_amount: Optional[Decimal] = None
+    cost_currency: Optional[str] = None
     provider_request_id: Optional[str] = None
     error_type: Optional[str] = None
     response_datetime: Optional[datetime] = None
