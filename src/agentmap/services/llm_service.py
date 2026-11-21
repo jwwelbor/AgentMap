@@ -231,6 +231,7 @@ class LLMService:
         batch_adapters: Optional[Dict[str, Any]] = None,
         batch_repo: Optional[BatchHandleRepository] = None,
         budget_guard: Optional[LLMBudgetGuardProtocol] = None,
+        attempt_lifecycle: Optional[LLMAttemptLifecycleProtocol] = None,
     ):
         """
         Initialize the LLM service.
@@ -264,6 +265,7 @@ class LLMService:
         # post-completion receipt observation. None => no guard-related code
         # path executes (NFR-F-002/AC pre-F06 byte-identical behavior).
         self._budget_guard: Optional[LLMBudgetGuardProtocol] = budget_guard
+        self._attempt_lifecycle = attempt_lifecycle
 
         # Initialize helper components
         self._client_factory = LLMClientFactory(logging_service)
@@ -604,7 +606,7 @@ class LLMService:
         kwargs["cache_system_prompt"] = cache_system_prompt
         kwargs["tools"] = tools
         return await run_governed_invocation(
-            attempt_lifecycle,
+            attempt_lifecycle or self._attempt_lifecycle,
             self._client_factory,
             lambda: self._dispatch_call_llm_async(
                 messages, provider, model, temperature, routing_context, **kwargs

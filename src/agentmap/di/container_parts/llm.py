@@ -240,6 +240,7 @@ class LLMContainer(containers.DeclarativeContainer):
         gemini_batch_adapter: Optional[BatchAdapterProtocol] = None,
         batch_handle_repository: Optional[BatchHandleRepository] = None,
         budget_guard: Optional[LLMBudgetGuardProtocol] = None,
+        attempt_lifecycle: Any = None,
     ) -> LLMService:
         from agentmap.services.llm_service import LLMService
 
@@ -264,6 +265,7 @@ class LLMContainer(containers.DeclarativeContainer):
             batch_adapters=batch_adapters,
             batch_repo=batch_handle_repository,
             budget_guard=budget_guard,
+            attempt_lifecycle=attempt_lifecycle,
         )
 
         # Wire content capture flags from telemetry config (T-E02-F04-003).
@@ -274,6 +276,23 @@ class LLMContainer(containers.DeclarativeContainer):
         svc._capture_llm_responses = bool(flags.get("llm_responses", False))
 
         return svc
+
+    @staticmethod
+    def _create_attempt_file_logger(app_config_service: Any) -> Any:
+        from pathlib import Path
+
+        from agentmap.services.llm_attempt_file_logger import LLMAttemptFileLogger
+
+        config = app_config_service.get_llm_call_log_config()
+        if not isinstance(config, dict) or not config.get("enabled", False):
+            return None
+        directory = Path(config.get("directory", "agentmap/llm_call_logs")).expanduser()
+        return LLMAttemptFileLogger(directory)
+
+    attempt_file_logger = providers.Singleton(
+        _create_attempt_file_logger,
+        app_config_service,
+    )
 
     llm_service = providers.Singleton(
         _create_llm_service,
@@ -289,4 +308,5 @@ class LLMContainer(containers.DeclarativeContainer):
         gemini_batch_adapter,
         batch_handle_repository,
         budget_guard,
+        attempt_file_logger,
     )

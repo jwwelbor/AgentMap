@@ -210,6 +210,10 @@ class AppConfigService:
         """
         return self._llm_manager.get_pricing_config()
 
+    def get_llm_call_log_config(self) -> Dict[str, Any]:
+        """Get the opt-in local provider-attempt file log configuration."""
+        return self._llm_manager.get_call_log_config()
+
     # Routing accessors
     def get_routing_config(self) -> Dict[str, Any]:
         """Get the routing configuration with default values."""
