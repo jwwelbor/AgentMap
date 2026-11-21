@@ -32,6 +32,9 @@ class LLMAttemptFileLogger:
         self._write_lock = threading.Lock()
 
     async def before_attempt(self, description: LLMAttemptDescription) -> str:
+        return self.before_attempt_sync(description)
+
+    def before_attempt_sync(self, description: LLMAttemptDescription) -> str:
         attempt_id = uuid.uuid4().hex
         with self._pending_lock:
             self._pending[attempt_id] = _PendingAttempt(
@@ -41,6 +44,9 @@ class LLMAttemptFileLogger:
         return attempt_id
 
     async def after_attempt(self, attempt_id: str, outcome: LLMAttemptOutcome) -> None:
+        await asyncio.to_thread(self.after_attempt_sync, attempt_id, outcome)
+
+    def after_attempt_sync(self, attempt_id: str, outcome: LLMAttemptOutcome) -> None:
         with self._pending_lock:
             pending = self._pending.pop(attempt_id, None)
         if pending is None:
@@ -71,7 +77,7 @@ class LLMAttemptFileLogger:
             "was_success": success,
             "error_message": error_message,
         }
-        await asyncio.to_thread(self._append_record, pending.request_datetime, record)
+        self._append_record(pending.request_datetime, record)
 
     def _append_record(
         self, request_datetime: datetime, record: Dict[str, Any]

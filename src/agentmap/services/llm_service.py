@@ -38,6 +38,7 @@ from agentmap.exceptions import (
     LLMServiceError,
     LLMTimeoutError,
 )
+from agentmap.models.llm_attempt import LLMAttemptDescription, LLMAttemptOutcome
 from agentmap.models.llm_batch import (
     LLMBatchHandle,
     LLMBatchResult,
@@ -99,6 +100,7 @@ from agentmap.services.llm.tool_call_extraction import (
     extract_tool_calls,
     normalize_response_content,
 )
+from agentmap.services.llm_attempt_file_logger import LLMAttemptFileLogger
 from agentmap.services.llm_batch_errors import (
     LLMBatchCancelNotSupportedError,
     LLMBatchExpiredError,
@@ -1425,9 +1427,35 @@ class LLMService:
         """Invoke once, normalize its text boundary, and record success telemetry."""
         self._logger.debug(f"LLM call to {provider}:{model} ({attempt}/{max_attempts})")
         start_time = time.monotonic()
-        response = client.invoke(langchain_messages)
+        lifecycle = self._attempt_lifecycle
+        attempt_id = None
+        if isinstance(lifecycle, LLMAttemptFileLogger):
+            attempt_id = lifecycle.before_attempt_sync(
+                LLMAttemptDescription(
+                    provider, model, "primary", attempt, None, None, None
+                )
+            )
+        try:
+            response = client.invoke(langchain_messages)
+        except Exception as error:
+            if attempt_id is not None:
+                lifecycle.after_attempt_sync(
+                    attempt_id,
+                    LLMAttemptOutcome(
+                        classification="provider_error", error_type=type(error).__name__
+                    ),
+                )
+            raise
         duration = time.monotonic() - start_time
         result, _ = normalize_response_content(response)
+        if attempt_id is not None:
+            lifecycle.after_attempt_sync(
+                attempt_id,
+                LLMAttemptOutcome(
+                    classification="text" if result else "empty",
+                    usage=self._extract_llm_usage(response),
+                ),
+            )
         was_open = self._circuit_breaker.is_open(provider, model)
         self._circuit_breaker.record_success(provider, model)
         self._record_circuit_breaker_metric_on_close(was_open, provider, model)
