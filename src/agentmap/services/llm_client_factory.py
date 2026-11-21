@@ -65,11 +65,14 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         streaming: bool = False,
         *,
         governed: bool = False,
+        single_dispatch: bool = False,
     ) -> Any:
         """Cache separate ordinary, streaming, and governed clients."""
         streaming = self._validate_streaming_flag(streaming)
         if not isinstance(governed, bool):
             raise TypeError("governed must be a bool")
+        if not isinstance(single_dispatch, bool):
+            raise TypeError("single_dispatch must be a bool")
         if governed and streaming:
             raise LLMConfigurationError(
                 "Governed response observation supports only non-streaming calls"
@@ -79,7 +82,9 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 "Governed clients require awaited async construction"
             )
 
-        return self._get_or_create_ordinary(provider, config, streaming)
+        return self._get_or_create_ordinary(
+            provider, config, streaming, single_dispatch=single_dispatch
+        )
 
     def _create_langchain_client(
         self,
@@ -88,6 +93,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         streaming: bool = False,
         *,
         governed: bool = False,
+        single_dispatch: bool = False,
         owner: ObservedResources | None = None,
     ) -> Any:
         """Build the selected wrapper without mutating any cached client.
@@ -109,9 +115,11 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
 
         try:
             builder = self._client_builder(provider)
-            builder_kwargs: Dict[str, Any] = (
-                {"governed": True, "owner": owner} if governed else {}
-            )
+            builder_kwargs: Dict[str, Any] = {}
+            if governed:
+                builder_kwargs.update(governed=True, owner=owner)
+            elif single_dispatch:
+                builder_kwargs["single_dispatch"] = True
             return builder(
                 api_key,
                 model,
@@ -148,12 +156,12 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         streaming: bool = False,
         *,
         governed: bool = False,
+        single_dispatch: bool = False,
         owner: ObservedResources | None = None,
     ) -> Any:
-        """Build OpenAI client, with streaming usage or governed observation."""
+        """Build OpenAI client with optional single-dispatch controls."""
         client_class: Any
         try:
-            # Try the new langchain-openai package first
             from langchain_openai import ChatOpenAI
 
             client_class = ChatOpenAI
@@ -162,7 +170,6 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                 raise LLMDependencyError(
                     "Governed calls require the verified langchain-openai wrapper"
                 )
-            # Fall back to legacy import
             try:
                 client_class = getattr(
                     importlib.import_module("langchain.chat_models"), "ChatOpenAI"
@@ -183,6 +190,8 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         }
         if governed:
             kwargs.update(governed_openai_kwargs(owner))
+        elif single_dispatch:
+            kwargs["max_retries"] = 0
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         if streaming:
@@ -228,6 +237,7 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         streaming: bool = False,
         *,
         governed: bool = False,
+        single_dispatch: bool = False,
         owner: ObservedResources | None = None,
     ) -> Any:
         """Build Anthropic client, with streaming usage or governed observation."""
@@ -240,6 +250,8 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
             kwargs["max_tokens"] = max_tokens
         if streaming:
             kwargs["stream_usage"] = True
+        if single_dispatch:
+            kwargs["max_retries"] = 0
         if governed:
             return observed_anthropic_client(kwargs, owner)
 
@@ -255,12 +267,12 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
         streaming: bool = False,
         *,
         governed: bool = False,
+        single_dispatch: bool = False,
         owner: ObservedResources | None = None,
     ) -> Any:
-        """Build Google client; streaming has no verified usage opt-in."""
+        """Build Google client with optional single-dispatch controls."""
         client_class: Any
         try:
-            # Try langchain-google-genai first
             from langchain_google_genai import ChatGoogleGenerativeAI
 
             client_class = ChatGoogleGenerativeAI
@@ -270,7 +282,6 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
                     "Governed calls require the verified langchain-google-genai wrapper"
                 )
             try:
-                # Fall back to community package
                 client_class = getattr(
                     importlib.import_module("langchain_community.chat_models"),
                     "ChatGoogleGenerativeAI",
@@ -293,6 +304,9 @@ class LLMClientFactory(GovernedClientLifecycleMixin):
             kwargs.update(governed_google_kwargs(owner))
         if max_tokens is not None:
             kwargs["max_output_tokens"] = max_tokens
+        if single_dispatch:
+            # google-genai counts max_retries as total attempts.
+            kwargs["max_retries"] = 1
         return client_class(**kwargs)
 
     def clear_cache(self) -> None:

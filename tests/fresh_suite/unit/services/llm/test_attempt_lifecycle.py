@@ -8,9 +8,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from agentmap.exceptions import LLMResolvedCallError
 from agentmap.models.llm_attempt import LLMResponseEvidence
 from agentmap.services.llm.cost_calculator import LLMCostCalculator
 from agentmap.services.llm.response_observer import response_collector
+from agentmap.services.llm_attempt_file_logger import LLMAttemptFileLogger
 from tests.fresh_suite.unit.services.test_llm_resilience import _make_service
 
 
@@ -171,6 +173,24 @@ async def test_unknown_provider_failure_settles_before_retry_admission__b102():
     assert ledger.rows["1"].cost_usd is None
     assert ledger.rows["1"].usage is None
     assert ledger.rows["1"].classification == "provider_error"
+
+
+@pytest.mark.asyncio
+async def test_response_bearing_provider_failure_logs_response_time__b102(tmp_path):
+    class ProviderStatusError(RuntimeError):
+        response = object()
+
+    client = Mock(ainvoke=AsyncMock(side_effect=ProviderStatusError("status error")))
+    svc = service_with_client(client)
+    svc._attempt_lifecycle = LLMAttemptFileLogger(tmp_path, Mock())
+    ledger = Ledger()
+
+    with pytest.raises(LLMResolvedCallError):
+        await call(svc, ledger)
+
+    assert ledger.rows["1"].response_datetime is not None
+    record = json.loads(next(tmp_path.glob("*.jsonl")).read_text())
+    assert record["response_datetime"] is not None
 
 
 @pytest.mark.asyncio

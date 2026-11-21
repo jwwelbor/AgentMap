@@ -17,10 +17,16 @@ class LLMProviderConfigModel(BaseModel):
     temperature: Optional[float] = Field(default=0.7, ge=0.0, le=2.0)
 
 
+class LLMCallLogConfigModel(BaseModel):
+    enabled: bool = False
+    directory: str = "agentmap/llm_call_logs"
+
+
 class LLMConfigModel(BaseModel):
     openai: Optional[LLMProviderConfigModel] = None
     anthropic: Optional[LLMProviderConfigModel] = None
     google: Optional[LLMProviderConfigModel] = None
+    call_log: Optional[LLMCallLogConfigModel] = None
 
 
 class MemoryConfigModel(BaseModel):

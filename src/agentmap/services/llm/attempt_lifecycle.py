@@ -7,60 +7,100 @@ provider failures. No host exception message is sent to telemetry.
 
 import asyncio
 import time
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, field, replace
-from typing import Any, Awaitable, Callable, NoReturn, Optional, Tuple, TypeVar
+from dataclasses import replace
+from datetime import datetime, timezone
+from threading import Lock
+from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar
 
 from agentmap.exceptions import (
     AttemptLifecycleRefusal,
-    LLMConfigurationError,
     LLMLifecycleCleanupError,
     LLMTimeoutError,
-    ResponseCaptureFailure,
 )
 from agentmap.models.llm_attempt import LLMAttemptDescription, LLMAttemptOutcome
-from agentmap.models.llm_cost import LLMCostBreakdown
-from agentmap.models.llm_execution import LLMResponse, LLMUsage
+from agentmap.models.llm_execution import LLMResponse
+from agentmap.services.llm.attempt_lifecycle_evidence import (
+    AttemptAccumulator,
+    _prefer_attempt_failure,
+    accounting_refusal,
+    collect_evidence,
+    evaluate_attempt_response,
+    propagate_finalized_failure,
+    terminal_outcome,
+)
 from agentmap.services.llm.invocation_lease import governed_use_lease
 from agentmap.services.llm.response_observer import (
     ResponseCollector,
     response_collector,
 )
-from agentmap.services.llm_error_utils import classify_llm_error
 from agentmap.services.protocols.service_protocols import LLMAttemptLifecycleProtocol
 
 
-@dataclass
-class AttemptAccumulator:
-    outcome: LLMAttemptOutcome = field(
-        default_factory=lambda: LLMAttemptOutcome(classification="provider_error")
-    )
-    cost: Optional[LLMCostBreakdown] = None
+class CompositeAttemptLifecycle:
+    """Fan out one attempt lifecycle to each configured host observer."""
+
+    def __init__(self, lifecycles: tuple[LLMAttemptLifecycleProtocol, ...]):
+        self._lifecycles = lifecycles
+        self._pending: dict[str, tuple[str, ...]] = {}
+        self._lock = Lock()
+
+    async def before_attempt(self, description: LLMAttemptDescription) -> str:
+        attempt_ids = []
+        for lifecycle in self._lifecycles:
+            try:
+                attempt_ids.append(await lifecycle.before_attempt(description))
+            except BaseException as error:
+                for admitted, admitted_id in zip(self._lifecycles, attempt_ids):
+                    try:
+                        await admitted.after_attempt(
+                            admitted_id,
+                            LLMAttemptOutcome(
+                                classification="provider_error",
+                                error_type=type(error).__name__,
+                            ),
+                        )
+                    except BaseException:
+                        pass
+                raise
+        composite_id = uuid.uuid4().hex
+        with self._lock:
+            self._pending[composite_id] = tuple(attempt_ids)
+        return composite_id
+
+    async def after_attempt(self, attempt_id: str, outcome: LLMAttemptOutcome) -> None:
+        with self._lock:
+            attempt_ids = self._pending.pop(attempt_id, ())
+        failures = []
+        for lifecycle, attempt_id in zip(self._lifecycles, attempt_ids):
+            try:
+                await lifecycle.after_attempt(attempt_id, outcome)
+            except BaseException as error:
+                failures.append(error)
+        if failures:
+            raise failures[0]
 
 
-def accounting_refusal() -> AttemptLifecycleRefusal:
-    return AttemptLifecycleRefusal(
-        LLMConfigurationError("governed attempt accounting unavailable")
-    )
-
-
-def _prefer_attempt_failure(
-    current: Optional[BaseException], candidate: Optional[BaseException]
-) -> Optional[BaseException]:
-    """Retain the first failure unless a raw control-flow failure supersedes it."""
-    if candidate is None:
-        return current
-    if current is None or (
-        isinstance(current, Exception) and not isinstance(candidate, Exception)
-    ):
-        return candidate
-    return current
+def compose_attempt_lifecycles(
+    first: Optional[LLMAttemptLifecycleProtocol],
+    second: Optional[LLMAttemptLifecycleProtocol],
+) -> Optional[LLMAttemptLifecycleProtocol]:
+    """Combine distinct lifecycle hooks while preserving their order."""
+    if first is None:
+        return second
+    if second is None or first is second:
+        return first
+    return CompositeAttemptLifecycle((first, second))
 
 
 attempt_lifecycle: ContextVar[Optional[LLMAttemptLifecycleProtocol]] = ContextVar(
     "agentmap_attempt_lifecycle", default=None
+)
+file_attempt_logger: ContextVar[Optional[LLMAttemptLifecycleProtocol]] = ContextVar(
+    "agentmap_file_attempt_logger", default=None
 )
 _T = TypeVar("_T")
 
@@ -94,6 +134,8 @@ async def get_async_client(factory: Any, provider: str, config: dict[str, Any]) 
     try:
         if attempt_lifecycle.get() is not None:
             return await factory.get_or_create_governed_client(provider, config)
+        if file_attempt_logger.get() is not None:
+            return factory.get_or_create_client(provider, config, single_dispatch=True)
         return factory.get_or_create_client(provider, config)
     except LLMLifecycleCleanupError as error:
         raise AttemptLifecycleRefusal(error) from None
@@ -148,123 +190,13 @@ async def finish_attempt(
         raise AttemptLifecycleRefusal(error) from error
 
 
-def collect_evidence(
-    response: Any,
-    extract_usage: Callable[[Any], Optional[LLMUsage]],
-    calculate_cost: Callable[[Optional[LLMUsage]], Optional[LLMCostBreakdown]],
-    extract_request_id: Callable[[Any], Optional[str]],
-    *,
-    outcome: LLMAttemptOutcome,
-) -> Tuple[LLMAttemptOutcome, Optional[BaseException]]:
-    """Extract fields independently, even if another extraction step fails.
-
-    This diagnostic boundary catches arbitrary provider property/calculator
-    exceptions only to retain available evidence. The caller re-raises the
-    selected failure after mandatory settlement; raw control-flow failures take
-    precedence over ordinary diagnostic errors.
-    """
-    failure: Optional[BaseException] = None
+def provider_error_response_datetime(error: BaseException) -> Optional[datetime]:
+    """Timestamp an error only when it carries the provider's HTTP response."""
     try:
-        outcome = replace(outcome, usage=extract_usage(response))
-    except BaseException as error:
-        failure = _prefer_attempt_failure(failure, error)
-    try:
-        cost = calculate_cost(outcome.usage)
-        if cost is not None and cost.currency.upper() == "USD":
-            outcome = replace(outcome, cost_usd=cost.total_cost)
-    except BaseException as error:
-        failure = _prefer_attempt_failure(failure, error)
-    try:
-        request_id = extract_request_id(response)
-        if isinstance(request_id, str) and request_id:
-            outcome = replace(outcome, provider_request_id=request_id)
-    except BaseException as error:
-        failure = _prefer_attempt_failure(failure, error)
-    return outcome, failure
-
-
-def evaluate_attempt_response(
-    response: Any,
-    duration: float,
-    failure: Optional[BaseException],
-    accumulator: AttemptAccumulator,
-    read_evidence: Callable[[Any, AttemptAccumulator], Optional[BaseException]],
-    build_response: Callable[[Any, float], LLMResponse],
-) -> Tuple[LLMAttemptOutcome, Optional[LLMResponse], Optional[BaseException]]:
-    """Read the same accumulator even when downstream accounting raises.
-
-    Diagnostic failures stop dispatch after mandatory completion. Accounting
-    errors never enter provider classification based on their exception text.
-    """
-    result = None
-    accounting_error: Optional[BaseException] = None
-    try:
-        accounting_error = read_evidence(response, accumulator)
-    except BaseException as error:
-        accounting_error = error
-    outcome = accumulator.outcome
-    if accounting_error is not None and not isinstance(failure, asyncio.CancelledError):
-        if not isinstance(accounting_error, Exception):
-            failure = _prefer_attempt_failure(failure, accounting_error)
-        elif failure is None or isinstance(failure, Exception):
-            failure = accounting_refusal()
-        outcome = replace(outcome, classification="receipt_error")
-    elif failure is not None:
-        outcome = replace(outcome, classification="provider_error")
-    if failure is None:
-        outcome = replace(outcome, classification="normalization_error")
-        try:
-            result = build_response(response, duration)
-            outcome = replace(outcome, classification=result.text_status)
-        except BaseException as error:
-            failure = error
-    return outcome, result, failure
-
-
-def terminal_outcome(
-    outcome: LLMAttemptOutcome,
-    collector: ResponseCollector,
-    failure: Optional[BaseException],
-) -> LLMAttemptOutcome:
-    classification, error_type = outcome.classification, None
-    if failure is not None:
-        error_type = type(failure).__name__
-        if isinstance(failure, asyncio.CancelledError):
-            classification = "cancelled"
-        elif isinstance(failure, LLMTimeoutError):
-            classification = "timeout"
-    if (
-        collector.failed
-        and not isinstance(failure, asyncio.CancelledError)
-        and (failure is None or isinstance(failure, Exception))
-    ):
-        classification, error_type = "capture_error", "ResponseCaptureFailure"
-    return replace(
-        outcome,
-        classification=classification,
-        error_type=error_type,
-        response_evidence=collector.evidence,
-        cleanup_failed=collector.cleanup_failed,
-    )
-
-
-def propagate_finalized_failure(
-    failure: Optional[BaseException], collector: ResponseCollector, provider: str
-) -> NoReturn:
-    if isinstance(failure, asyncio.CancelledError):
-        raise failure from None
-    if failure is not None and not isinstance(failure, Exception):
-        raise failure from None
-    if collector.failed:
-        raise AttemptLifecycleRefusal(
-            ResponseCaptureFailure(cleanup_failed=collector.cleanup_failed)
-        ) from None
-    if isinstance(failure, AttemptLifecycleRefusal):
-        raise failure from None
-    assert isinstance(failure, Exception)
-    # Classify for retry while excluding transport and SDK representations.
-    typed_error = classify_llm_error(failure, provider)
-    raise type(typed_error)("governed physical provider attempt failed") from None
+        has_response = getattr(error, "response", None) is not None
+    except BaseException:
+        has_response = False
+    return datetime.now(timezone.utc) if has_response else None
 
 
 async def finalize_attempt(
@@ -313,8 +245,16 @@ async def invoke_governed_attempt(
     try:
         try:
             response, duration = await invoke()
+            accumulator.outcome = replace(
+                accumulator.outcome, response_datetime=datetime.now(timezone.utc)
+            )
         except BaseException as error:
             failure = error
+            response_datetime = provider_error_response_datetime(error)
+            if response_datetime is not None:
+                accumulator.outcome = replace(
+                    accumulator.outcome, response_datetime=response_datetime
+                )
         return await finalize_attempt(
             lifecycle,
             attempt_id,

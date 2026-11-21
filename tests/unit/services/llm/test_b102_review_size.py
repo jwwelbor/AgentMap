@@ -26,6 +26,7 @@ B102_SOURCE_MODULES = (
     "src/agentmap/services/llm/observed_clients.py",
     "src/agentmap/services/llm/stream_lifecycle.py",
     "src/agentmap/services/llm/attempt_lifecycle.py",
+    "src/agentmap/services/llm/attempt_lifecycle_evidence.py",
     "src/agentmap/services/llm/batch_lifecycle.py",
     "src/agentmap/services/llm/governed_accounting.py",
     "src/agentmap/services/llm/telemetry_lifecycle.py",
@@ -194,9 +195,11 @@ _B102_FUNCTION_LIMITS = {
         _release_semaphore_slot _close_upstream_and_release_slot aclose_upstream_and_release
     """.split(),
     "src/agentmap/services/llm/attempt_lifecycle.py": """
-        invoke_governed_attempt evaluate_attempt_response terminal_outcome
-        propagate_finalized_failure finalize_attempt run_governed_invocation
+        invoke_governed_attempt finalize_attempt run_governed_invocation
         get_async_client invoke_timed_provider
+    """.split(),
+    "src/agentmap/services/llm/attempt_lifecycle_evidence.py": """
+        evaluate_attempt_response terminal_outcome propagate_finalized_failure
     """.split(),
     "src/agentmap/services/llm/batch_lifecycle.py": """
         reject_batch_lifecycle_options
@@ -312,8 +315,8 @@ def test_published_accumulator_is_read_after_downstream_failure__b102():
     publish = _assignment_lines_with_attribute(reader, "outcome")[0]
     collect = _call_lines_named(reader, "collect_evidence")[0]
     assert publish < collect
-    lifecycle_tree = ast.parse(
-        (ROOT / "src/agentmap/services/llm/attempt_lifecycle.py").read_text()
+    evidence_tree = ast.parse(
+        (ROOT / "src/agentmap/services/llm/attempt_lifecycle_evidence.py").read_text()
     )
-    evaluator = _find_function(lifecycle_tree, "evaluate_attempt_response")
+    evaluator = _find_function(evidence_tree, "evaluate_attempt_response")
     assert _reads_attribute(evaluator, "accumulator", "outcome")

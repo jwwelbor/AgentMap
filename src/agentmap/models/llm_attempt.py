@@ -1,6 +1,7 @@
 """Data-only evidence for one physical, non-streaming provider attempt."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -64,7 +65,10 @@ class LLMAttemptOutcome:
     classification: str
     usage: Optional[LLMUsage] = None
     cost_usd: Optional[Decimal] = None
+    cost_amount: Optional[Decimal] = None
+    cost_currency: Optional[str] = None
     provider_request_id: Optional[str] = None
     error_type: Optional[str] = None
+    response_datetime: Optional[datetime] = None
     cleanup_failed: bool = False
     response_evidence: LLMResponseEvidence = field(default_factory=LLMResponseEvidence)
