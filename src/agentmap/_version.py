@@ -1,2 +1,2 @@
 # change here and in pyproject.toml
-__version__ = "0.9.213"
+__version__ = "1.0.0"

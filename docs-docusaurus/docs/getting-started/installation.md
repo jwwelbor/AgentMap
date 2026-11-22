@@ -17,7 +17,7 @@ AgentMap requires Python 3.12 or later. Check the Python version in your environ
 python --version
 ```
 
-If this reports Python 3.11, upgrade to Python 3.12 or later before installing AgentMap.
+AgentMap 1.0.0 supports Python 3.12 or later, below Python 4.0. Python 3.11 is no longer supported. Upgrade your Python runtime to 3.12 or later before installing or upgrading AgentMap; package installers reject the 1.0.0 release on Python 3.11.
 
 ## 📋 Installation Options
 
