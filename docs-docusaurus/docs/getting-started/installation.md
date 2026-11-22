@@ -9,6 +9,16 @@ keywords: [installation, configuration, setup, multiple providers, production, t
 
 This guide covers complete AgentMap installation, from basic setup to production-ready configuration with multiple providers.
 
+## Prerequisites
+
+AgentMap requires Python 3.12 or later. Check the Python version in your environment:
+
+```bash
+python --version
+```
+
+If this reports Python 3.11, upgrade to Python 3.12 or later before installing AgentMap.
+
 ## 📋 Installation Options
 
 ### Option 1: Basic Installation
@@ -59,7 +69,7 @@ Storage feature enabled: True
   vector: ✅ Available [Registry: reg=True, val=True, avail=True]
 
 Environment Information:
-  Python Version: 3.11.4
+  Python Version: 3.12.0
   Current Directory: /path/to/your/project
 ```
 
@@ -502,7 +512,7 @@ agentmap serve --host 0.0.0.0 --port 8000
 
 ### Docker Deployment
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 COPY requirements.txt .

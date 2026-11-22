@@ -5,7 +5,7 @@ Thank you for your interest in contributing to AgentMap! This guide will help yo
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.11 or higher
+- Python 3.12 or higher
 - Git
 - Poetry (recommended) or pip
 
@@ -275,4 +275,4 @@ If you need help with contributing:
 3. Create a new issue with the "help wanted" label
 4. Ask in discussions
 
-Thank you for contributing to AgentMap! 🎉 
+Thank you for contributing to AgentMap! 🎉

@@ -32,7 +32,7 @@ If applicable, add screenshots to help explain your problem.
 ## 🖥️ Environment
 
 **OS:** [e.g. Windows 10, macOS 12.0, Ubuntu 20.04]
-**Python Version:** [e.g. 3.11.0]
+**Python Version:** [e.g. 3.12.0]
 **AgentMap Version:** [e.g. 0.3.0]
 **Package Manager:** [e.g. Poetry, pip]
 
@@ -56,4 +56,4 @@ agentmap --version
 - [ ] I have searched existing issues for duplicates
 - [ ] I have provided all required information
 - [ ] I can reproduce this issue consistently
-- [ ] This is not a configuration issue 
+- [ ] This is not a configuration issue

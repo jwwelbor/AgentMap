@@ -448,7 +448,7 @@ resource "aws_sqs_queue" "batch_jobs" {
 resource "aws_lambda_function" "batch_processor" {
   function_name = "agentmap-batch-processor"
   handler       = "index.lambda_handler"
-  runtime       = "python3.11"
+  runtime       = "python3.12"
 
   environment {
     variables = {

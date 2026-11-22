@@ -28,7 +28,7 @@ pip install agentmap[storage]
 pip install agentmap[all]
 ```
 
-**Requirements**: Python 3.11+
+**Requirements**: Python 3.12+
 
 ## Quick Start
 

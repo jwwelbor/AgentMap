@@ -837,7 +837,7 @@ service: agentmap-workflows
 
 provider:
   name: aws
-  runtime: python3.11
+  runtime: python3.12
   memorySize: 512
   timeout: 300
   environment:
@@ -1449,7 +1449,7 @@ with tracer.start_as_current_span("execute_workflow"):
 
 **Docker Deployment:**
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
