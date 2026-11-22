@@ -2,7 +2,13 @@ name: Publish to PyPI
 
 on:
   release:
-    types: [created]
+    types: [created, published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to test and publish (for example, 1.0.0)
+        required: true
+        type: string
 
 jobs:
   deploy:
@@ -11,6 +17,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.release_tag || github.event.release.tag_name }}
 
     - name: Set up Python
       uses: actions/setup-python@v4
