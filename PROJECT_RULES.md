@@ -28,7 +28,7 @@ src/agentmap/
 ## 🐍 Python Standards
 
 ### Code Style
-- **Black**: Line length 88, Python 3.11+ target
+- **Black**: Line length 88, Python 3.12+ target
 - **isort**: Black-compatible import sorting
 - **flake8**: Code quality enforcement
 - **Type Hints**: Required for all public APIs
@@ -328,4 +328,4 @@ This document is living and should be updated as the project evolves. Major chan
 ---
 
 *Last updated: [Current Date]*
-*Version: 1.0* 
+*Version: 1.0*

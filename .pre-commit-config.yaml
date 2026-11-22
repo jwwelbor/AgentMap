@@ -36,7 +36,7 @@ repos:
     hooks:
       - id: black
         name: Format with Black
-        language_version: python3.11
+        language_version: python3.12
         args: [--line-length=88]
         types: [python]
 
@@ -90,7 +90,7 @@ repos:
 
 # Global settings
 default_language_version:
-  python: python3.11
+  python: python3.12
 
 # CI configuration
 ci:

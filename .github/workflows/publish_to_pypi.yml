@@ -15,7 +15,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: '3.12'
 
     - name: Install uv
       uses: astral-sh/setup-uv@v4
@@ -27,7 +27,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: .venv
-        key: venv-${{ runner.os }}-3.11-${{ hashFiles('**/uv.lock') }}
+        key: venv-${{ runner.os }}-3.12-${{ hashFiles('**/uv.lock') }}
 
     - name: Install dependencies
       run: uv sync --all-extras

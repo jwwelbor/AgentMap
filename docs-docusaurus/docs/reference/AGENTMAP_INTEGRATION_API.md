@@ -654,7 +654,7 @@ def diagnose_system(
             "For vector storage: pip install faiss-cpu"
         ],
         "environment": {
-            "python_version": "3.11.5",
+            "python_version": "3.12.0",
             "python_path": "/path/to/python",
             "current_directory": "/path/to/project",
             "package_versions": {

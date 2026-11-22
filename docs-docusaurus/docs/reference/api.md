@@ -926,7 +926,7 @@ Run comprehensive system diagnostics including dependency checks and provider av
             "For Google: pip install google-generativeai langchain-google-genai"
         ],
         "environment": {
-            "python_version": "3.11.5",
+            "python_version": "3.12.0",
             "python_path": "/usr/bin/python3",
             "current_directory": "/app",
             "package_versions": {

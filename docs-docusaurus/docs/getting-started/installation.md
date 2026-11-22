@@ -59,7 +59,7 @@ Storage feature enabled: True
   vector: ✅ Available [Registry: reg=True, val=True, avail=True]
 
 Environment Information:
-  Python Version: 3.11.5
+  Python Version: 3.12.0
   Current Directory: /path/to/your/project
 ```
 
@@ -502,7 +502,7 @@ agentmap serve --host 0.0.0.0 --port 8000
 
 ### Docker Deployment
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 COPY requirements.txt .

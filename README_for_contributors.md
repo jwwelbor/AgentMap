@@ -6,7 +6,7 @@ This guide is for developers who want to contribute to AgentMap or understand it
 
 ### Prerequisites
 
-- **Python 3.11.5+** (required)
+- **Python 3.12+** (required)
 - **Poetry** (recommended) - [Install Poetry](https://python-poetry.org/docs/#installation)
 - **Git** for version control
 

@@ -164,7 +164,7 @@ Installation Suggestions:
   For Google support: pip install agentmap[google] or pip install google-generativeai langchain-google-genai
 
 Environment Information:
-  Python Version: 3.11.5 (main, Jun  7 2023, 10:13:09) [Clang 14.0.6]
+  Python Version: 3.12.0 (main, Jun  7 2023, 10:13:09) [Clang 14.0.6]
   Python Path: /usr/local/bin/python
   Current Directory: /Users/dev/agentmap
 
