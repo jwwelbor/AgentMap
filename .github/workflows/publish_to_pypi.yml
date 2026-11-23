@@ -16,23 +16,23 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         ref: ${{ inputs.release_tag || github.event.release.tag_name }}
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v7
       with:
         python-version: '3.12'
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v4
+      uses: astral-sh/setup-uv@v10
       with:
         version: "latest"
 
     - name: Load cached venv
       id: cached-uv-dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v6
       with:
         path: .venv
         key: venv-${{ runner.os }}-3.12-${{ hashFiles('**/uv.lock') }}
